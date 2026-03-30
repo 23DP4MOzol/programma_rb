@@ -3,6 +3,7 @@ from __future__ import annotations
 import traceback
 import tkinter as tk
 from tkinter import font as tkfont
+import re
 from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox
@@ -329,6 +330,8 @@ class DesktopApp:
         self._editors: set[DeviceEditor] = set()
         self.theme: str = "light"  # "light" | "dark"
         self._filter_refresh_job: str | None = None
+        self._sort_col: str | None = None
+        self._sort_desc: bool = False
 
         self._build_ui()
         self._apply_i18n()
@@ -682,6 +685,10 @@ class DesktopApp:
         self.tree.heading("status", text="status")
         self.tree.heading("updated", text="updated")
 
+        # Click headings to sort
+        for col in ("serial", "type", "model", "from", "to", "status", "updated"):
+            self.tree.heading(col, command=lambda c=col: self._on_sort_column(c))
+
         self.tree.column("serial", width=140, anchor="w")
         self.tree.column("type", width=120, anchor="w")
         self.tree.column("model", width=180, anchor="w")
@@ -945,6 +952,11 @@ class DesktopApp:
             background=card_bg,
             foreground=text,
             relief="flat",
+        )
+        style.map(
+            "Treeview.Heading",
+            background=[("pressed", card_bg), ("active", card_bg)],
+            foreground=[("pressed", text), ("active", text)],
         )
 
         # Header buttons (refresh/theme)
@@ -1239,6 +1251,9 @@ class DesktopApp:
         self.refresh_list()
 
     def clear_filters(self) -> None:
+        # Reset table to default (no extra sorting) when clearing filters
+        self._sort_col = None
+        self._sort_desc = False
         self.filter_status_var.set("")
         self.filter_type_var.set("")
         self.filter_serial_var.set("")
@@ -1246,6 +1261,24 @@ class DesktopApp:
         self.filter_from_var.set("")
         self.filter_to_var.set("")
         self.limit_var.set("200")
+        self.refresh_list()
+
+    def _natural_key(self, value: str) -> list[object]:
+        parts = re.split(r"(\d+)", (value or "").lower())
+        out: list[object] = []
+        for p in parts:
+            if p.isdigit():
+                out.append(int(p))
+            else:
+                out.append(p)
+        return out
+
+    def _on_sort_column(self, col: str) -> None:
+        if self._sort_col == col:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_col = col
+            self._sort_desc = False
         self.refresh_list()
 
     def _get_field_label(self, label_key: str, row: int, col: int) -> ttk.Label:
@@ -1437,6 +1470,38 @@ class DesktopApp:
                 to_store=to_store,
                 limit=limit,
             )
+
+            # Apply in-memory sorting when user clicked a heading.
+            if self._sort_col:
+                col = self._sort_col
+
+                def key_for(d: Device) -> list[object]:
+                    if col == "serial":
+                        return self._natural_key(d.serial)
+                    if col == "type":
+                        type_code = self._normalize_code(d.device_type, kind="type")
+                        disp = self._display_value(type_code, kind="type") if type_code in DEVICE_TYPES else (d.device_type or "")
+                        return self._natural_key(disp)
+                    if col == "model":
+                        return self._natural_key(d.model or "")
+                    if col == "from":
+                        return self._natural_key(d.from_store or "")
+                    if col == "to":
+                        return self._natural_key(d.to_store or "")
+                    if col == "status":
+                        status_code = self._normalize_code(d.status, kind="status")
+                        disp = (
+                            self._display_value(status_code, kind="status")
+                            if status_code in ALLOWED_STATUSES
+                            else (d.status or "")
+                        )
+                        return self._natural_key(disp)
+                    if col == "updated":
+                        # ISO timestamps sort lexicographically.
+                        return [d.updated_at or ""]
+                    return [""]
+
+                devices = sorted(devices, key=key_for, reverse=self._sort_desc)
 
             selected_iid: str | None = None
             want_serial = select_serial or self._selected_serial
