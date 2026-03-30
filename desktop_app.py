@@ -567,7 +567,7 @@ class DesktopApp:
         self.comment_entry = ttk.Entry(form, textvariable=self.comment_var, style="App.TEntry")
         self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
 
-        self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var)
+        self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var, style="App.TCheckbutton")
         self.overwrite_chk.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
         btns = ttk.Frame(self.form_card, style="Card.TFrame")
@@ -840,6 +840,18 @@ class DesktopApp:
         style.configure("Card.TFrame", background=card_bg)
 
         style.configure("TCheckbutton", background=card_bg, foreground=text)
+        style.map(
+            "TCheckbutton",
+            background=[("pressed", card_bg), ("active", card_bg), ("!disabled", card_bg)],
+            foreground=[("pressed", text), ("active", text), ("!disabled", text), ("disabled", muted)],
+        )
+
+        style.configure("App.TCheckbutton", background=card_bg, foreground=text)
+        style.map(
+            "App.TCheckbutton",
+            background=[("pressed", card_bg), ("active", card_bg), ("!disabled", card_bg)],
+            foreground=[("pressed", text), ("active", text), ("!disabled", text), ("disabled", muted)],
+        )
 
         # Inputs
         style.configure("App.TEntry", padding=(10, 8), font=("Segoe UI", 10), fieldbackground=entry_bg, foreground=text)
@@ -921,13 +933,15 @@ class DesktopApp:
 
         # Combobox dropdown list colors (Listbox is a tk widget)
         try:
-            self.root.option_add("*TCombobox*Listbox.background", entry_bg)
-            self.root.option_add("*TCombobox*Listbox.foreground", text)
-            self.root.option_add("*TCombobox*Listbox.selectBackground", tree_sel)
-            self.root.option_add("*TCombobox*Listbox.selectForeground", text)
+            # Use high priority so switching themes updates existing option patterns.
+            prio = 80
+            self.root.option_add("*TCombobox*Listbox.background", entry_bg, prio)
+            self.root.option_add("*TCombobox*Listbox.foreground", text, prio)
+            self.root.option_add("*TCombobox*Listbox.selectBackground", tree_sel, prio)
+            self.root.option_add("*TCombobox*Listbox.selectForeground", text, prio)
             # Hover (active) item in dropdown
-            self.root.option_add("*TCombobox*Listbox.activeBackground", tree_sel)
-            self.root.option_add("*TCombobox*Listbox.activeForeground", text)
+            self.root.option_add("*TCombobox*Listbox.activeBackground", tree_sel, prio)
+            self.root.option_add("*TCombobox*Listbox.activeForeground", text, prio)
         except Exception:
             pass
 
