@@ -39,6 +39,9 @@ python .\main.py ui
 LV: Vari arī vienkārši dubultklikšķināt start_ui.bat.
 EN: You can also double-click start_ui.bat.
 
+LV: Ja start_ui.bat neko neatver, palaid start_ui_debug.bat (tas parādīs kļūdu tekstu) un paskaties start_ui.log.
+EN: If start_ui.bat opens nothing, run start_ui_debug.bat (shows error text) and check start_ui.log.
+
 ## Web UI (opcioniāli / optional)
 
 LV: Ja vajag, var palaist arī Web UI pārlūkā.
