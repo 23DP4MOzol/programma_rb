@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 import tkinter as tk
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,192 @@ from inventory_db import ALLOWED_STATUSES, Device, InventoryDB
 DEVICE_TYPES: list[str] = ["scanner", "laptop", "tablet", "phone", "other"]
 
 
+def _try_load_photo_image(path: Path) -> tk.PhotoImage | None:
+    try:
+        if not path.exists():
+            return None
+        return tk.PhotoImage(file=str(path))
+    except Exception:
+        return None
+
+
+class DeviceEditor(tk.Toplevel):
+    def __init__(self, app: "DesktopApp", serial: str) -> None:
+        super().__init__(app.root)
+        self.app = app
+        self.serial = serial
+
+        self.app._register_editor(self)
+
+        self.title(app.tr("desktop_editor_title", serial=serial))
+        self.geometry("560x520")
+        self.minsize(520, 460)
+        self.transient(app.root)
+
+        self._build_ui()
+        self._load_device()
+
+    def _build_ui(self) -> None:
+        outer = ttk.Frame(self, padding=12)
+        outer.pack(fill=tk.BOTH, expand=True)
+        outer.columnconfigure(0, weight=1)
+
+        self.title_lbl = ttk.Label(outer, text="", style="Section.TLabel")
+        self.title_lbl.grid(row=0, column=0, sticky="w")
+
+        form = ttk.Frame(outer)
+        form.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        form.columnconfigure(0, weight=1)
+        form.columnconfigure(1, weight=1)
+
+        self.serial_var = tk.StringVar(value=self.serial)
+        self.type_var = tk.StringVar(value=self.app._display_value("scanner", kind="type"))
+        self.model_var = tk.StringVar()
+        self.from_store_var = tk.StringVar()
+        self.to_store_var = tk.StringVar()
+        self.status_var = tk.StringVar(value=self.app._display_value("RECEIVED", kind="status"))
+        self.comment_var = tk.StringVar()
+
+        self.serial_lbl = ttk.Label(form, text="")
+        self.serial_lbl.grid(row=0, column=0, sticky="w")
+        self.serial_entry = ttk.Entry(form, textvariable=self.serial_var, state="readonly")
+        self.serial_entry.grid(row=1, column=0, sticky="ew")
+
+        self.type_lbl = ttk.Label(form, text="")
+        self.type_lbl.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.type_combo = ttk.Combobox(
+            form,
+            textvariable=self.type_var,
+            values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES],
+            state="readonly",
+        )
+        self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
+        self.model_lbl = ttk.Label(form, text="")
+        self.model_lbl.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.model_entry = ttk.Entry(form, textvariable=self.model_var)
+        self.model_entry.grid(row=3, column=0, sticky="ew")
+
+        self.status_lbl = ttk.Label(form, text="")
+        self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self.status_combo = ttk.Combobox(
+            form,
+            textvariable=self.status_var,
+            values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)],
+            state="readonly",
+        )
+        self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+
+        self.from_lbl = ttk.Label(form, text="")
+        self.from_lbl.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.from_entry = ttk.Entry(form, textvariable=self.from_store_var)
+        self.from_entry.grid(row=5, column=0, sticky="ew")
+
+        self.to_lbl = ttk.Label(form, text="")
+        self.to_lbl.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self.to_entry = ttk.Entry(form, textvariable=self.to_store_var)
+        self.to_entry.grid(row=5, column=1, sticky="ew", padx=(8, 0))
+
+        self.comment_lbl = ttk.Label(form, text="")
+        self.comment_lbl.grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var)
+        self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
+
+        btns = ttk.Frame(outer)
+        btns.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        btns.columnconfigure(2, weight=1)
+
+        self.save_btn = ttk.Button(btns, command=self._on_save, style="Primary.TButton")
+        self.save_btn.grid(row=0, column=0, sticky="ew")
+
+        self.delete_btn = ttk.Button(btns, command=self._on_delete, style="Danger.TButton")
+        self.delete_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        self.close_btn = ttk.Button(btns, command=self.destroy, style="Secondary.TButton")
+        self.close_btn.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        self._apply_i18n()
+
+    def _apply_i18n(self) -> None:
+        # Preserve current codes while updating localized display
+        type_code = self.app._code_from_display(self.type_var.get()) or "scanner"
+        status_code = self.app._code_from_display(self.status_var.get()) or "RECEIVED"
+
+        self.title(self.app.tr("desktop_editor_title", serial=self.serial))
+
+        self.title_lbl.config(text=self.app.tr("desktop_editor_title", serial=self.serial))
+        self.serial_lbl.config(text=self.app.tr("web_serial"))
+        self.type_lbl.config(text=self.app.tr("web_type"))
+        self.model_lbl.config(text=self.app.tr("web_model"))
+        self.status_lbl.config(text=self.app.tr("web_status"))
+        self.from_lbl.config(text=self.app.tr("web_from_store"))
+        self.to_lbl.config(text=self.app.tr("web_to_store"))
+        self.comment_lbl.config(text=self.app.tr("web_comment"))
+        self.save_btn.config(text=self.app.tr("desktop_save"))
+        self.delete_btn.config(text=self.app.tr("web_delete"))
+        self.close_btn.config(text=self.app.tr("desktop_close"))
+
+        self.type_combo.configure(values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES])
+        self.status_combo.configure(values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)])
+
+        self.type_var.set(self.app._display_value(type_code, kind="type"))
+        self.status_var.set(self.app._display_value(status_code, kind="status"))
+
+    def _load_device(self) -> None:
+        d = self.app.db.get_device(self.serial)
+        if not d:
+            messagebox.showerror(self.app.tr("desktop_error_title"), self.app.tr("not_found"), parent=self)
+            self.destroy()
+            return
+
+        self.type_var.set(self.app._display_value(d.device_type if d.device_type in DEVICE_TYPES else "other", kind="type"))
+        self.model_var.set(d.model or "")
+        self.from_store_var.set(d.from_store or "")
+        self.to_store_var.set(d.to_store or "")
+        self.status_var.set(self.app._display_value(d.status or "RECEIVED", kind="status"))
+        self.comment_var.set(d.comment or "")
+
+    def _on_save(self) -> None:
+        try:
+            changed = self.app.db.update_device(
+                self.serial,
+                device_type=self.app._code_from_display(self.type_var.get()) or "scanner",
+                model=self.model_var.get().strip() or None,
+                from_store=self.from_store_var.get().strip() or None,
+                to_store=self.to_store_var.get().strip() or None,
+                status=self.app._code_from_display(self.status_var.get()) or "RECEIVED",
+                comment=self.comment_var.get().strip() or None,
+            )
+            if not changed:
+                raise ValueError(self.app.tr("not_found_or_no_fields"))
+
+            self.app._selected_serial = self.serial
+            self.app.refresh_list(select_serial=self.serial)
+            self.app._on_row_selected()
+            self.destroy()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
+
+    def _on_delete(self) -> None:
+        try:
+            msg = self.app.tr("web_confirm_delete", serial=self.serial)
+            if not messagebox.askyesno(self.app.tr("desktop_confirm_title"), msg, parent=self):
+                return
+
+            deleted = self.app.db.delete_device(self.serial)
+            if not deleted:
+                raise ValueError(self.app.tr("not_found"))
+
+            if self.app._selected_serial == self.serial:
+                self.app.clear_form()
+            self.app.refresh_list()
+            self.destroy()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
+
+
 class DesktopApp:
     def __init__(self, root: tk.Tk, *, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:
         self.root = root
@@ -24,6 +211,7 @@ class DesktopApp:
         self.db.init_db()
 
         self._selected_serial: str | None = None
+        self._editors: set[DeviceEditor] = set()
 
         self._build_ui()
         self._apply_i18n()
@@ -34,6 +222,29 @@ class DesktopApp:
     def tr(self, key: str, **kwargs: object) -> str:
         return t(self.translations, key, lang=self.lang, **kwargs)
 
+    def _status_key(self, code: str) -> str:
+        return f"status_{code.lower()}"
+
+    def _type_key(self, code: str) -> str:
+        return f"type_{code.lower()}"
+
+    def _display_value(self, code: str, *, kind: str) -> str:
+        code = (code or "").strip()
+        if not code:
+            return ""
+        if kind == "status":
+            label = self.tr(self._status_key(code))
+        elif kind == "type":
+            label = self.tr(self._type_key(code))
+        else:
+            label = code
+        return f"{code} — {label}" if label else code
+
+    def _code_from_display(self, display: str) -> str:
+        if not display:
+            return ""
+        return display.split(" — ", 1)[0].strip()
+
     # ---------- UI ----------
 
     def _build_ui(self) -> None:
@@ -43,11 +254,16 @@ class DesktopApp:
 
         self._style()
 
+        self._setup_branding_assets()
+
         top = ttk.Frame(self.root, padding=12)
         top.pack(fill=tk.X)
 
+        self.logo_lbl = ttk.Label(top, text="")
+        self.logo_lbl.pack(side=tk.LEFT)
+
         self.title_lbl = ttk.Label(top, text="programma_rb", style="Title.TLabel")
-        self.title_lbl.pack(side=tk.LEFT)
+        self.title_lbl.pack(side=tk.LEFT, padx=(10, 0))
 
         self.subtitle_lbl = ttk.Label(top, text="", style="SubTitle.TLabel")
         self.subtitle_lbl.pack(side=tk.LEFT, padx=(12, 0))
@@ -105,7 +321,6 @@ class DesktopApp:
         self.type_combo = ttk.Combobox(
             form,
             textvariable=self.type_var,
-            values=DEVICE_TYPES,
             state="readonly",
         )
         self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
@@ -117,7 +332,6 @@ class DesktopApp:
         self.status_combo = ttk.Combobox(
             form,
             textvariable=self.status_var,
-            values=sorted(ALLOWED_STATUSES),
             state="readonly",
         )
         self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
@@ -175,8 +389,15 @@ class DesktopApp:
         self.list_card.columnconfigure(0, weight=1)
         self.list_card.rowconfigure(2, weight=1)
 
-        self.list_title = ttk.Label(self.list_card, text="", style="Section.TLabel")
+        list_header = ttk.Frame(self.list_card)
+        list_header.grid(row=0, column=0, sticky="ew")
+        list_header.columnconfigure(0, weight=1)
+
+        self.list_title = ttk.Label(list_header, text="", style="Section.TLabel")
         self.list_title.grid(row=0, column=0, sticky="w")
+
+        self.double_click_hint = ttk.Label(list_header, text="", style="Muted.TLabel")
+        self.double_click_hint.grid(row=0, column=1, sticky="e")
 
         filters = ttk.Frame(self.list_card)
         filters.grid(row=1, column=0, sticky="ew", pady=(10, 0))
@@ -193,7 +414,6 @@ class DesktopApp:
         self.filter_status_combo = ttk.Combobox(
             filters,
             textvariable=self.filter_status_var,
-            values=[""] + sorted(ALLOWED_STATUSES),
             state="readonly",
         )
         self.filter_status_combo.grid(row=1, column=0, sticky="ew")
@@ -249,15 +469,16 @@ class DesktopApp:
 
     def _build_context_menu(self) -> None:
         self.menu = tk.Menu(self.root, tearoff=False)
-        self.menu.add_command(label="Edit", command=self._on_row_double_click)
+        self.menu.add_command(label=self.tr("web_edit"), command=self._on_row_double_click)
 
         self.status_menu = tk.Menu(self.menu, tearoff=False)
         for s in sorted(ALLOWED_STATUSES):
-            self.status_menu.add_command(label=s, command=lambda st=s: self._set_status_from_menu(st))
+            disp = self._display_value(s, kind="status")
+            self.status_menu.add_command(label=disp, command=lambda st=s: self._set_status_from_menu(st))
 
-        self.menu.add_cascade(label="Status", menu=self.status_menu)
+        self.menu.add_cascade(label=self.tr("web_status_inline"), menu=self.status_menu)
         self.menu.add_separator()
-        self.menu.add_command(label="Delete", command=self.delete_selected)
+        self.menu.add_command(label=self.tr("web_delete_short"), command=self.delete_selected)
 
         self.tree.bind("<Button-3>", self._on_right_click)
 
@@ -274,7 +495,7 @@ class DesktopApp:
     def _set_status_from_menu(self, new_status: str) -> None:
         if not self._selected_serial:
             return
-        self.status_var.set(new_status)
+        self.status_var.set(self._display_value(new_status, kind="status"))
         self.change_status()
 
     def _style(self) -> None:
@@ -293,6 +514,39 @@ class DesktopApp:
         style.configure("Muted.TLabel", font=("Segoe UI", 9), background="#ffffff", foreground="#666666")
 
         style.configure("Card.TFrame", background="#ffffff")
+
+        style.configure(
+            "TEntry",
+            padding=(8, 6),
+        )
+
+        style.configure(
+            "TCombobox",
+            padding=(6, 4),
+        )
+
+        style.configure(
+            "Treeview",
+            font=("Segoe UI", 9),
+            rowheight=28,
+            background="#ffffff",
+            fieldbackground="#ffffff",
+            foreground="#111111",
+            borderwidth=0,
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#fff5f5")],
+            foreground=[("selected", "#111111")],
+        )
+
+        style.configure(
+            "Treeview.Heading",
+            font=("Segoe UI", 9, "bold"),
+            background="#ffffff",
+            foreground="#111111",
+            relief="flat",
+        )
 
         style.configure(
             "Primary.TButton",
@@ -327,6 +581,29 @@ class DesktopApp:
             foreground=[("!disabled", "#ffffff")],
         )
 
+    def _setup_branding_assets(self) -> None:
+        """Loads user-provided logo/icon from ./assets.
+
+        Note: We do not ship any Rimi Baltic logo assets.
+        If you want an official logo, place it as ./assets/logo.png.
+        """
+
+        assets_dir = Path(__file__).resolve().parent / "assets"
+
+        self._logo_img: tk.PhotoImage | None = None
+        for name in ("logo.png", "logo.gif"):
+            img = _try_load_photo_image(assets_dir / name)
+            if img is not None:
+                self._logo_img = img
+                break
+
+        ico = assets_dir / "icon.ico"
+        try:
+            if ico.exists():
+                self.root.iconbitmap(str(ico))
+        except Exception:
+            pass
+
     def _field(
         self,
         parent: ttk.Frame,
@@ -346,8 +623,16 @@ class DesktopApp:
     def _apply_i18n(self) -> None:
         self.lang = self.lang_var.get().lower()
 
-        self.title_lbl.config(text=self.tr("web_title"))
-        self.subtitle_lbl.config(text=self.tr("web_subtitle"))
+        self.root.title(self.tr("app_title"))
+
+        if self._logo_img is not None:
+            self.logo_lbl.config(image=self._logo_img, text="")
+            self.logo_lbl.image = self._logo_img  # keep reference
+        else:
+            self.logo_lbl.config(text=self.tr("desktop_brand"), style="Title.TLabel")
+
+        self.title_lbl.config(text=f"{self.tr('desktop_brand')} — {self.tr('desktop_brand_title')}")
+        self.subtitle_lbl.config(text=self.tr("desktop_brand_subtitle"))
         self.refresh_btn.config(text=self.tr("web_refresh"))
 
         self.actions_title.config(text=self.tr("web_action"))
@@ -378,13 +663,43 @@ class DesktopApp:
         self.filter_from_lbl.config(text=self.tr("web_from_store"))
         self.filter_to_lbl.config(text=self.tr("web_to_store"))
 
-        # Type dropdown labels: show code only but tooltip text comes from i18n via status area
-        self.type_combo.configure(values=DEVICE_TYPES)
+        self.double_click_hint.config(text=self.tr("desktop_double_click_hint"))
 
-        # Update context menu labels
-        self.menu.entryconfigure(0, label=self.tr("web_edit"))
-        self.menu.entryconfigure(1, label=self.tr("web_status_inline"))
-        self.menu.entryconfigure(3, label=self.tr("web_delete_short"))
+        # Dropdown values (localized display, stable code prefix)
+        type_code = self._code_from_display(self.type_var.get()) or "scanner"
+        status_code = self._code_from_display(self.status_var.get()) or "RECEIVED"
+
+        type_values = [self._display_value(tp, kind="type") for tp in DEVICE_TYPES]
+        status_values = [self._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)]
+
+        self.type_combo.configure(values=type_values)
+        self.status_combo.configure(values=status_values)
+
+        self.type_var.set(self._display_value(type_code, kind="type"))
+        self.status_var.set(self._display_value(status_code, kind="status"))
+
+        # Status filter (localized display, stable code prefix; empty means no filter)
+        current_filter_code = self._code_from_display(self.filter_status_var.get())
+        filter_values = [""] + status_values
+        self.filter_status_combo.configure(values=filter_values)
+        if current_filter_code:
+            self.filter_status_var.set(self._display_value(current_filter_code, kind="status"))
+
+        # Tree headings
+        self.tree.heading("serial", text=self.tr("web_serial"))
+        self.tree.heading("type", text=self.tr("web_type"))
+        self.tree.heading("model", text=self.tr("web_model"))
+        self.tree.heading("from", text=self.tr("web_from_store"))
+        self.tree.heading("to", text=self.tr("web_to_store"))
+        self.tree.heading("status", text=self.tr("web_status"))
+        self.tree.heading("updated", text=self.tr("web_updated"))
+
+        # Rebuild context menu so status labels change with language
+        try:
+            self.menu.destroy()
+        except Exception:
+            pass
+        self._build_context_menu()
 
         self._write_result({"ok": True, "lang": self.lang})
 
@@ -394,6 +709,22 @@ class DesktopApp:
     def _on_lang_changed(self) -> None:
         self._apply_i18n()
         self.refresh_list()
+        self._refresh_open_editors_i18n()
+
+    def _register_editor(self, editor: DeviceEditor) -> None:
+        self._editors.add(editor)
+        editor.bind("<Destroy>", lambda _e: self._editors.discard(editor))
+
+    def _refresh_open_editors_i18n(self) -> None:
+        for ed in list(self._editors):
+            try:
+                if not ed.winfo_exists():
+                    self._editors.discard(ed)
+                    continue
+                ed._apply_i18n()
+            except Exception:
+                # Best-effort; don't break language switching
+                pass
 
     # ---------- Data actions ----------
 
@@ -410,11 +741,11 @@ class DesktopApp:
 
     def _current_device_from_form(self) -> Device:
         serial = self.serial_var.get().strip()
-        device_type = (self.type_var.get() or "scanner").strip() or "scanner"
+        device_type = self._code_from_display(self.type_var.get()) or "scanner"
         model = self.model_var.get().strip() or None
         from_store = self.from_store_var.get().strip() or None
         to_store = self.to_store_var.get().strip() or None
-        status = (self.status_var.get() or "RECEIVED").strip() or "RECEIVED"
+        status = self._code_from_display(self.status_var.get()) or "RECEIVED"
         comment = self.comment_var.get().strip() or None
 
         return Device(
@@ -436,7 +767,7 @@ class DesktopApp:
             self._write_result({"ok": True, "action": "add", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Error", str(exc))
+            messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def update_device(self) -> None:
@@ -461,7 +792,7 @@ class DesktopApp:
             self._write_result({"ok": True, "action": "update", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Error", str(exc))
+            messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def change_status(self) -> None:
@@ -472,7 +803,7 @@ class DesktopApp:
 
             changed = self.db.change_status(
                 serial,
-                self.status_var.get(),
+                self._code_from_display(self.status_var.get()) or "RECEIVED",
                 to_store=self.to_store_var.get().strip() or None,
                 comment=self.comment_var.get().strip() or None,
             )
@@ -480,10 +811,17 @@ class DesktopApp:
                 raise ValueError(self.tr("not_found"))
 
             self._selected_serial = serial
-            self._write_result({"ok": True, "action": "status", "serial": serial, "status": self.status_var.get()})
+            self._write_result(
+                {
+                    "ok": True,
+                    "action": "status",
+                    "serial": serial,
+                    "status": self._code_from_display(self.status_var.get()) or "RECEIVED",
+                }
+            )
             self.refresh_list(select_serial=serial)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Error", str(exc))
+            messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def delete_selected(self) -> None:
@@ -493,7 +831,7 @@ class DesktopApp:
                 raise ValueError("serial is required")
 
             msg = self.tr("web_confirm_delete", serial=serial)
-            if not messagebox.askyesno("Confirm", msg):
+            if not messagebox.askyesno(self.tr("desktop_confirm_title"), msg):
                 return
 
             deleted = self.db.delete_device(serial)
@@ -504,7 +842,7 @@ class DesktopApp:
             self.clear_form()
             self.refresh_list()
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Error", str(exc))
+            messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def clear_form(self) -> None:
@@ -522,7 +860,8 @@ class DesktopApp:
             for item in self.tree.get_children():
                 self.tree.delete(item)
 
-            status = self.filter_status_var.get().strip() or None
+            status_display = self.filter_status_var.get().strip()
+            status = self._code_from_display(status_display) or None
             from_store = self.filter_from_var.get().strip() or None
             to_store = self.filter_to_var.get().strip() or None
 
@@ -538,13 +877,16 @@ class DesktopApp:
 
             for d in devices:
                 updated = (d.updated_at or "").replace("T", " ")
+
+                type_disp = self._display_value(d.device_type, kind="type")
+                status_disp = self._display_value(d.status, kind="status")
                 values = (
                     d.serial,
-                    d.device_type,
+                    type_disp,
                     d.model or "",
                     d.from_store or "",
                     d.to_store or "",
-                    d.status,
+                    status_disp,
                     updated,
                 )
                 iid = self.tree.insert("", tk.END, values=values)
@@ -557,7 +899,7 @@ class DesktopApp:
 
             self.count_lbl.config(text=self.tr("count", n=len(devices)))
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Error", str(exc))
+            messagebox.showerror(self.tr("desktop_error_title"), str(exc))
 
     def _on_row_selected(self) -> None:
         sel = self.tree.selection()
@@ -568,28 +910,32 @@ class DesktopApp:
         if not values:
             return
 
-        serial, device_type, model, from_store, to_store, status, _updated = values
-        self._selected_serial = str(serial)
+        serial = str(values[0])
+        self._selected_serial = serial
 
-        self.serial_var.set(str(serial))
-        if str(device_type) in DEVICE_TYPES:
-            self.type_var.set(str(device_type))
-        else:
-            self.type_var.set("other")
-        self.model_var.set(str(model))
-        self.from_store_var.set(str(from_store))
-        self.to_store_var.set(str(to_store))
-        self.status_var.set(str(status))
+        # Always load from DB so we can keep stable codes even if table shows localized labels.
+        d = self.db.get_device(serial)
+        if not d:
+            return
 
-        # Load comment from DB (not shown in table)
-        d = self.db.get_device(str(serial))
-        self.comment_var.set(d.comment if d and d.comment else "")
+        self.serial_var.set(serial)
+        self.type_var.set(self._display_value(d.device_type or "other", kind="type"))
+        self.model_var.set(d.model or "")
+        self.from_store_var.set(d.from_store or "")
+        self.to_store_var.set(d.to_store or "")
+        self.status_var.set(self._display_value(d.status or "RECEIVED", kind="status"))
+        self.comment_var.set(d.comment or "")
 
     def _on_row_double_click(self) -> None:
-        # Double click focuses serial field for quick edits
-        self.serial_var.set(self.serial_var.get().strip())
-        self.model_var.set(self.model_var.get().strip())
-        self.comment_entry.focus_set()
+        if not self._selected_serial:
+            self._on_row_selected()
+        if not self._selected_serial:
+            return
+
+        try:
+            DeviceEditor(self, self._selected_serial)
+        except Exception:
+            messagebox.showerror(self.tr("desktop_error_title"), traceback.format_exc())
 
 
 def run_desktop(*, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:

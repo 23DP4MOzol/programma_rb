@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 inventory.db
 inventory*.db
+
+# Optional local branding assets (do not commit company logos)
+assets/logo.*
+assets/icon.ico
