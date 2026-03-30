@@ -616,11 +616,12 @@ class DesktopApp:
 
         filters = ttk.Frame(self.list_card, style="Card.TFrame")
         filters.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        for c in range(7):
+        for c in range(8):
             filters.columnconfigure(c, weight=1)
 
         self.filter_status_var = tk.StringVar(value="")
         self.filter_type_var = tk.StringVar(value="")
+        self.filter_make_var = tk.StringVar(value="")
         self.filter_serial_var = tk.StringVar(value="")
         self.filter_model_var = tk.StringVar(value="")
         self.filter_from_var = tk.StringVar(value="")
@@ -647,30 +648,48 @@ class DesktopApp:
         )
         self.filter_type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
-        self.filter_serial_lbl = ttk.Label(filters, text="", style="Label.TLabel")
-        self.filter_serial_lbl.grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self.filter_serial_entry = ttk.Entry(filters, textvariable=self.filter_serial_var, style="App.TEntry")
-        self.filter_serial_entry.grid(row=1, column=2, sticky="ew", padx=(8, 0))
+        self.filter_make_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_make_lbl.grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.filter_make_combo = ttk.Combobox(
+            filters,
+            textvariable=self.filter_make_var,
+            state="readonly",
+            style="App.TCombobox",
+        )
+        self.filter_make_combo.grid(row=1, column=2, sticky="ew", padx=(8, 0))
 
         self.filter_model_lbl = ttk.Label(filters, text="", style="Label.TLabel")
         self.filter_model_lbl.grid(row=0, column=3, sticky="w", padx=(8, 0))
-        self.filter_model_entry = ttk.Entry(filters, textvariable=self.filter_model_var, style="App.TEntry")
-        self.filter_model_entry.grid(row=1, column=3, sticky="ew", padx=(8, 0))
+        self.filter_model_combo = ttk.Combobox(
+            filters,
+            textvariable=self.filter_model_var,
+            state="normal",
+            style="App.TCombobox",
+        )
+        self.filter_model_combo.grid(row=1, column=3, sticky="ew", padx=(8, 0))
 
-        self.limit_lbl = ttk.Label(filters, text="", style="Label.TLabel")
-        self.limit_lbl.grid(row=0, column=6, sticky="w", padx=(8, 0))
-        self.limit_entry = ttk.Entry(filters, textvariable=self.limit_var, style="App.TEntry")
-        self.limit_entry.grid(row=1, column=6, sticky="ew", padx=(8, 0))
+        self.filter_serial_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_serial_lbl.grid(row=0, column=4, sticky="w", padx=(8, 0))
+        self.filter_serial_entry = ttk.Entry(filters, textvariable=self.filter_serial_var, style="App.TEntry")
+        self.filter_serial_entry.grid(row=1, column=4, sticky="ew", padx=(8, 0))
 
         self.filter_from_lbl = ttk.Label(filters, text="", style="Label.TLabel")
-        self.filter_from_lbl.grid(row=0, column=4, sticky="w", padx=(8, 0))
+        self.filter_from_lbl.grid(row=0, column=5, sticky="w", padx=(8, 0))
         self.filter_from_entry = ttk.Entry(filters, textvariable=self.filter_from_var, style="App.TEntry")
-        self.filter_from_entry.grid(row=1, column=4, sticky="ew", padx=(8, 0))
+        self.filter_from_entry.grid(row=1, column=5, sticky="ew", padx=(8, 0))
 
         self.filter_to_lbl = ttk.Label(filters, text="", style="Label.TLabel")
-        self.filter_to_lbl.grid(row=0, column=5, sticky="w", padx=(8, 0))
+        self.filter_to_lbl.grid(row=0, column=6, sticky="w", padx=(8, 0))
         self.filter_to_entry = ttk.Entry(filters, textvariable=self.filter_to_var, style="App.TEntry")
-        self.filter_to_entry.grid(row=1, column=5, sticky="ew", padx=(8, 0))
+        self.filter_to_entry.grid(row=1, column=6, sticky="ew", padx=(8, 0))
+
+        self.limit_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.limit_lbl.grid(row=0, column=7, sticky="w", padx=(8, 0))
+        self.limit_entry = ttk.Entry(filters, textvariable=self.limit_var, style="App.TEntry")
+        self.limit_entry.grid(row=1, column=7, sticky="ew", padx=(8, 0))
+
+        # Dependent dropdown values for Make/Model suggestions
+        self._filter_models_all: list[str] = []
 
         # Treeview
         cols = ("serial", "type", "model", "from", "to", "status", "updated")
@@ -1158,6 +1177,7 @@ class DesktopApp:
         # Filters
         self.filter_status_lbl.config(text=self.tr("web_status"))
         self.filter_type_lbl.config(text=self.tr("web_type"))
+        self.filter_make_lbl.config(text=self.tr("web_make"))
         self.filter_serial_lbl.config(text=self.tr("web_serial"))
         self.filter_model_lbl.config(text=self.tr("web_model"))
         self.limit_lbl.config(text=self.tr("web_limit"))
@@ -1195,6 +1215,9 @@ class DesktopApp:
         if current_type_code:
             self.filter_type_var.set(self._display_value(current_type_code, kind="type"))
 
+        # Make/Model filter values depend on selected Type/Make.
+        self._refresh_make_model_filter_values(preserve_typed_model=True)
+
         # Tree headings
         self.tree.heading("serial", text=self.tr("web_serial"))
         self.tree.heading("type", text=self.tr("web_type"))
@@ -1225,6 +1248,7 @@ class DesktopApp:
             self.filter_to_var,
             self.filter_model_var,
             self.filter_serial_var,
+            self.filter_make_var,
             self.limit_var,
             self.filter_type_var,
         ):
@@ -1240,7 +1264,22 @@ class DesktopApp:
             pass
 
         try:
-            self.filter_type_combo.bind("<<ComboboxSelected>>", lambda _e: self._schedule_filter_refresh())
+            self.filter_make_combo.bind("<<ComboboxSelected>>", self._on_filter_make_changed)
+        except Exception:
+            pass
+
+        try:
+            self.filter_type_combo.bind("<<ComboboxSelected>>", self._on_filter_type_changed)
+        except Exception:
+            pass
+
+        try:
+            self.filter_model_combo.bind("<<ComboboxSelected>>", lambda _e: self._schedule_filter_refresh())
+        except Exception:
+            pass
+
+        try:
+            self.filter_model_combo.bind("<KeyRelease>", self._on_filter_model_typed)
         except Exception:
             pass
 
@@ -1270,12 +1309,84 @@ class DesktopApp:
         self._sort_desc = False
         self.filter_status_var.set("")
         self.filter_type_var.set("")
+        self.filter_make_var.set("")
         self.filter_serial_var.set("")
         self.filter_model_var.set("")
         self.filter_from_var.set("")
         self.filter_to_var.set("")
         self.limit_var.set("200")
+        self._refresh_make_model_filter_values(preserve_typed_model=True)
         self.refresh_list()
+
+    def _current_filter_type_code(self) -> str | None:
+        type_display = self.filter_type_var.get().strip()
+        type_code = self._code_from_display(type_display, kind="type")
+        return type_code or None
+
+    def _current_filter_make(self) -> str | None:
+        make = self.filter_make_var.get().strip()
+        return make or None
+
+    def _refresh_make_model_filter_values(self, *, preserve_typed_model: bool) -> None:
+        """Refresh Make/Model dropdown values based on current Type/Make filters."""
+
+        device_type = self._current_filter_type_code()
+        current_make = self._current_filter_make()
+
+        try:
+            makes = self.db.list_makes(device_type=device_type)
+        except Exception:
+            makes = []
+
+        make_values = [""] + makes
+        self.filter_make_combo.configure(values=make_values)
+
+        # If current make no longer exists for this type, reset it.
+        if current_make and current_make not in makes:
+            current_make = None
+            self.filter_make_var.set("")
+
+        # If there's exactly one make for this type, auto-select it.
+        if (not current_make) and len(makes) == 1 and device_type:
+            current_make = makes[0]
+            self.filter_make_var.set(current_make)
+
+        try:
+            models = self.db.list_models(device_type=device_type, make=current_make)
+        except Exception:
+            models = []
+
+        self._filter_models_all = models
+        self.filter_model_combo.configure(values=[""] + models)
+
+        if not preserve_typed_model:
+            self.filter_model_var.set("")
+
+    def _on_filter_type_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        # Changing type changes available makes/models.
+        self.filter_make_var.set("")
+        self.filter_model_var.set("")
+        self._refresh_make_model_filter_values(preserve_typed_model=True)
+        self._schedule_filter_refresh()
+
+    def _on_filter_make_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        # Changing make changes available models.
+        self.filter_model_var.set("")
+        self._refresh_make_model_filter_values(preserve_typed_model=True)
+        self._schedule_filter_refresh()
+
+    def _on_filter_model_typed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        typed = self.filter_model_var.get().strip()
+        if not self._filter_models_all:
+            self._refresh_make_model_filter_values(preserve_typed_model=True)
+
+        if not typed:
+            self.filter_model_combo.configure(values=[""] + (self._filter_models_all or []))
+            return
+
+        t_low = typed.casefold()
+        filtered = [m for m in (self._filter_models_all or []) if t_low in m.casefold()]
+        self.filter_model_combo.configure(values=[""] + filtered)
 
     def _natural_key(self, value: str) -> list[object]:
         parts = re.split(r"(\d+)", (value or "").lower())
@@ -1465,6 +1576,7 @@ class DesktopApp:
             status = self._code_from_display(status_display, kind="status") or None
             type_display = self.filter_type_var.get().strip()
             device_type = self._code_from_display(type_display, kind="type") or None
+            make = self.filter_make_var.get().strip() or None
             serial_filter = self.filter_serial_var.get().strip() or None
             model = self.filter_model_var.get().strip() or None
             from_store = self.filter_from_var.get().strip() or None
@@ -1479,6 +1591,7 @@ class DesktopApp:
                 status=status,
                 device_type=device_type,
                 serial=serial_filter,
+                make=make,
                 model=model,
                 from_store=from_store,
                 to_store=to_store,

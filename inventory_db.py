@@ -153,11 +153,21 @@ class InventoryDB:
         status: str | None = None,
         device_type: str | None = None,
         serial: str | None = None,
+        make: str | None = None,
         model: str | None = None,
         to_store: str | None = None,
         from_store: str | None = None,
         limit: int = 200,
     ) -> list[Device]:
+        make_expr = (
+            "CASE "
+            "WHEN model IS NULL THEN '' "
+            "WHEN TRIM(model) = '' THEN '' "
+            "WHEN INSTR(TRIM(model), ' ') = 0 THEN TRIM(model) "
+            "ELSE SUBSTR(TRIM(model), 1, INSTR(TRIM(model), ' ') - 1) "
+            "END"
+        )
+
         where = []
         params: list[Any] = []
 
@@ -173,6 +183,10 @@ class InventoryDB:
         if device_type is not None:
             where.append("device_type = ?")
             params.append(device_type)
+
+        if make is not None:
+            where.append(f"LOWER({make_expr}) = LOWER(?)")
+            params.append(make)
 
         if model is not None:
             # Partial match; SQLite LIKE is case-insensitive for ASCII by default.
@@ -197,6 +211,87 @@ class InventoryDB:
             ).fetchall()
 
         return [self._row_to_device(r) for r in rows]
+
+    def list_makes(self, *, device_type: str | None = None) -> list[str]:
+        """Returns distinct 'make' values derived from `model`.
+
+        We don't store make separately; it's derived as the first token of `model`.
+        """
+
+        make_expr = (
+            "CASE "
+            "WHEN model IS NULL THEN '' "
+            "WHEN TRIM(model) = '' THEN '' "
+            "WHEN INSTR(TRIM(model), ' ') = 0 THEN TRIM(model) "
+            "ELSE SUBSTR(TRIM(model), 1, INSTR(TRIM(model), ' ') - 1) "
+            "END"
+        )
+
+        where = ["model IS NOT NULL", "TRIM(model) <> ''"]
+        params: list[Any] = []
+        if device_type is not None:
+            where.append("device_type = ?")
+            params.append(device_type)
+
+        where_sql = " WHERE " + " AND ".join(where)
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT {make_expr} AS make FROM devices{where_sql}",
+                tuple(params),
+            ).fetchall()
+
+        raw = [str(r["make"]).strip() for r in rows if str(r["make"]).strip()]
+
+        # Case-insensitive de-duplication (keep first-seen original casing).
+        seen: dict[str, str] = {}
+        for item in raw:
+            key = item.casefold()
+            if key not in seen:
+                seen[key] = item
+
+        makes = sorted(seen.values(), key=lambda s: s.casefold())
+        return makes
+
+    def list_models(self, *, device_type: str | None = None, make: str | None = None) -> list[str]:
+        """Returns distinct full `model` strings, optionally filtered by type and derived make."""
+
+        make_expr = (
+            "CASE "
+            "WHEN model IS NULL THEN '' "
+            "WHEN TRIM(model) = '' THEN '' "
+            "WHEN INSTR(TRIM(model), ' ') = 0 THEN TRIM(model) "
+            "ELSE SUBSTR(TRIM(model), 1, INSTR(TRIM(model), ' ') - 1) "
+            "END"
+        )
+
+        where = ["model IS NOT NULL", "TRIM(model) <> ''"]
+        params: list[Any] = []
+        if device_type is not None:
+            where.append("device_type = ?")
+            params.append(device_type)
+        if make is not None:
+            where.append(f"LOWER({make_expr}) = LOWER(?)")
+            params.append(make)
+
+        where_sql = " WHERE " + " AND ".join(where)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT TRIM(model) AS model FROM devices{where_sql}",
+                tuple(params),
+            ).fetchall()
+
+        raw = [str(r["model"]).strip() for r in rows if str(r["model"]).strip()]
+
+        # Case-insensitive de-duplication (keep first-seen original casing).
+        seen: dict[str, str] = {}
+        for item in raw:
+            key = item.casefold()
+            if key not in seen:
+                seen[key] = item
+
+        models = sorted(seen.values(), key=lambda s: s.casefold())
+        return models
 
     def update_device(self, serial: str, **fields: Any) -> bool:
         """Maina jebkurus laukus pēc serial (daļējs update).
