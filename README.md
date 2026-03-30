@@ -36,11 +36,11 @@ python .\main.py
 python .\main.py ui
 ```
 
-LV: Vari arī vienkārši dubultklikšķināt start_ui.bat.
-EN: You can also double-click start_ui.bat.
+LV: Ja datorā ir aizliegts CMD/BAT (Group Policy), tad dubultklikšķini programma_rb.pyw (tas ir drošākais “launcheris”).
+EN: If CMD/BAT is blocked by policy, double-click programma_rb.pyw (safest launcher).
 
-LV: Ja start_ui.bat neko neatver, palaid start_ui_debug.bat (tas parādīs kļūdu tekstu) un paskaties start_ui.log.
-EN: If start_ui.bat opens nothing, run start_ui_debug.bat (shows error text) and check start_ui.log.
+LV: Ja programma nepalaižas, paskaties programma_rb_error.log.
+EN: If it fails to start, check programma_rb_error.log.
 
 ## Web UI (opcioniāli / optional)
 
