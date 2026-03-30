@@ -706,7 +706,7 @@ class DesktopApp:
 
         # Events
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_row_selected())
-        self.tree.bind("<Double-1>", lambda _e: self._on_row_double_click())
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
 
         self._build_context_menu()
 
@@ -1560,6 +1560,24 @@ class DesktopApp:
             DeviceEditor(self, self._selected_serial)
         except Exception:
             messagebox.showerror(self.tr("desktop_error_title"), traceback.format_exc())
+
+    def _on_tree_double_click(self, event: tk.Event) -> None:  # type: ignore[override]
+        # Ignore double-clicks on headers (used for sorting) or empty space.
+        try:
+            region = self.tree.identify("region", event.x, event.y)
+        except Exception:
+            region = ""
+
+        if region != "cell":
+            return
+
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return
+
+        self.tree.selection_set(row_id)
+        self._on_row_selected()
+        self._on_row_double_click()
 
 
 def run_desktop(*, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:
