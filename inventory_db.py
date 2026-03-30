@@ -151,6 +151,9 @@ class InventoryDB:
         self,
         *,
         status: str | None = None,
+        device_type: str | None = None,
+        serial: str | None = None,
+        model: str | None = None,
         to_store: str | None = None,
         from_store: str | None = None,
         limit: int = 200,
@@ -162,6 +165,19 @@ class InventoryDB:
             self._validate_status(status)
             where.append("status = ?")
             params.append(status)
+
+        if serial is not None:
+            where.append("serial LIKE ?")
+            params.append(f"%{serial}%")
+
+        if device_type is not None:
+            where.append("device_type = ?")
+            params.append(device_type)
+
+        if model is not None:
+            # Partial match; SQLite LIKE is case-insensitive for ASCII by default.
+            where.append("model LIKE ?")
+            params.append(f"%{model}%")
 
         if to_store is not None:
             where.append("to_store = ?")

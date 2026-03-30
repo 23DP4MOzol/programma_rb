@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import webbrowser
 from pathlib import Path
 
 from i18n import load_translations, t
@@ -25,18 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["lv", "en"],
         help="UI valoda / language (lv|en)",
     )
-    p.add_argument("--host", default="127.0.0.1", help="Web UI host (for UI mode)")
-    p.add_argument("--port", type=int, default=8000, help="Web UI port (for UI mode)")
-    p.add_argument(
-        "--no-browser",
-        action="store_true",
-        help="Neatver pārlūku automātiski (for UI mode)",
-    )
-
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("ui", help="Palaiž Desktop UI (Tkinter)")
-    sub.add_parser("web", help="Palaiž Web UI (lokāli pārlūkā)")
 
     sub.add_parser("init", help="Izveido datubāzes tabulas (ja nav)")
 
@@ -98,21 +88,6 @@ def main(argv: list[str]) -> int:
 
         print("LV: Palaižu Desktop UI... / EN: Starting Desktop UI...")
         run_desktop(db_path=str(args.db), lang=str(args.lang))
-        return 0
-
-    if args.cmd == "web":
-        # Lazy import so CLI-only usage doesn't pull in HTTP server.
-        from web_app import run  # noqa: WPS433
-
-        url = f"http://{args.host}:{args.port}/"
-        print("LV: Palaižu Web UI... / EN: Starting Web UI...")
-        print(url)
-        if not args.no_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
-        run(args.host, int(args.port), str(args.db))
         return 0
 
     if args.cmd == "init":

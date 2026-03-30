@@ -1,4 +1,4 @@
-# programma_rb
+# Rimi Baltic Inventory Prototype
 
 [Latviešu](#latviešu) | [English](#english)
 
@@ -29,7 +29,8 @@ Ja programma nepalaižas, paskaties `programma_rb_error.log`.
 
 Lai logs izskatās “oficiālāk”, vari ielikt savu logo failu mapē `assets`:
 
-- `assets/logo.png` (vai `assets/logo.gif`) — parādīsies augšā galvenē
+- `assets/logo_white.png` (ieteicams) vai `assets/logo.png` — parādīsies augšā galvenē
+- (ja izmanto tikai vienu failu) `assets/logo_red.png` — ieteicamais variants jaunajai baltajai galvenei
 - `assets/icon.ico` — loga ikona
 
 ### CLI lietošana
@@ -45,16 +46,7 @@ python .\main.py delete --lang lv --serial SN-001
 
 ### Web UI (opcioniāli)
 
-Ja vajag, var palaist arī Web UI pārlūkā:
-
-```powershell
-python .\main.py web --host 127.0.0.1 --port 8000
-
-# neatver pārlūku automātiski:
-python .\main.py web --no-browser
-```
-
-Atver: http://127.0.0.1:8000/
+Šajā versijā Web UI ir izņemts (programma ir paredzēta kā Desktop aplikācija).
 
 ### Statusi
 
@@ -94,7 +86,8 @@ If it fails to start, check `programma_rb_error.log`.
 
 To make the window look more “official”, put your own branding into `assets`:
 
-- `assets/logo.png` (or `assets/logo.gif`) — shown in the header
+- `assets/logo_white.png` (recommended) or `assets/logo.png` — shown in the header
+- (if you only use one file) `assets/logo_red.png` — recommended for the new white header
 - `assets/icon.ico` — window icon
 
 ### CLI usage
@@ -110,16 +103,7 @@ python .\main.py delete --lang en --serial SN-001
 
 ### Web UI (optional)
 
-If needed, you can also run a browser-based UI:
-
-```powershell
-python .\main.py web --host 127.0.0.1 --port 8000
-
-# do not auto-open browser:
-python .\main.py web --no-browser
-```
-
-Open: http://127.0.0.1:8000/
+In this version the Web UI is removed (the program is intended as a Desktop app).
 
 ### Statuses
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import traceback
 import tkinter as tk
+from tkinter import font as tkfont
 from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox
@@ -23,6 +24,117 @@ def _try_load_photo_image(path: Path) -> tk.PhotoImage | None:
         return None
 
 
+def _fit_photo_image(img: tk.PhotoImage, *, max_w: int, max_h: int) -> tk.PhotoImage:
+    try:
+        w = int(img.width())
+        h = int(img.height())
+        if w <= 0 or h <= 0:
+            return img
+
+        factor_w = (w + max_w - 1) // max_w
+        factor_h = (h + max_h - 1) // max_h
+        factor = max(1, factor_w, factor_h)
+        if factor <= 1:
+            return img
+        return img.subsample(factor, factor)
+    except Exception:
+        return img
+
+
+def _try_load_logo_image(path: Path, *, max_w: int, max_h: int) -> tk.PhotoImage | None:
+    """Load logo with high-quality resize (Pillow if available).
+
+    Tk's native subsample can look jagged; Pillow resize looks much cleaner.
+    """
+
+    if not path.exists():
+        return None
+
+    try:
+        from PIL import Image, ImageTk  # type: ignore
+
+        img = Image.open(path).convert("RGBA")
+
+        # If the logo is a banner with a solid-ish background (like a red rectangle),
+        # remove that background so it looks clean on the header.
+        try:
+            alpha = img.getchannel("A")
+            mins, maxs = alpha.getextrema()
+            has_transparency = mins < 255
+
+            if not has_transparency:
+                w, h = img.size
+                # Sample corners to estimate background color.
+                corners = [
+                    img.getpixel((0, 0)),
+                    img.getpixel((w - 1, 0)),
+                    img.getpixel((0, h - 1)),
+                    img.getpixel((w - 1, h - 1)),
+                ]
+                bg_r = sum(p[0] for p in corners) // 4
+                bg_g = sum(p[1] for p in corners) // 4
+                bg_b = sum(p[2] for p in corners) // 4
+
+                def near_bg(r: int, g: int, b: int) -> bool:
+                    # Tuned for typical "red header" banners with slight gradients.
+                    return abs(r - bg_r) + abs(g - bg_g) + abs(b - bg_b) <= 80
+
+                pixels = list(img.getdata())
+                new: list[tuple[int, int, int, int]] = []
+                for r, g, b, a in pixels:
+                    if a > 240 and near_bg(r, g, b):
+                        new.append((r, g, b, 0))
+                    else:
+                        new.append((r, g, b, a))
+                img.putdata(new)
+
+                bbox = img.getchannel("A").getbbox()
+                if bbox:
+                    img = img.crop(bbox)
+        except Exception:
+            pass
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            return None
+
+        scale = min(max_w / w, max_h / h, 1.0)
+        if scale < 1.0:
+            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        img = _try_load_photo_image(path)
+        if img is None:
+            return None
+        return _fit_photo_image(img, max_w=max_w, max_h=max_h)
+
+
+def _configure_windows_dpi(root: tk.Tk) -> None:
+    """Best-effort DPI awareness for crisp rendering on Windows."""
+
+    try:
+        import ctypes
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor DPI aware
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
+        dpi = 96
+        try:
+            dpi = int(ctypes.windll.user32.GetDpiForSystem())
+        except Exception:
+            pass
+
+        # Tk scaling uses pixels per point (1 point = 1/72 inch)
+        root.tk.call("tk", "scaling", dpi / 72)
+    except Exception:
+        pass
+
+
 class DeviceEditor(tk.Toplevel):
     def __init__(self, app: "DesktopApp", serial: str) -> None:
         super().__init__(app.root)
@@ -40,14 +152,14 @@ class DeviceEditor(tk.Toplevel):
         self._load_device()
 
     def _build_ui(self) -> None:
-        outer = ttk.Frame(self, padding=12)
+        outer = ttk.Frame(self, padding=14, style="Body.TFrame")
         outer.pack(fill=tk.BOTH, expand=True)
         outer.columnconfigure(0, weight=1)
 
         self.title_lbl = ttk.Label(outer, text="", style="Section.TLabel")
         self.title_lbl.grid(row=0, column=0, sticky="w")
 
-        form = ttk.Frame(outer)
+        form = ttk.Frame(outer, padding=14, style="Card.TFrame", relief="solid", borderwidth=1)
         form.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)
@@ -60,52 +172,54 @@ class DeviceEditor(tk.Toplevel):
         self.status_var = tk.StringVar(value=self.app._display_value("RECEIVED", kind="status"))
         self.comment_var = tk.StringVar()
 
-        self.serial_lbl = ttk.Label(form, text="")
+        self.serial_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.serial_lbl.grid(row=0, column=0, sticky="w")
-        self.serial_entry = ttk.Entry(form, textvariable=self.serial_var, state="readonly")
+        self.serial_entry = ttk.Entry(form, textvariable=self.serial_var, state="readonly", style="App.TEntry")
         self.serial_entry.grid(row=1, column=0, sticky="ew")
 
-        self.type_lbl = ttk.Label(form, text="")
+        self.type_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.type_lbl.grid(row=0, column=1, sticky="w", padx=(8, 0))
         self.type_combo = ttk.Combobox(
             form,
             textvariable=self.type_var,
             values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES],
             state="readonly",
+            style="App.TCombobox",
         )
         self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
-        self.model_lbl = ttk.Label(form, text="")
+        self.model_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.model_lbl.grid(row=2, column=0, sticky="w", pady=(8, 0))
-        self.model_entry = ttk.Entry(form, textvariable=self.model_var)
+        self.model_entry = ttk.Entry(form, textvariable=self.model_var, style="App.TEntry")
         self.model_entry.grid(row=3, column=0, sticky="ew")
 
-        self.status_lbl = ttk.Label(form, text="")
+        self.status_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         self.status_combo = ttk.Combobox(
             form,
             textvariable=self.status_var,
             values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)],
             state="readonly",
+            style="App.TCombobox",
         )
         self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
 
-        self.from_lbl = ttk.Label(form, text="")
+        self.from_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.from_lbl.grid(row=4, column=0, sticky="w", pady=(8, 0))
-        self.from_entry = ttk.Entry(form, textvariable=self.from_store_var)
+        self.from_entry = ttk.Entry(form, textvariable=self.from_store_var, style="App.TEntry")
         self.from_entry.grid(row=5, column=0, sticky="ew")
 
-        self.to_lbl = ttk.Label(form, text="")
+        self.to_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.to_lbl.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        self.to_entry = ttk.Entry(form, textvariable=self.to_store_var)
+        self.to_entry = ttk.Entry(form, textvariable=self.to_store_var, style="App.TEntry")
         self.to_entry.grid(row=5, column=1, sticky="ew", padx=(8, 0))
 
-        self.comment_lbl = ttk.Label(form, text="")
+        self.comment_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.comment_lbl.grid(row=6, column=0, sticky="w", pady=(8, 0))
-        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var)
+        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var, style="App.TEntry")
         self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
 
-        btns = ttk.Frame(outer)
+        btns = ttk.Frame(outer, style="Body.TFrame")
         btns.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
@@ -124,8 +238,8 @@ class DeviceEditor(tk.Toplevel):
 
     def _apply_i18n(self) -> None:
         # Preserve current codes while updating localized display
-        type_code = self.app._code_from_display(self.type_var.get()) or "scanner"
-        status_code = self.app._code_from_display(self.status_var.get()) or "RECEIVED"
+        type_code = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        status_code = self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
 
         self.title(self.app.tr("desktop_editor_title", serial=self.serial))
 
@@ -165,11 +279,11 @@ class DeviceEditor(tk.Toplevel):
         try:
             changed = self.app.db.update_device(
                 self.serial,
-                device_type=self.app._code_from_display(self.type_var.get()) or "scanner",
+                device_type=self.app._code_from_display(self.type_var.get(), kind="type") or "scanner",
                 model=self.model_var.get().strip() or None,
                 from_store=self.from_store_var.get().strip() or None,
                 to_store=self.to_store_var.get().strip() or None,
-                status=self.app._code_from_display(self.status_var.get()) or "RECEIVED",
+                status=self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
                 comment=self.comment_var.get().strip() or None,
             )
             if not changed:
@@ -207,11 +321,14 @@ class DesktopApp:
         self.lang = lang
 
         self.translations = load_translations()
+        self._rebuild_display_maps()
         self.db = InventoryDB(self.db_path)
         self.db.init_db()
 
         self._selected_serial: str | None = None
         self._editors: set[DeviceEditor] = set()
+        self.theme: str = "light"  # "light" | "dark"
+        self._filter_refresh_job: str | None = None
 
         self._build_ui()
         self._apply_i18n()
@@ -228,22 +345,88 @@ class DesktopApp:
     def _type_key(self, code: str) -> str:
         return f"type_{code.lower()}"
 
+    def _rebuild_display_maps(self) -> None:
+        # Code -> display should be in current language.
+        self._status_code_to_display = {}
+        for code in sorted(ALLOWED_STATUSES):
+            disp = self.tr(self._status_key(code)) or code
+            self._status_code_to_display[code] = disp
+
+        self._type_code_to_display = {}
+        for code in DEVICE_TYPES:
+            disp = self.tr(self._type_key(code)) or code
+            self._type_code_to_display[code] = disp
+
+        # Display -> code must accept BOTH LV/EN labels (and legacy "CODE — label")
+        # so switching language never breaks filtering/validation.
+        self._status_display_to_code = {}
+        for code in sorted(ALLOWED_STATUSES):
+            self._status_display_to_code[code] = code
+            self._status_display_to_code[code.upper()] = code
+            # Current language
+            cur_disp = self._status_code_to_display.get(code, code)
+            self._status_display_to_code[cur_disp] = code
+            self._status_display_to_code[f"{code} — {cur_disp}"] = code
+            # Other languages
+            for _lang, table in (self.translations or {}).items():
+                disp = (table or {}).get(self._status_key(code))
+                if disp:
+                    self._status_display_to_code[disp] = code
+                    self._status_display_to_code[f"{code} — {disp}"] = code
+
+        self._type_display_to_code = {}
+        for code in DEVICE_TYPES:
+            self._type_display_to_code[code] = code
+            self._type_display_to_code[code.lower()] = code
+            self._type_display_to_code[code.upper()] = code
+            cur_disp = self._type_code_to_display.get(code, code)
+            self._type_display_to_code[cur_disp] = code
+            self._type_display_to_code[f"{code} — {cur_disp}"] = code
+            for _lang, table in (self.translations or {}).items():
+                disp = (table or {}).get(self._type_key(code))
+                if disp:
+                    self._type_display_to_code[disp] = code
+                    self._type_display_to_code[f"{code} — {disp}"] = code
+
     def _display_value(self, code: str, *, kind: str) -> str:
         code = (code or "").strip()
         if not code:
             return ""
         if kind == "status":
-            label = self.tr(self._status_key(code))
-        elif kind == "type":
-            label = self.tr(self._type_key(code))
-        else:
-            label = code
-        return f"{code} — {label}" if label else code
+            return self._status_code_to_display.get(code, code)
+        if kind == "type":
+            return self._type_code_to_display.get(code, code)
+        return code
 
-    def _code_from_display(self, display: str) -> str:
+    def _code_from_display(self, display: str, *, kind: str) -> str:
         if not display:
             return ""
-        return display.split(" — ", 1)[0].strip()
+        display = display.strip()
+
+        # Backward-compatible: previously UI used "CODE — label".
+        if " — " in display:
+            return display.split(" — ", 1)[0].strip()
+
+        if kind == "status":
+            return self._status_display_to_code.get(display, display)
+        if kind == "type":
+            return self._type_display_to_code.get(display, display)
+        return display
+
+    def _normalize_code(self, value: str | None, *, kind: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return ""
+
+        code = (self._code_from_display(raw, kind=kind) or "").strip()
+
+        if kind == "status":
+            up = code.upper()
+            return up if up in ALLOWED_STATUSES else code
+        if kind == "type":
+            low = code.lower()
+            return low if low in DEVICE_TYPES else code
+        return code
 
     # ---------- UI ----------
 
@@ -256,20 +439,54 @@ class DesktopApp:
 
         self._setup_branding_assets()
 
-        top = ttk.Frame(self.root, padding=12)
-        top.pack(fill=tk.X)
+        # --- Top header (red bar like reference) ---
+        # Darker base red so the red logo stays visible without any white box.
+        self._header_bg = "#8a0000"
+        self._header_bg_hi = "#d50000"
+        self._header_shadow = "#5a0000"
 
-        self.logo_lbl = ttk.Label(top, text="")
+        self.header_outer = tk.Frame(self.root, bg=self._header_bg)
+        self.header_outer.pack(fill=tk.X, side=tk.TOP)
+
+        self.header_highlight = tk.Frame(self.header_outer, bg=self._header_bg_hi, height=3)
+        self.header_highlight.pack(fill=tk.X, side=tk.TOP)
+
+        self.header_main = tk.Frame(self.header_outer, bg=self._header_bg)
+        self.header_main.pack(fill=tk.X, side=tk.TOP)
+
+        self.header_shadow_line = tk.Frame(self.header_outer, bg=self._header_shadow, height=2)
+        self.header_shadow_line.pack(fill=tk.X, side=tk.TOP)
+
+        left = tk.Frame(self.header_main, bg=self._header_bg)
+        left.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=16, pady=10)
+
+        # Logo directly on the header (no white border/frame)
+        self.logo_lbl = tk.Label(left, text="", bg=self._header_bg, fg="#ffffff")
         self.logo_lbl.pack(side=tk.LEFT)
 
-        self.title_lbl = ttk.Label(top, text="programma_rb", style="Title.TLabel")
-        self.title_lbl.pack(side=tk.LEFT, padx=(10, 0))
+        title_wrap = tk.Frame(left, bg=self._header_bg)
+        title_wrap.pack(side=tk.LEFT, padx=(14, 0), anchor="w")
 
-        self.subtitle_lbl = ttk.Label(top, text="", style="SubTitle.TLabel")
-        self.subtitle_lbl.pack(side=tk.LEFT, padx=(12, 0))
+        self.title_lbl = tk.Label(
+            title_wrap,
+            text="programma_rb",
+            bg=self._header_bg,
+            fg="#ffffff",
+            font=("Segoe UI", 14, "bold"),
+        )
+        self.title_lbl.pack(anchor="w")
 
-        right = ttk.Frame(top)
-        right.pack(side=tk.RIGHT)
+        self.subtitle_lbl = tk.Label(
+            title_wrap,
+            text="",
+            bg=self._header_bg,
+            fg="#ffecec",
+            font=("Segoe UI", 9),
+        )
+        self.subtitle_lbl.pack(anchor="w", pady=(2, 0))
+
+        right = tk.Frame(self.header_main, bg=self._header_bg)
+        right.pack(side=tk.RIGHT, padx=16, pady=10)
 
         self.lang_var = tk.StringVar(value=self.lang)
         self.lang_combo = ttk.Combobox(
@@ -278,14 +495,15 @@ class DesktopApp:
             values=["lv", "en"],
             width=6,
             state="readonly",
+            style="Top.TCombobox",
         )
         self.lang_combo.pack(side=tk.RIGHT)
         self.lang_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_lang_changed())
 
-        self.refresh_btn = ttk.Button(right, command=self.refresh_list, style="Secondary.TButton")
-        self.refresh_btn.pack(side=tk.RIGHT, padx=(0, 10))
+        self.theme_btn = ttk.Button(right, command=self.toggle_theme, style="Top.TButton")
+        self.theme_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
-        body = ttk.Frame(self.root, padding=(12, 0, 12, 12))
+        body = ttk.Frame(self.root, padding=14, style="Body.TFrame")
         body.pack(fill=tk.BOTH, expand=True)
 
         body.columnconfigure(0, weight=1)
@@ -293,14 +511,14 @@ class DesktopApp:
         body.rowconfigure(0, weight=1)
 
         # Left: form
-        self.form_card = ttk.Frame(body, padding=12, style="Card.TFrame")
+        self.form_card = ttk.Frame(body, padding=14, style="Card.TFrame", relief="solid", borderwidth=1)
         self.form_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self.form_card.columnconfigure(0, weight=1)
 
         self.actions_title = ttk.Label(self.form_card, text="", style="Section.TLabel")
         self.actions_title.grid(row=0, column=0, sticky="w")
 
-        form = ttk.Frame(self.form_card)
+        form = ttk.Frame(self.form_card, style="Card.TFrame")
         form.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)
@@ -316,58 +534,50 @@ class DesktopApp:
 
         self._field(form, 0, 0, "web_serial", self.serial_var)
 
-        self.type_lbl = ttk.Label(form, text="")
+        self.type_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.type_lbl.grid(row=0, column=1, sticky="w")
         self.type_combo = ttk.Combobox(
             form,
             textvariable=self.type_var,
             state="readonly",
+            style="App.TCombobox",
         )
         self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         self._field(form, 2, 0, "web_model", self.model_var)
 
-        self.status_lbl = ttk.Label(form, text="")
+        self.status_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0))
         self.status_combo = ttk.Combobox(
             form,
             textvariable=self.status_var,
             state="readonly",
+            style="App.TCombobox",
         )
         self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
 
         self._field(form, 4, 0, "web_from_store", self.from_store_var)
         self._field(form, 4, 1, "web_to_store", self.to_store_var, padx_left=8)
 
-        self.comment_lbl = ttk.Label(form, text="")
+        self.comment_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.comment_lbl.grid(row=6, column=0, sticky="w", pady=(8, 0))
-        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var)
+        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var, style="App.TEntry")
         self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
 
         self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var)
         self.overwrite_chk.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
-        btns = ttk.Frame(self.form_card)
+        btns = ttk.Frame(self.form_card, style="Card.TFrame")
         btns.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
-        btns.columnconfigure(2, weight=1)
-        btns.columnconfigure(3, weight=1)
 
         self.add_btn = ttk.Button(btns, command=self.add_device, style="Primary.TButton")
         self.add_btn.grid(row=0, column=0, sticky="ew")
 
-        self.update_btn = ttk.Button(btns, command=self.update_device, style="Secondary.TButton")
-        self.update_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        self.clear_form_btn = ttk.Button(btns, command=self.clear_form, style="Secondary.TButton")
+        self.clear_form_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
-        self.status_btn = ttk.Button(btns, command=self.change_status, style="Secondary.TButton")
-        self.status_btn.grid(row=0, column=2, sticky="ew", padx=(8, 0))
-
-        self.delete_btn = ttk.Button(btns, command=self.delete_selected, style="Danger.TButton")
-        self.delete_btn.grid(row=0, column=3, sticky="ew", padx=(8, 0))
-
-        self.clear_btn = ttk.Button(self.form_card, command=self.clear_form, style="Secondary.TButton")
-        self.clear_btn.grid(row=4, column=0, sticky="ew", pady=(10, 0))
 
         self.result_lbl = ttk.Label(self.form_card, text="", style="Muted.TLabel")
         self.result_lbl.grid(row=5, column=0, sticky="w", pady=(10, 0))
@@ -376,7 +586,6 @@ class DesktopApp:
             self.form_card,
             height=8,
             wrap="word",
-            bg="#ffffff",
             relief="solid",
             borderwidth=1,
         )
@@ -384,12 +593,12 @@ class DesktopApp:
         self.form_card.rowconfigure(6, weight=1)
 
         # Right: list + filters
-        self.list_card = ttk.Frame(body, padding=12, style="Card.TFrame")
+        self.list_card = ttk.Frame(body, padding=14, style="Card.TFrame", relief="solid", borderwidth=1)
         self.list_card.grid(row=0, column=1, sticky="nsew")
         self.list_card.columnconfigure(0, weight=1)
         self.list_card.rowconfigure(2, weight=1)
 
-        list_header = ttk.Frame(self.list_card)
+        list_header = ttk.Frame(self.list_card, style="Card.TFrame")
         list_header.grid(row=0, column=0, sticky="ew")
         list_header.columnconfigure(0, weight=1)
 
@@ -399,39 +608,66 @@ class DesktopApp:
         self.double_click_hint = ttk.Label(list_header, text="", style="Muted.TLabel")
         self.double_click_hint.grid(row=0, column=1, sticky="e")
 
-        filters = ttk.Frame(self.list_card)
+        self.clear_filters_btn = ttk.Button(list_header, command=self.clear_filters, style="Secondary.TButton")
+        self.clear_filters_btn.grid(row=0, column=2, sticky="e", padx=(10, 0))
+
+        filters = ttk.Frame(self.list_card, style="Card.TFrame")
         filters.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        for c in range(4):
+        for c in range(7):
             filters.columnconfigure(c, weight=1)
 
         self.filter_status_var = tk.StringVar(value="")
+        self.filter_type_var = tk.StringVar(value="")
+        self.filter_serial_var = tk.StringVar(value="")
+        self.filter_model_var = tk.StringVar(value="")
         self.filter_from_var = tk.StringVar(value="")
         self.filter_to_var = tk.StringVar(value="")
         self.limit_var = tk.StringVar(value="200")
 
-        self.filter_status_lbl = ttk.Label(filters, text="")
+        self.filter_status_lbl = ttk.Label(filters, text="", style="Label.TLabel")
         self.filter_status_lbl.grid(row=0, column=0, sticky="w")
         self.filter_status_combo = ttk.Combobox(
             filters,
             textvariable=self.filter_status_var,
             state="readonly",
+            style="App.TCombobox",
         )
         self.filter_status_combo.grid(row=1, column=0, sticky="ew")
 
-        self.limit_lbl = ttk.Label(filters, text="")
-        self.limit_lbl.grid(row=0, column=1, sticky="w", padx=(8, 0))
-        self.limit_entry = ttk.Entry(filters, textvariable=self.limit_var)
-        self.limit_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        self.filter_type_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_type_lbl.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.filter_type_combo = ttk.Combobox(
+            filters,
+            textvariable=self.filter_type_var,
+            state="readonly",
+            style="App.TCombobox",
+        )
+        self.filter_type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
-        self.filter_from_lbl = ttk.Label(filters, text="")
-        self.filter_from_lbl.grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self.filter_from_entry = ttk.Entry(filters, textvariable=self.filter_from_var)
-        self.filter_from_entry.grid(row=1, column=2, sticky="ew", padx=(8, 0))
+        self.filter_serial_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_serial_lbl.grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.filter_serial_entry = ttk.Entry(filters, textvariable=self.filter_serial_var, style="App.TEntry")
+        self.filter_serial_entry.grid(row=1, column=2, sticky="ew", padx=(8, 0))
 
-        self.filter_to_lbl = ttk.Label(filters, text="")
-        self.filter_to_lbl.grid(row=0, column=3, sticky="w", padx=(8, 0))
-        self.filter_to_entry = ttk.Entry(filters, textvariable=self.filter_to_var)
-        self.filter_to_entry.grid(row=1, column=3, sticky="ew", padx=(8, 0))
+        self.filter_model_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_model_lbl.grid(row=0, column=3, sticky="w", padx=(8, 0))
+        self.filter_model_entry = ttk.Entry(filters, textvariable=self.filter_model_var, style="App.TEntry")
+        self.filter_model_entry.grid(row=1, column=3, sticky="ew", padx=(8, 0))
+
+        self.limit_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.limit_lbl.grid(row=0, column=6, sticky="w", padx=(8, 0))
+        self.limit_entry = ttk.Entry(filters, textvariable=self.limit_var, style="App.TEntry")
+        self.limit_entry.grid(row=1, column=6, sticky="ew", padx=(8, 0))
+
+        self.filter_from_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_from_lbl.grid(row=0, column=4, sticky="w", padx=(8, 0))
+        self.filter_from_entry = ttk.Entry(filters, textvariable=self.filter_from_var, style="App.TEntry")
+        self.filter_from_entry.grid(row=1, column=4, sticky="ew", padx=(8, 0))
+
+        self.filter_to_lbl = ttk.Label(filters, text="", style="Label.TLabel")
+        self.filter_to_lbl.grid(row=0, column=5, sticky="w", padx=(8, 0))
+        self.filter_to_entry = ttk.Entry(filters, textvariable=self.filter_to_var, style="App.TEntry")
+        self.filter_to_entry.grid(row=1, column=5, sticky="ew", padx=(8, 0))
 
         # Treeview
         cols = ("serial", "type", "model", "from", "to", "status", "updated")
@@ -467,6 +703,12 @@ class DesktopApp:
 
         self._build_context_menu()
 
+        # Auto-refresh on filter changes
+        self._bind_filter_auto_refresh()
+
+        # Ensure non-ttk widgets match current theme (Result background etc.)
+        self._apply_non_ttk_theme()
+
     def _build_context_menu(self) -> None:
         self.menu = tk.Menu(self.root, tearoff=False)
         self.menu.add_command(label=self.tr("web_edit"), command=self._on_row_double_click)
@@ -500,86 +742,303 @@ class DesktopApp:
 
     def _style(self) -> None:
         style = ttk.Style(self.root)
+        self._apply_theme(style)
+
+    def _apply_theme(self, style: ttk.Style) -> None:
+        """Apply light/dark theme with high contrast (readable buttons)."""
+
+        theme = (self.theme or "light").lower()
+        brand_red = "#d50000"
+
+        # Use a fully-styleable ttk theme for BOTH modes.
+        # Native Windows themes often ignore custom colors -> unreadable buttons.
         try:
             style.theme_use("clam")
         except Exception:
             pass
 
-        # Rimi-like red/white
-        self.root.configure(bg="#ffffff")
+        if theme == "dark":
+            bg = "#0f1216"
+            card_bg = "#171b21"
+            text = "#e8eaed"
+            muted = "#a5aab3"
+            border = "#2a2f39"
+            entry_bg = "#11151a"
+            tree_sel = "#232a35"
+            header_btn_bg = "#202632"
+            header_btn_hover = "#2a3342"
+            header_btn_fg = "#ffffff"
+            secondary_bg = "#202632"
+            secondary_hover = "#2a3342"
+            secondary_fg = "#ffffff"
+        else:
+            bg = "#f5f6f8"
+            card_bg = "#ffffff"
+            text = "#111111"
+            muted = "#6b7280"
+            border = "#e5e7eb"
+            entry_bg = "#ffffff"
+            tree_sel = "#fff5f5"
+            header_btn_bg = "#ffffff"
+            header_btn_hover = "#fff5f5"
+            header_btn_fg = brand_red
+            secondary_bg = "#ffffff"
+            secondary_hover = "#fff5f5"
+            secondary_fg = text
 
-        style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"), background="#ffffff", foreground="#d50000")
-        style.configure("SubTitle.TLabel", font=("Segoe UI", 10), background="#ffffff", foreground="#666666")
-        style.configure("Section.TLabel", font=("Segoe UI", 11, "bold"), background="#ffffff", foreground="#111111")
-        style.configure("Muted.TLabel", font=("Segoe UI", 9), background="#ffffff", foreground="#666666")
+        self.root.configure(bg=bg)
 
-        style.configure("Card.TFrame", background="#ffffff")
+        # Defaults for any widget not using our explicit styles
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=card_bg, foreground=text)
 
+        style.configure("Header.TFrame", background=card_bg)
+        style.configure("HeaderTitle.TLabel", font=("Segoe UI", 16, "bold"), background=card_bg, foreground=brand_red)
+        style.configure("HeaderSub.TLabel", font=("Segoe UI", 10), background=card_bg, foreground=muted)
+        style.configure("HeaderLogo.TLabel", background=card_bg)
+
+        # Top red header widgets (always readable)
+        top_btn_bg = "#8a0000"
+        top_btn_hover = "#a10000"
+        style.configure("Top.TButton", font=("Segoe UI", 9, "bold"), padding=(10, 7))
+        style.map(
+            "Top.TButton",
+            background=[("pressed", top_btn_hover), ("active", top_btn_hover), ("!disabled", top_btn_bg)],
+            foreground=[("pressed", "#ffffff"), ("active", "#ffffff"), ("!disabled", "#ffffff")],
+        )
         style.configure(
-            "TEntry",
+            "Top.TCombobox",
             padding=(8, 6),
+            font=("Segoe UI", 10),
+            fieldbackground=top_btn_bg,
+            background=top_btn_bg,
+            foreground="#ffffff",
+            arrowcolor="#ffffff",
+        )
+        style.map(
+            "Top.TCombobox",
+            fieldbackground=[("readonly", top_btn_bg), ("!readonly", top_btn_bg), ("disabled", top_btn_bg)],
+            foreground=[("readonly", "#ffffff"), ("!readonly", "#ffffff"), ("disabled", "#ffffff")],
+            background=[("readonly", top_btn_bg), ("!readonly", top_btn_bg)],
+            selectbackground=[("readonly", top_btn_bg), ("!readonly", top_btn_bg)],
+            selectforeground=[("readonly", "#ffffff"), ("!readonly", "#ffffff")],
         )
 
+        style.configure("Body.TFrame", background=bg)
+
+        style.configure("Section.TLabel", font=("Segoe UI", 11, "bold"), background=card_bg, foreground=text)
+        style.configure("Muted.TLabel", font=("Segoe UI", 9), background=card_bg, foreground=muted)
+        style.configure("Label.TLabel", font=("Segoe UI", 9), background=card_bg, foreground=text)
+
+        style.configure("Card.TFrame", background=card_bg)
+
+        style.configure("TCheckbutton", background=card_bg, foreground=text)
+
+        # Inputs
+        style.configure("App.TEntry", padding=(10, 8), font=("Segoe UI", 10), fieldbackground=entry_bg, foreground=text)
+        style.map(
+            "App.TEntry",
+            fieldbackground=[("!disabled", entry_bg), ("disabled", card_bg)],
+            foreground=[("!disabled", text), ("disabled", muted)],
+        )
+
+        style.configure(
+            "App.TCombobox",
+            padding=(8, 6),
+            font=("Segoe UI", 10),
+            fieldbackground=entry_bg,
+            background=entry_bg,
+            foreground=text,
+            arrowcolor=text,
+        )
+        # Readonly combobox uses a special state; map colors explicitly.
+        style.map(
+            "App.TCombobox",
+            fieldbackground=[
+                ("readonly", entry_bg),
+                ("!readonly", entry_bg),
+                ("active", entry_bg),
+                ("focus", entry_bg),
+                ("disabled", card_bg),
+            ],
+            foreground=[
+                ("readonly", text),
+                ("!readonly", text),
+                ("active", text),
+                ("focus", text),
+                ("disabled", muted),
+            ],
+            background=[("readonly", entry_bg), ("!readonly", entry_bg), ("active", entry_bg), ("focus", entry_bg)],
+            selectbackground=[("readonly", entry_bg), ("!readonly", entry_bg), ("active", entry_bg), ("focus", entry_bg)],
+            selectforeground=[("readonly", text), ("!readonly", text), ("active", text), ("focus", text)],
+            arrowcolor=[("readonly", text), ("!readonly", text), ("active", text), ("focus", text), ("disabled", muted)],
+        )
+
+        # Keep default class styles aligned too (some widgets might not be updated)
+        style.configure("TEntry", padding=(10, 8), font=("Segoe UI", 10), fieldbackground=entry_bg, foreground=text)
+        style.map(
+            "TEntry",
+            fieldbackground=[("!disabled", entry_bg), ("disabled", card_bg)],
+            foreground=[("!disabled", text), ("disabled", muted)],
+        )
         style.configure(
             "TCombobox",
-            padding=(6, 4),
+            padding=(8, 6),
+            font=("Segoe UI", 10),
+            fieldbackground=entry_bg,
+            background=entry_bg,
+            foreground=text,
+            arrowcolor=text,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", entry_bg),
+                ("!readonly", entry_bg),
+                ("active", entry_bg),
+                ("focus", entry_bg),
+                ("disabled", card_bg),
+            ],
+            foreground=[
+                ("readonly", text),
+                ("!readonly", text),
+                ("active", text),
+                ("focus", text),
+                ("disabled", muted),
+            ],
+            background=[("readonly", entry_bg), ("!readonly", entry_bg), ("active", entry_bg), ("focus", entry_bg)],
+            selectbackground=[("readonly", entry_bg), ("!readonly", entry_bg), ("active", entry_bg), ("focus", entry_bg)],
+            selectforeground=[("readonly", text), ("!readonly", text), ("active", text), ("focus", text)],
+            arrowcolor=[("readonly", text), ("!readonly", text), ("active", text), ("focus", text), ("disabled", muted)],
         )
 
+        # Combobox dropdown list colors (Listbox is a tk widget)
+        try:
+            self.root.option_add("*TCombobox*Listbox.background", entry_bg)
+            self.root.option_add("*TCombobox*Listbox.foreground", text)
+            self.root.option_add("*TCombobox*Listbox.selectBackground", tree_sel)
+            self.root.option_add("*TCombobox*Listbox.selectForeground", text)
+            # Hover (active) item in dropdown
+            self.root.option_add("*TCombobox*Listbox.activeBackground", tree_sel)
+            self.root.option_add("*TCombobox*Listbox.activeForeground", text)
+        except Exception:
+            pass
+
+        # Table
         style.configure(
             "Treeview",
             font=("Segoe UI", 9),
-            rowheight=28,
-            background="#ffffff",
-            fieldbackground="#ffffff",
-            foreground="#111111",
+            rowheight=30,
+            background=card_bg,
+            fieldbackground=card_bg,
+            foreground=text,
             borderwidth=0,
         )
         style.map(
             "Treeview",
-            background=[("selected", "#fff5f5")],
-            foreground=[("selected", "#111111")],
+            background=[("selected", tree_sel)],
+            foreground=[("selected", text)],
         )
-
         style.configure(
             "Treeview.Heading",
             font=("Segoe UI", 9, "bold"),
-            background="#ffffff",
-            foreground="#111111",
+            background=card_bg,
+            foreground=text,
             relief="flat",
         )
 
-        style.configure(
-            "Primary.TButton",
-            font=("Segoe UI", 10, "bold"),
-            padding=(10, 8),
-        )
+        # Header buttons (refresh/theme)
+        style.configure("Header.TButton", font=("Segoe UI", 9, "bold"), padding=(10, 7))
         style.map(
-            "Primary.TButton",
-            background=[("!disabled", "#d50000"), ("active", "#b40000")],
-            foreground=[("!disabled", "#ffffff")],
+            "Header.TButton",
+            background=[("pressed", header_btn_hover), ("active", header_btn_hover), ("!disabled", header_btn_bg)],
+            foreground=[("pressed", header_btn_fg), ("active", header_btn_fg), ("!disabled", header_btn_fg)],
         )
 
-        style.configure(
-            "Secondary.TButton",
-            font=("Segoe UI", 10),
-            padding=(10, 8),
-        )
+        # Default buttons (fallback) - keep readable on hover
+        style.configure("TButton", font=("Segoe UI", 10), padding=(10, 8))
         style.map(
-            "Secondary.TButton",
-            background=[("!disabled", "#ffffff"), ("active", "#fff5f5")],
-            foreground=[("!disabled", "#d50000")],
+            "TButton",
+            background=[("pressed", secondary_hover), ("active", secondary_hover), ("!disabled", secondary_bg)],
+            foreground=[("pressed", secondary_fg), ("active", secondary_fg), ("!disabled", secondary_fg)],
         )
 
-        style.configure(
-            "Danger.TButton",
-            font=("Segoe UI", 10, "bold"),
-            padding=(10, 8),
+        # Main buttons
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(10, 8))
+        style.map(
+            "Primary.TButton",
+            background=[("pressed", "#b40000"), ("active", "#b40000"), ("!disabled", brand_red)],
+            foreground=[("pressed", "#ffffff"), ("active", "#ffffff"), ("!disabled", "#ffffff")],
         )
+
+        style.configure("Secondary.TButton", font=("Segoe UI", 10), padding=(10, 8))
+        style.map(
+            "Secondary.TButton",
+            background=[("pressed", secondary_hover), ("active", secondary_hover), ("!disabled", secondary_bg)],
+            foreground=[("pressed", secondary_fg), ("active", secondary_fg), ("!disabled", secondary_fg)],
+        )
+
+        style.configure("Danger.TButton", font=("Segoe UI", 10, "bold"), padding=(10, 8))
         style.map(
             "Danger.TButton",
-            background=[("!disabled", "#b00020"), ("active", "#8a0019")],
-            foreground=[("!disabled", "#ffffff")],
+            background=[("pressed", "#8a0019"), ("active", "#8a0019"), ("!disabled", "#b00020")],
+            foreground=[("pressed", "#ffffff"), ("active", "#ffffff"), ("!disabled", "#ffffff")],
         )
+
+        # Non-ttk widgets
+        self._apply_non_ttk_theme()
+
+    def _apply_non_ttk_theme(self) -> None:
+        """Apply theme colors to tk.* widgets (Text / header frames)."""
+
+        theme = (self.theme or "light").lower()
+        if theme == "dark":
+            entry_bg = "#0b0f14"  # black-ish
+            text = "#e8eaed"
+            tree_sel = "#232a35"
+            border = "#2a2f39"
+        else:
+            entry_bg = "#ffffff"
+            text = "#111111"
+            tree_sel = "#fff5f5"
+            border = "#e5e7eb"
+
+        # Header stays red in both modes, but keep label background aligned
+        try:
+            self.header_outer.configure(bg=self._header_bg)
+            self.header_main.configure(bg=self._header_bg)
+            self.header_highlight.configure(bg=self._header_bg_hi)
+            self.header_shadow_line.configure(bg=self._header_shadow)
+        except Exception:
+            pass
+        try:
+            self.logo_lbl.configure(bg=getattr(self, "_header_bg", "#b40000"))
+        except Exception:
+            pass
+
+        try:
+            state = str(self.result_txt.cget("state"))
+            self.result_txt.configure(state="normal")
+            # Configure only options supported by tk.Text across Tk versions.
+            self.result_txt.configure(
+                bg=entry_bg,
+                fg=text,
+                insertbackground=text,
+                selectbackground=tree_sel,
+                selectforeground=text,
+                highlightbackground=border,
+                highlightcolor=border,
+            )
+            self.result_txt.configure(state=state)
+        except Exception:
+            pass
+
+    def toggle_theme(self) -> None:
+        self.theme = "dark" if (self.theme or "light") == "light" else "light"
+        self._style()
+        self._apply_i18n()
+        self.refresh_list()
+        self._refresh_open_editors_i18n()
 
     def _setup_branding_assets(self) -> None:
         """Loads user-provided logo/icon from ./assets.
@@ -591,8 +1050,17 @@ class DesktopApp:
         assets_dir = Path(__file__).resolve().parent / "assets"
 
         self._logo_img: tk.PhotoImage | None = None
-        for name in ("logo.png", "logo.gif"):
-            img = _try_load_photo_image(assets_dir / name)
+
+        # Use red logo on white header.
+        for name in (
+            "logo_red.png",
+            "logo_red.gif",
+            "logo.png",
+            "logo.gif",
+            "logo_white.png",
+            "logo_white.gif",
+        ):
+            img = _try_load_logo_image(assets_dir / name, max_w=260, max_h=64)
             if img is not None:
                 self._logo_img = img
                 break
@@ -614,14 +1082,16 @@ class DesktopApp:
         *,
         padx_left: int = 0,
     ) -> None:
-        lbl = ttk.Label(parent, text="")
+        lbl = ttk.Label(parent, text="", style="Label.TLabel")
         lbl.grid(row=row, column=col, sticky="w", pady=(8, 0), padx=(padx_left, 0))
-        ent = ttk.Entry(parent, textvariable=var)
+        ent = ttk.Entry(parent, textvariable=var, style="App.TEntry")
         ent.grid(row=row + 1, column=col, sticky="ew", padx=(padx_left, 0))
         setattr(self, f"_lbl_{label_key}_{row}_{col}", lbl)
 
     def _apply_i18n(self) -> None:
         self.lang = self.lang_var.get().lower()
+
+        self._rebuild_display_maps()
 
         self.root.title(self.tr("app_title"))
 
@@ -629,11 +1099,15 @@ class DesktopApp:
             self.logo_lbl.config(image=self._logo_img, text="")
             self.logo_lbl.image = self._logo_img  # keep reference
         else:
-            self.logo_lbl.config(text=self.tr("desktop_brand"), style="Title.TLabel")
+            self.logo_lbl.config(text=self.tr("desktop_brand"))
 
-        self.title_lbl.config(text=f"{self.tr('desktop_brand')} — {self.tr('desktop_brand_title')}")
+        # Header text (reference-like)
+        self.title_lbl.config(text=f"{self.tr('desktop_brand')} {self.tr('desktop_brand_title')}")
         self.subtitle_lbl.config(text=self.tr("desktop_brand_subtitle"))
-        self.refresh_btn.config(text=self.tr("web_refresh"))
+
+        self.theme_btn.config(
+            text=self.tr("desktop_theme_dark") if (self.theme or "light") == "light" else self.tr("desktop_theme_bright")
+        )
 
         self.actions_title.config(text=self.tr("web_action"))
         self.list_title.config(text=self.tr("web_list"))
@@ -650,24 +1124,27 @@ class DesktopApp:
         self.overwrite_chk.config(text=self.tr("web_overwrite"))
 
         self.add_btn.config(text=self.tr("web_add"))
-        self.update_btn.config(text=self.tr("web_update"))
-        self.status_btn.config(text=self.tr("web_change_status"))
-        self.delete_btn.config(text=self.tr("web_delete"))
-        self.clear_btn.config(text=self.tr("web_refresh"))
+        self.clear_form_btn.config(text=self.tr("desktop_clear_form"))
+        # Update / Status / Delete buttons removed from Action section (use editor/context menu)
 
         self.result_lbl.config(text=self.tr("web_result"))
 
         # Filters
         self.filter_status_lbl.config(text=self.tr("web_status"))
+        self.filter_type_lbl.config(text=self.tr("web_type"))
+        self.filter_serial_lbl.config(text=self.tr("web_serial"))
+        self.filter_model_lbl.config(text=self.tr("web_model"))
         self.limit_lbl.config(text=self.tr("web_limit"))
         self.filter_from_lbl.config(text=self.tr("web_from_store"))
         self.filter_to_lbl.config(text=self.tr("web_to_store"))
 
+        self.clear_filters_btn.config(text=self.tr("desktop_clear_filters"))
+
         self.double_click_hint.config(text=self.tr("desktop_double_click_hint"))
 
         # Dropdown values (localized display, stable code prefix)
-        type_code = self._code_from_display(self.type_var.get()) or "scanner"
-        status_code = self._code_from_display(self.status_var.get()) or "RECEIVED"
+        type_code = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        status_code = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
 
         type_values = [self._display_value(tp, kind="type") for tp in DEVICE_TYPES]
         status_values = [self._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)]
@@ -679,11 +1156,18 @@ class DesktopApp:
         self.status_var.set(self._display_value(status_code, kind="status"))
 
         # Status filter (localized display, stable code prefix; empty means no filter)
-        current_filter_code = self._code_from_display(self.filter_status_var.get())
+        current_filter_code = self._code_from_display(self.filter_status_var.get(), kind="status")
         filter_values = [""] + status_values
         self.filter_status_combo.configure(values=filter_values)
         if current_filter_code:
             self.filter_status_var.set(self._display_value(current_filter_code, kind="status"))
+
+        # Type filter (localized display; empty means no filter)
+        current_type_code = self._code_from_display(self.filter_type_var.get(), kind="type")
+        type_filter_values = [""] + type_values
+        self.filter_type_combo.configure(values=type_filter_values)
+        if current_type_code:
+            self.filter_type_var.set(self._display_value(current_type_code, kind="type"))
 
         # Tree headings
         self.tree.heading("serial", text=self.tr("web_serial"))
@@ -702,6 +1186,67 @@ class DesktopApp:
         self._build_context_menu()
 
         self._write_result({"ok": True, "lang": self.lang})
+
+        # Result widget colors can be wrong on first paint; re-apply.
+        self._apply_non_ttk_theme()
+
+    def _bind_filter_auto_refresh(self) -> None:
+        def _trace(_a: str = "", _b: str = "", _c: str = "") -> None:
+            self._schedule_filter_refresh()
+
+        for var in (
+            self.filter_from_var,
+            self.filter_to_var,
+            self.filter_model_var,
+            self.filter_serial_var,
+            self.limit_var,
+            self.filter_type_var,
+        ):
+            try:
+                var.trace_add("write", _trace)
+            except Exception:
+                pass
+
+        # Combobox selection event
+        try:
+            self.filter_status_combo.bind("<<ComboboxSelected>>", lambda _e: self._schedule_filter_refresh())
+        except Exception:
+            pass
+
+        try:
+            self.filter_type_combo.bind("<<ComboboxSelected>>", lambda _e: self._schedule_filter_refresh())
+        except Exception:
+            pass
+
+        # Also refresh when status filter variable changes (covers keyboard navigation)
+        try:
+            self.filter_status_var.trace_add("write", _trace)
+        except Exception:
+            pass
+
+    def _schedule_filter_refresh(self) -> None:
+        if self._filter_refresh_job is not None:
+            try:
+                self.root.after_cancel(self._filter_refresh_job)
+            except Exception:
+                pass
+            self._filter_refresh_job = None
+
+        self._filter_refresh_job = self.root.after(250, self._run_filter_refresh)
+
+    def _run_filter_refresh(self) -> None:
+        self._filter_refresh_job = None
+        self.refresh_list()
+
+    def clear_filters(self) -> None:
+        self.filter_status_var.set("")
+        self.filter_type_var.set("")
+        self.filter_serial_var.set("")
+        self.filter_model_var.set("")
+        self.filter_from_var.set("")
+        self.filter_to_var.set("")
+        self.limit_var.set("200")
+        self.refresh_list()
 
     def _get_field_label(self, label_key: str, row: int, col: int) -> ttk.Label:
         return getattr(self, f"_lbl_{label_key}_{row}_{col}")
@@ -729,23 +1274,32 @@ class DesktopApp:
     # ---------- Data actions ----------
 
     def _write_result(self, payload: object, ok: bool = True) -> None:
+        # Force background in case Tk ignored earlier theme updates.
+        self._apply_non_ttk_theme()
         self.result_txt.configure(state="normal")
         self.result_txt.delete("1.0", tk.END)
         self.result_txt.insert("1.0", str(payload))
         self.result_txt.configure(state="disabled")
-        self.result_txt.tag_configure("ok", foreground="#0a7a2f")
-        self.result_txt.tag_configure("err", foreground="#b00020")
+        if (self.theme or "light") == "dark":
+            ok_fg = "#7ee787"
+            err_fg = "#ff7b72"
+        else:
+            ok_fg = "#0a7a2f"
+            err_fg = "#b00020"
+
+        self.result_txt.tag_configure("ok", foreground=ok_fg)
+        self.result_txt.tag_configure("err", foreground=err_fg)
 
         # Not perfect coloring, but keep the area usable.
-        self.result_txt.configure(fg="#0a7a2f" if ok else "#b00020")
+        self.result_txt.configure(fg=ok_fg if ok else err_fg)
 
     def _current_device_from_form(self) -> Device:
         serial = self.serial_var.get().strip()
-        device_type = self._code_from_display(self.type_var.get()) or "scanner"
+        device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
         model = self.model_var.get().strip() or None
         from_store = self.from_store_var.get().strip() or None
         to_store = self.to_store_var.get().strip() or None
-        status = self._code_from_display(self.status_var.get()) or "RECEIVED"
+        status = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
         comment = self.comment_var.get().strip() or None
 
         return Device(
@@ -797,13 +1351,13 @@ class DesktopApp:
 
     def change_status(self) -> None:
         try:
-            serial = self.serial_var.get().strip()
+            serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
                 raise ValueError("serial is required")
 
             changed = self.db.change_status(
                 serial,
-                self._code_from_display(self.status_var.get()) or "RECEIVED",
+                self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
                 to_store=self.to_store_var.get().strip() or None,
                 comment=self.comment_var.get().strip() or None,
             )
@@ -816,7 +1370,7 @@ class DesktopApp:
                     "ok": True,
                     "action": "status",
                     "serial": serial,
-                    "status": self._code_from_display(self.status_var.get()) or "RECEIVED",
+                    "status": self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
                 }
             )
             self.refresh_list(select_serial=serial)
@@ -826,7 +1380,7 @@ class DesktopApp:
 
     def delete_selected(self) -> None:
         try:
-            serial = self.serial_var.get().strip()
+            serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
                 raise ValueError("serial is required")
 
@@ -848,11 +1402,11 @@ class DesktopApp:
     def clear_form(self) -> None:
         self._selected_serial = None
         self.serial_var.set("")
-        self.type_var.set("scanner")
+        self.type_var.set(self._display_value("scanner", kind="type"))
         self.model_var.set("")
         self.from_store_var.set("")
         self.to_store_var.set("")
-        self.status_var.set("RECEIVED")
+        self.status_var.set(self._display_value("RECEIVED", kind="status"))
         self.comment_var.set("")
 
     def refresh_list(self, *, select_serial: str | None = None) -> None:
@@ -861,7 +1415,11 @@ class DesktopApp:
                 self.tree.delete(item)
 
             status_display = self.filter_status_var.get().strip()
-            status = self._code_from_display(status_display) or None
+            status = self._code_from_display(status_display, kind="status") or None
+            type_display = self.filter_type_var.get().strip()
+            device_type = self._code_from_display(type_display, kind="type") or None
+            serial_filter = self.filter_serial_var.get().strip() or None
+            model = self.filter_model_var.get().strip() or None
             from_store = self.filter_from_var.get().strip() or None
             to_store = self.filter_to_var.get().strip() or None
 
@@ -870,7 +1428,15 @@ class DesktopApp:
             except Exception:
                 limit = 200
 
-            devices = self.db.list_devices(status=status, from_store=from_store, to_store=to_store, limit=limit)
+            devices = self.db.list_devices(
+                status=status,
+                device_type=device_type,
+                serial=serial_filter,
+                model=model,
+                from_store=from_store,
+                to_store=to_store,
+                limit=limit,
+            )
 
             selected_iid: str | None = None
             want_serial = select_serial or self._selected_serial
@@ -878,8 +1444,14 @@ class DesktopApp:
             for d in devices:
                 updated = (d.updated_at or "").replace("T", " ")
 
-                type_disp = self._display_value(d.device_type, kind="type")
-                status_disp = self._display_value(d.status, kind="status")
+                # Normalize stored values (can be legacy "CODE — label" or LV/EN labels)
+                type_code = self._normalize_code(d.device_type, kind="type")
+                status_code = self._normalize_code(d.status, kind="status")
+
+                type_disp = self._display_value(type_code, kind="type") if type_code in DEVICE_TYPES else (d.device_type or "")
+                status_disp = (
+                    self._display_value(status_code, kind="status") if status_code in ALLOWED_STATUSES else (d.status or "")
+                )
                 values = (
                     d.serial,
                     type_disp,
@@ -913,19 +1485,6 @@ class DesktopApp:
         serial = str(values[0])
         self._selected_serial = serial
 
-        # Always load from DB so we can keep stable codes even if table shows localized labels.
-        d = self.db.get_device(serial)
-        if not d:
-            return
-
-        self.serial_var.set(serial)
-        self.type_var.set(self._display_value(d.device_type or "other", kind="type"))
-        self.model_var.set(d.model or "")
-        self.from_store_var.set(d.from_store or "")
-        self.to_store_var.set(d.to_store or "")
-        self.status_var.set(self._display_value(d.status or "RECEIVED", kind="status"))
-        self.comment_var.set(d.comment or "")
-
     def _on_row_double_click(self) -> None:
         if not self._selected_serial:
             self._on_row_selected()
@@ -940,5 +1499,12 @@ class DesktopApp:
 
 def run_desktop(*, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:
     root = tk.Tk()
+    _configure_windows_dpi(root)
+    try:
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(family="Segoe UI", size=10)
+        root.option_add("*Font", default_font)
+    except Exception:
+        pass
     DesktopApp(root, db_path=db_path, lang=lang)
     root.mainloop()
