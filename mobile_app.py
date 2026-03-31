@@ -18,10 +18,8 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
 def main(page: ft.Page):
     page.title = "Rimi Scanner App"
     page.vertical_alignment = ft.MainAxisAlignment.START
-    page.window_width = 400
-    page.window_height = 800
     page.theme_mode = ft.ThemeMode.DARK
-    page.padding = 20
+    page.padding = 12
 
     pending_key = "pending_devices"
     config_key = "app_config"
@@ -83,6 +81,9 @@ def main(page: ft.Page):
             "save_config": "Saglabat iestatijumus",
             "camera_scan": "Camera scan",
             "prefix_rules": "Prefix noteikumi (JSON)",
+            "section_actions": "Darbibas",
+            "section_controls": "Kontrole",
+            "section_settings": "Iestatijumi",
         },
         "en": {
             "title": "Rimi Device Scanner",
@@ -107,6 +108,9 @@ def main(page: ft.Page):
             "save_config": "Save settings",
             "camera_scan": "Camera scan",
             "prefix_rules": "Prefix rules (JSON)",
+            "section_actions": "Actions",
+            "section_controls": "Controls",
+            "section_settings": "Settings",
         },
     }
 
@@ -129,11 +133,11 @@ def main(page: ft.Page):
         return merged
 
     # UI Elements
-    result_text = ft.Text("", color=ft.colors.GREEN)
-    new_device_text = ft.Text("", color=ft.colors.AMBER)
-    header_text = ft.Text(tr("title"), size=24, weight=ft.FontWeight.BOLD)
+    result_text = ft.Text("", color=ft.colors.GREEN, size=12)
+    new_device_text = ft.Text("", color=ft.colors.AMBER, size=12)
+    header_text = ft.Text(tr("title"), size=20, weight=ft.FontWeight.BOLD)
 
-    serial_input = ft.TextField(label=tr("serial"), autofocus=True)
+    serial_input = ft.TextField(label=tr("serial"), autofocus=True, text_size=16)
     type_dropdown = ft.Dropdown(
         label=tr("type"),
         options=[
@@ -196,6 +200,8 @@ def main(page: ft.Page):
         nonlocal lang
         page.title = tr("title")
         header_text.value = tr("title")
+        actions_title.value = tr("section_actions")
+        controls_title.value = tr("section_controls")
         serial_input.label = tr("serial")
         type_dropdown.label = tr("type")
         make_input.label = tr("make")
@@ -455,7 +461,8 @@ def main(page: ft.Page):
             result_text.color = ft.colors.GREEN
         page.update()
 
-    config_title = ft.Text(tr("config"), weight=ft.FontWeight.BOLD)
+    actions_title = ft.Text(tr("section_actions"), size=14, weight=ft.FontWeight.BOLD)
+    controls_title = ft.Text(tr("section_controls"), size=14, weight=ft.FontWeight.BOLD)
     config_url_input = ft.TextField(label=tr("supabase_url"), value=config.get("supabase_url", ""))
     config_key_input = ft.TextField(
         label=tr("supabase_key"),
@@ -503,22 +510,18 @@ def main(page: ft.Page):
 
     config_save_btn = ft.ElevatedButton(tr("save_config"), on_click=save_config, width=float('inf'))
 
-    config_panel = ft.Container(
-        content=ft.Column(
-            [
-                config_title,
-                config_url_input,
-                config_key_input,
-                config_lang_dropdown,
-                config_pin_input,
-                prefix_rules_input,
-                config_save_btn,
-            ],
-            spacing=8,
-        ),
-        padding=10,
-        border=ft.border.all(1, ft.colors.GREY_700),
-        border_radius=8,
+    config_panel = ft.ExpansionTile(
+        title=ft.Text(tr("section_settings")),
+        subtitle=ft.Text(tr("config")),
+        controls=[
+            config_url_input,
+            config_key_input,
+            config_lang_dropdown,
+            config_pin_input,
+            prefix_rules_input,
+            config_save_btn,
+        ],
+        initially_expanded=False,
     )
 
     pin_input = ft.TextField(label=tr("pin"), password=True, can_reveal_password=True)
@@ -553,18 +556,24 @@ def main(page: ft.Page):
     )
     page.overlay.append(pin_dialog)
 
+    button_height = 44
+
     scan_btn = ft.ElevatedButton(
         tr("camera_scan"),
         on_click=start_camera_scan,
-        width=float('inf'),
+        expand=True,
+        height=button_height,
         bgcolor=ft.colors.BLUE_700,
         color=ft.colors.WHITE,
     )
+    if not barcode_scanner:
+        scan_btn.disabled = True
 
     register_btn = ft.ElevatedButton(
         tr("register"),
         on_click=save_device,
         width=float('inf'),
+        height=button_height,
         bgcolor=ft.colors.GREEN_700,
         color=ft.colors.WHITE,
         visible=False,
@@ -573,20 +582,29 @@ def main(page: ft.Page):
     sync_btn = ft.ElevatedButton(
         tr("sync"),
         on_click=sync_now,
-        width=float('inf'),
+        expand=True,
+        height=button_height,
         bgcolor=ft.colors.BLUE_700,
         color=ft.colors.WHITE,
     )
-    btn_save = ft.ElevatedButton(tr("save"), on_click=save_device, width=float('inf'), bgcolor=ft.colors.RED_700, color=ft.colors.WHITE)
+    btn_save = ft.ElevatedButton(
+        tr("save"),
+        on_click=save_device,
+        width=float('inf'),
+        height=button_height,
+        bgcolor=ft.colors.RED_700,
+        color=ft.colors.WHITE,
+    )
 
     # Scrollable column for smaller screens
     content = ft.Column(
         [
             header_text,
             serial_input,
-            scan_btn,
+            ft.Row([scan_btn, sync_btn], spacing=8),
             result_text,
             new_device_text,
+            actions_title,
             type_dropdown,
             make_input,
             model_input,
@@ -594,15 +612,16 @@ def main(page: ft.Page):
             from_store_input,
             to_store_input,
             comment_input,
+            controls_title,
             overwrite_checkbox,
             bulk_scan_checkbox,
             register_btn,
-            sync_btn,
             btn_save,
-            config_panel
+            config_panel,
         ],
         scroll=ft.ScrollMode.AUTO,
-        expand=True
+        expand=True,
+        spacing=8,
     )
     
     _apply_language()
