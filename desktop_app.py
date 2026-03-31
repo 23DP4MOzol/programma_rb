@@ -10,11 +10,46 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from i18n import load_translations, t
-from inventory_db import ALLOWED_STATUSES, Device, InventoryDB
+from supabase_db import ALLOWED_STATUSES, Device, InventoryDB
 
 
 DEVICE_TYPES: list[str] = ["scanner", "laptop", "tablet", "phone", "other"]
 
+SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
+    # Prefix: ("device_type", "Make", "Make Model")
+    # Zebra scanners often start with these (example patterns, edit these to match your actual fleet!)
+    "19": ("scanner", "Zebra", "Zebra TC52"),    # e.g., 19055...
+    "20": ("scanner", "Zebra", "Zebra TC52"),    # e.g., 20334...
+    "17": ("scanner", "Zebra", "Zebra TC51"),    # e.g., 17094...
+    "18": ("scanner", "Zebra", "Zebra TC51"),
+    "21": ("scanner", "Zebra", "Zebra TC57"),
+    "40": ("scanner", "Zebra", "Zebra MC3300"),
+    "PF": ("laptop",  "Lenovo", "Lenovo ThinkPad"), # Lenovo laptops usually start with PF, PC, MJ
+    "PC": ("laptop",  "Lenovo", "Lenovo ThinkPad"),
+}
+
+DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
+    "scanner": {
+        "Zebra": ["Zebra DS2208", "Zebra DS8178", "Zebra TC52", "Zebra TC57", "Zebra MC3300", "Zebra TC21", "Zebra TC26"],
+        "Honeywell": ["Honeywell 1900", "Honeywell 1902", "Honeywell CT40", "Honeywell EDA51"],
+        "Datalogic": ["Datalogic Gryphon", "Datalogic Memor", "Datalogic Magellan", "Datalogic Skorpio"],
+    },
+    "laptop": {
+        "Lenovo": ["Lenovo ThinkPad", "Lenovo ThinkBook", "Lenovo Yoga", "Lenovo T14", "Lenovo L14"],
+        "Dell": ["Dell Latitude", "Dell XPS", "Dell Precision"],
+        "HP": ["HP EliteBook", "HP ProBook"],
+        "Apple": ["Apple MacBook Air", "Apple MacBook Pro"],
+    },
+    "tablet": {
+        "Samsung": ["Samsung Galaxy Tab A", "Samsung Galaxy Tab S7", "Samsung Galaxy Tab S8", "Samsung Galaxy Tab Active3", "Samsung Galaxy Tab Active4 Pro"],
+        "Apple": ["Apple iPad", "Apple iPad Pro", "Apple iPad Air", "Apple iPad Mini"],
+        "Lenovo": ["Lenovo Tab M10", "Lenovo Tab P11"],
+    },
+    "phone": {
+        "Samsung": ["Samsung Galaxy S22", "Samsung Galaxy S23", "Samsung Galaxy XCover 5", "Samsung Galaxy XCover 6 Pro", "Samsung Galaxy XCover 7"],
+        "Apple": ["Apple iPhone 12", "Apple iPhone 13", "Apple iPhone 14", "Apple iPhone 15", "Apple iPhone SE"],
+    },
+}
 
 def _try_load_photo_image(path: Path) -> tk.PhotoImage | None:
     try:
@@ -416,6 +451,188 @@ class DesktopApp:
             return self._type_display_to_code.get(display, display)
         return display
 
+    # ---------- Action (form) dependent dropdowns ----------
+
+    def _refresh_action_make_model_values(self, *, preserve_typed_model: bool) -> None:
+        device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        current_make = self.make_var.get().strip() or None
+
+        catalog_data = DEVICE_CATALOG.get(device_type, {})
+        catalog_makes = list(catalog_data.keys())
+
+        try:
+            db_makes = self.db.list_makes(device_type=device_type)
+        except Exception:
+            db_makes = []
+
+        all_makes_dict = {m.casefold(): m for m in catalog_makes + db_makes if m.strip()}
+        all_makes = sorted(all_makes_dict.values(), key=lambda x: x.casefold())
+
+        self._action_makes_all = all_makes
+        self.make_combo.configure(values=[""] + all_makes)
+
+        if current_make and current_make.casefold() not in all_makes_dict:
+            # allow custom makes by not strictly clearing, just keep what they typed
+            pass
+
+        if (not current_make) and len(all_makes) == 1:
+            current_make = all_makes[0]
+            self.make_var.set(current_make)
+
+        try:
+            # We pass current_make to db.list_models to only get models for that exact Make from DB
+            db_models = self.db.list_models(device_type=device_type, make=current_make)
+        except Exception:
+            db_models = []
+
+        catalog_models = []
+        if current_make:
+            for cat_make, models in catalog_data.items():
+                if cat_make.casefold() == current_make.casefold():
+                    catalog_models.extend(models)
+        else:
+            for models in catalog_data.values():
+                catalog_models.extend(models)
+
+        all_models_dict = {m.casefold(): m for m in catalog_models + db_models if m.strip()}
+        all_models = sorted(all_models_dict.values(), key=lambda x: x.casefold())
+
+        self._action_models_all = all_models
+        self.model_combo.configure(values=[""] + all_models)
+        if not preserve_typed_model:
+            self.model_var.set("")
+
+    def _on_serial_scanned(self, _event: tk.Event | None = None) -> None:
+        """Called automatically when the barcode scanner presses 'Enter' in the Serial field."""
+        raw_scan = self.serial_var.get().strip()
+        if not raw_scan:
+            return
+
+        # 1. Check if device exists in DB
+        existing = self.db.get_device(raw_scan)
+        if existing:
+            self._fill_action_form(existing)
+            self._write_result({"ok": True, "info": "Device loaded from database!"})
+            return
+
+        # 2. Experimental parsing if it's a long QR code
+        if "," in raw_scan or ";" in raw_scan or len(raw_scan) > 20: 
+            pass  # placeholder where we can slice data up in the future!
+
+        # 3. Check hardcoded prefixes from the internet / your rules
+        upper_scan = raw_scan.upper()
+        for prefix, (guess_type, guess_make, guess_model) in SERIAL_PREFIX_MAP.items():
+            if upper_scan.startswith(prefix.upper()):
+                # Auto-fill using the rules engine!
+                self.type_var.set(self._display_from_code(guess_type, "type"))
+                self._on_action_type_changed()
+                self.make_var.set(guess_make)
+                self._on_action_make_changed()
+                self.model_var.set(guess_model.replace(guess_make + " ", "", 1))
+                self.overwrite_var.set(False) # Brand new device
+                self._write_result({"ok": True, "info": f"Auto-detected as {guess_make} {guess_model} (Rule: '{prefix}')"})
+                return
+
+        # 4. Smart learning: check the database for similar serial numbers you previously scanned!
+        try:
+            # If the database already has a bunch of devices starting with the same 3 characters,
+            # we can guess it's the same model!
+            all_devs = self.db.list_devices()
+            if len(raw_scan) >= 4:
+                prefix3 = upper_scan[:3]
+                matches = [d for d in all_devs if d.serial.upper().startswith(prefix3)]
+                if matches:
+                    # Pick the most common model among matches
+                    from collections import Counter
+                    best_match = Counter([d for d in matches if d.model]).most_common(1)
+                    if best_match:
+                        guessed_device = best_match[0][0]
+                        self._fill_action_form(guessed_device)
+                        self.serial_var.set(raw_scan) # restore the actual new serial back into the box
+                        self.overwrite_var.set(False) # Brand new device
+                        self._write_result({"ok": True, "info": f"Auto-guessed from similar serials starting with '{prefix3}'"})
+                        return
+        except Exception:
+            pass
+
+        # For a brand new device that's just a raw serial number with no prefix match,
+        # it will just leave the serial number in the box ready for the user.
+
+    def _fill_action_form(self, device: Device) -> None:
+        """Helper to fill the Action section fields nicely from a DB record."""
+        # Type
+        disp_type = self._display_from_code(device.device_type, "type")
+        self.type_var.set(disp_type)
+        self._on_action_type_changed()
+
+        # Try to guess 'Make' from the stored Model
+        make = ""
+        model_text = device.model or ""
+        # The database code gets Make by splitting at the first space
+        if model_text and " " in model_text:
+            parts = model_text.split(" ", 1)
+            make = parts[0]
+            model_text = parts[1]
+            # Verify if it makes sense based on catalog
+            if make in getattr(self, "DEVICE_CATALOG", {}).get(device.device_type, {}):
+                pass
+            else:
+                # Fallback slightly:
+                make = parts[0]
+        elif model_text:
+            make = model_text 
+
+        self.make_var.set(make)
+        self._on_action_make_changed()
+        
+        # We need to set the remainder into Model
+        self.model_var.set(model_text)
+
+        self.from_store_var.set(device.from_store or "")
+        self.to_store_var.set(device.to_store or "")
+        self.status_var.set(self._display_from_code(device.status, "status"))
+        self.comment_var.set(device.comment or "")
+        self.overwrite_var.set(True) # Ready for update
+
+    def _on_action_type_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        self.make_var.set("")
+        self.model_var.set("")
+        self._refresh_action_make_model_values(preserve_typed_model=True)
+
+    def _on_action_make_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        self.model_var.set("")
+        self._refresh_action_make_model_values(preserve_typed_model=True)
+
+    def _on_action_make_typed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        typed = self.make_var.get().strip()
+        if not getattr(self, "_action_makes_all", None):
+            self._refresh_action_make_model_values(preserve_typed_model=True)
+            
+        if not typed:
+            self.make_combo.configure(values=[""] + getattr(self, "_action_makes_all", []))
+            self.model_var.set("")
+            self._refresh_action_make_model_values(preserve_typed_model=True)
+            return
+
+        t_low = typed.casefold()
+        filtered = [m for m in getattr(self, "_action_makes_all", []) if t_low in m.casefold()]
+        self.make_combo.configure(values=[""] + filtered)
+        # We also refresh models to reflect the partial or completed Make type
+        self._refresh_action_make_model_values(preserve_typed_model=True)
+
+    def _on_action_model_typed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        typed = self.model_var.get().strip()
+        if not self._action_models_all:
+            self._refresh_action_make_model_values(preserve_typed_model=True)
+
+        if not typed:
+            self.model_combo.configure(values=[""] + (self._action_models_all or []))
+            return
+
+        t_low = typed.casefold()
+        filtered = [m for m in (self._action_models_all or []) if t_low in m.casefold()]
+        self.model_combo.configure(values=[""] + filtered)
+
     def _normalize_code(self, value: str | None, *, kind: str) -> str:
         raw = (value or "").strip()
         if not raw:
@@ -528,6 +745,7 @@ class DesktopApp:
 
         self.serial_var = tk.StringVar()
         self.type_var = tk.StringVar(value="scanner")
+        self.make_var = tk.StringVar()
         self.model_var = tk.StringVar()
         self.from_store_var = tk.StringVar()
         self.to_store_var = tk.StringVar()
@@ -535,7 +753,8 @@ class DesktopApp:
         self.comment_var = tk.StringVar()
         self.overwrite_var = tk.BooleanVar(value=False)
 
-        self._field(form, 0, 0, "web_serial", self.serial_var)
+        self.serial_entry = self._field(form, 0, 0, "web_serial", self.serial_var)
+        self.serial_entry.bind("<Return>", self._on_serial_scanned)
 
         self.type_lbl = ttk.Label(form, text="", style="Label.TLabel")
         self.type_lbl.grid(row=0, column=1, sticky="w")
@@ -547,10 +766,28 @@ class DesktopApp:
         )
         self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
-        self._field(form, 2, 0, "web_model", self.model_var)
+        self.make_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.make_lbl.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.make_combo = ttk.Combobox(
+            form,
+            textvariable=self.make_var,
+            state="normal",
+            style="App.TCombobox",
+        )
+        self.make_combo.grid(row=3, column=0, sticky="ew")
+
+        self.model_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.model_lbl.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.model_combo = ttk.Combobox(
+            form,
+            textvariable=self.model_var,
+            state="normal",
+            style="App.TCombobox",
+        )
+        self.model_combo.grid(row=5, column=0, sticky="ew")
 
         self.status_lbl = ttk.Label(form, text="", style="Label.TLabel")
-        self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0))
+        self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         self.status_combo = ttk.Combobox(
             form,
             textvariable=self.status_var,
@@ -559,13 +796,31 @@ class DesktopApp:
         )
         self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
 
-        self._field(form, 4, 0, "web_from_store", self.from_store_var)
-        self._field(form, 4, 1, "web_to_store", self.to_store_var, padx_left=8)
+        self._field(form, 6, 0, "web_from_store", self.from_store_var)
+        self._field(form, 6, 1, "web_to_store", self.to_store_var, padx_left=8)
 
         self.comment_lbl = ttk.Label(form, text="", style="Label.TLabel")
-        self.comment_lbl.grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.comment_lbl.grid(row=8, column=0, sticky="w", pady=(8, 0))
         self.comment_entry = ttk.Entry(form, textvariable=self.comment_var, style="App.TEntry")
-        self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
+        self.comment_entry.grid(row=9, column=0, columnspan=2, sticky="ew")
+
+        self._action_models_all: list[str] = []
+
+        try:
+            self.type_combo.bind("<<ComboboxSelected>>", self._on_action_type_changed)
+        except Exception:
+            pass
+
+        try:
+            self.make_combo.bind("<<ComboboxSelected>>", self._on_action_make_changed)
+            self.make_combo.bind("<KeyRelease>", self._on_action_make_typed)
+        except Exception:
+            pass
+
+        try:
+            self.model_combo.bind("<KeyRelease>", self._on_action_model_typed)
+        except Exception:
+            pass
 
         self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var, style="App.TCheckbutton")
         self.overwrite_chk.grid(row=2, column=0, sticky="w", pady=(10, 0))
@@ -653,7 +908,7 @@ class DesktopApp:
         self.filter_make_combo = ttk.Combobox(
             filters,
             textvariable=self.filter_make_var,
-            state="readonly",
+            state="normal",
             style="App.TCombobox",
         )
         self.filter_make_combo.grid(row=1, column=2, sticky="ew", padx=(8, 0))
@@ -1126,12 +1381,13 @@ class DesktopApp:
         var: tk.StringVar,
         *,
         padx_left: int = 0,
-    ) -> None:
+    ) -> ttk.Entry:
         lbl = ttk.Label(parent, text="", style="Label.TLabel")
         lbl.grid(row=row, column=col, sticky="w", pady=(8, 0), padx=(padx_left, 0))
         ent = ttk.Entry(parent, textvariable=var, style="App.TEntry")
         ent.grid(row=row + 1, column=col, sticky="ew", padx=(padx_left, 0))
         setattr(self, f"_lbl_{label_key}_{row}_{col}", lbl)
+        return ent
 
     def _apply_i18n(self) -> None:
         self.lang = self.lang_var.get().lower()
@@ -1160,10 +1416,11 @@ class DesktopApp:
         # Form labels
         self._get_field_label("web_serial", 0, 0).config(text=self.tr("web_serial"))
         self.type_lbl.config(text=self.tr("web_type"))
-        self._get_field_label("web_model", 2, 0).config(text=self.tr("web_model"))
+        self.make_lbl.config(text=self.tr("web_make"))
+        self.model_lbl.config(text=self.tr("web_model"))
         self.status_lbl.config(text=self.tr("web_status"))
-        self._get_field_label("web_from_store", 4, 0).config(text=self.tr("web_from_store"))
-        self._get_field_label("web_to_store", 4, 1).config(text=self.tr("web_to_store"))
+        self._get_field_label("web_from_store", 6, 0).config(text=self.tr("web_from_store"))
+        self._get_field_label("web_to_store", 6, 1).config(text=self.tr("web_to_store"))
         self.comment_lbl.config(text=self.tr("web_comment"))
 
         self.overwrite_chk.config(text=self.tr("web_overwrite"))
@@ -1200,6 +1457,9 @@ class DesktopApp:
 
         self.type_var.set(self._display_value(type_code, kind="type"))
         self.status_var.set(self._display_value(status_code, kind="status"))
+
+        # Refresh action Make/Model lists (depends on selected type)
+        self._refresh_action_make_model_values(preserve_typed_model=True)
 
         # Status filter (localized display, stable code prefix; empty means no filter)
         current_filter_code = self._code_from_display(self.filter_status_var.get(), kind="status")
@@ -1265,6 +1525,7 @@ class DesktopApp:
 
         try:
             self.filter_make_combo.bind("<<ComboboxSelected>>", self._on_filter_make_changed)
+            self.filter_make_combo.bind("<KeyRelease>", self._on_filter_make_typed)
         except Exception:
             pass
 
@@ -1333,31 +1594,46 @@ class DesktopApp:
         device_type = self._current_filter_type_code()
         current_make = self._current_filter_make()
 
+        catalog_data = DEVICE_CATALOG.get(device_type, {}) if device_type else {}
+        catalog_makes = list(catalog_data.keys())
+
         try:
-            makes = self.db.list_makes(device_type=device_type)
+            db_makes = self.db.list_makes(device_type=device_type)
         except Exception:
-            makes = []
+            db_makes = []
 
-        make_values = [""] + makes
-        self.filter_make_combo.configure(values=make_values)
+        all_makes_dict = {m.casefold(): m for m in catalog_makes + db_makes if m.strip()}
+        all_makes = sorted(all_makes_dict.values(), key=lambda x: x.casefold())
 
-        # If current make no longer exists for this type, reset it.
-        if current_make and current_make not in makes:
-            current_make = None
-            self.filter_make_var.set("")
+        self._filter_makes_all = all_makes
+        self.filter_make_combo.configure(values=[""] + all_makes)
 
-        # If there's exactly one make for this type, auto-select it.
-        if (not current_make) and len(makes) == 1 and device_type:
-            current_make = makes[0]
+        if current_make and current_make.casefold() not in all_makes_dict:
+            pass
+
+        if (not current_make) and len(all_makes) == 1 and device_type:
+            current_make = all_makes[0]
             self.filter_make_var.set(current_make)
 
         try:
-            models = self.db.list_models(device_type=device_type, make=current_make)
+            db_models = self.db.list_models(device_type=device_type, make=current_make)
         except Exception:
-            models = []
+            db_models = []
 
-        self._filter_models_all = models
-        self.filter_model_combo.configure(values=[""] + models)
+        catalog_models = []
+        if current_make:
+            for cat_make, models in catalog_data.items():
+                if cat_make.casefold() == current_make.casefold():
+                    catalog_models.extend(models)
+        elif device_type:
+            for models in catalog_data.values():
+                catalog_models.extend(models)
+
+        all_models_dict = {m.casefold(): m for m in catalog_models + db_models if m.strip()}
+        all_models = sorted(all_models_dict.values(), key=lambda x: x.casefold())
+
+        self._filter_models_all = all_models
+        self.filter_model_combo.configure(values=[""] + all_models)
 
         if not preserve_typed_model:
             self.filter_model_var.set("")
@@ -1372,6 +1648,24 @@ class DesktopApp:
     def _on_filter_make_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
         # Changing make changes available models.
         self.filter_model_var.set("")
+        self._refresh_make_model_filter_values(preserve_typed_model=True)
+        self._schedule_filter_refresh()
+
+    def _on_filter_make_typed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
+        typed = self.filter_make_var.get().strip()
+        if not getattr(self, "_filter_makes_all", None):
+            self._refresh_make_model_filter_values(preserve_typed_model=True)
+
+        if not typed:
+            self.filter_make_combo.configure(values=[""] + getattr(self, "_filter_makes_all", []))
+            self.filter_model_var.set("")
+            self._refresh_make_model_filter_values(preserve_typed_model=True)
+            self._schedule_filter_refresh()
+            return
+
+        t_low = typed.casefold()
+        filtered = [m for m in getattr(self, "_filter_makes_all", []) if t_low in m.casefold()]
+        self.filter_make_combo.configure(values=[""] + filtered)
         self._refresh_make_model_filter_values(preserve_typed_model=True)
         self._schedule_filter_refresh()
 
@@ -1454,11 +1748,21 @@ class DesktopApp:
     def _current_device_from_form(self) -> Device:
         serial = self.serial_var.get().strip()
         device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
-        model = self.model_var.get().strip() or None
+        make = self.make_var.get().strip() or None
+        model_text = self.model_var.get().strip() or None
         from_store = self.from_store_var.get().strip() or None
         to_store = self.to_store_var.get().strip() or None
         status = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
         comment = self.comment_var.get().strip() or None
+
+        model: str | None
+        if model_text and make:
+            if model_text.casefold().startswith(make.casefold()):
+                model = model_text
+            else:
+                model = f"{make} {model_text}".strip()
+        else:
+            model = model_text
 
         return Device(
             serial=serial,
@@ -1561,11 +1865,17 @@ class DesktopApp:
         self._selected_serial = None
         self.serial_var.set("")
         self.type_var.set(self._display_value("scanner", kind="type"))
+        self.make_var.set("")
         self.model_var.set("")
         self.from_store_var.set("")
         self.to_store_var.set("")
         self.status_var.set(self._display_value("RECEIVED", kind="status"))
         self.comment_var.set("")
+
+        try:
+            self._refresh_action_make_model_values(preserve_typed_model=True)
+        except Exception:
+            pass
 
     def refresh_list(self, *, select_serial: str | None = None) -> None:
         try:

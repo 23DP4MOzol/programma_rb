@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from i18n import load_translations, t
-from inventory_db import Device, InventoryDB, format_device_table
+from supabase_db import Device, InventoryDB
 
 
 def build_parser() -> argparse.ArgumentParser:
