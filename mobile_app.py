@@ -430,26 +430,10 @@ def main(page: ft.Page):
     # When scanner presses 'Enter' (on_submit), load device details
     serial_input.on_submit = load_device
 
-    def on_barcode_scan(e):
-        data = getattr(e, "data", None) or getattr(e, "barcode", None)
-        if not data:
-            return
-        serial_input.value = str(data)
-        page.update()
-        load_device(None)
-
-    BarcodeScanner = getattr(ft, "BarcodeScanner", None)
-    barcode_scanner = BarcodeScanner(on_scan=on_barcode_scan) if BarcodeScanner else None
-    if barcode_scanner:
-        page.overlay.append(barcode_scanner)
-
     def start_camera_scan(_e):
-        if barcode_scanner:
-            barcode_scanner.open()
-        else:
-            result_text.value = "Camera scanner not available"
-            result_text.color = ft.colors.ORANGE
-            page.update()
+        result_text.value = "Camera scanner not available"
+        result_text.color = ft.colors.ORANGE
+        page.update()
 
     def sync_now(_e):
         synced, remaining = _flush_pending()
@@ -576,8 +560,7 @@ def main(page: ft.Page):
         bgcolor=ft.colors.BLUE_700,
         color=ft.colors.WHITE,
     )
-    if not barcode_scanner:
-        scan_btn.disabled = True
+    scan_btn.disabled = True
 
     register_btn = ft.ElevatedButton(
         tr("register"),
