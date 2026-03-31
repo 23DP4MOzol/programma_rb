@@ -510,10 +510,9 @@ def main(page: ft.Page):
 
     config_save_btn = ft.ElevatedButton(tr("save_config"), on_click=save_config, width=float('inf'))
 
-    config_panel = ft.ExpansionTile(
-        title=ft.Text(tr("section_settings")),
-        subtitle=ft.Text(tr("config")),
-        controls=[
+    settings_panel = ft.Column(
+        [
+            config_title,
             config_url_input,
             config_key_input,
             config_lang_dropdown,
@@ -521,7 +520,18 @@ def main(page: ft.Page):
             prefix_rules_input,
             config_save_btn,
         ],
-        initially_expanded=False,
+        spacing=8,
+        visible=False,
+    )
+
+    def toggle_settings(_e):
+        settings_panel.visible = not settings_panel.visible
+        page.update()
+
+    settings_toggle_btn = ft.ElevatedButton(
+        tr("section_settings"),
+        on_click=toggle_settings,
+        width=float('inf'),
     )
 
     pin_input = ft.TextField(label=tr("pin"), password=True, can_reveal_password=True)
@@ -617,7 +627,8 @@ def main(page: ft.Page):
             bulk_scan_checkbox,
             register_btn,
             btn_save,
-            config_panel,
+            settings_toggle_btn,
+            settings_panel,
         ],
         scroll=ft.ScrollMode.AUTO,
         expand=True,
