@@ -52,7 +52,7 @@ def main(page: ft.Page):
 
     config = _load_config()
     lang = config.get("lang", "lv")
-    pin_code = config.get("pin", "")
+    pin_code = ""
     pin_verified = False
 
     db = InventoryDB(url=config.get("supabase_url"), key=config.get("supabase_key"))
@@ -368,11 +368,7 @@ def main(page: ft.Page):
             page.update()
             return
 
-        needs_pin = bool(pin_code) and (overwrite_checkbox.value or status_dropdown.value != "RECEIVED")
-        if needs_pin and not pin_verified:
-            pin_dialog.open = True
-            page.update()
-            return
+        # PIN disabled for stability on older devices.
 
         if not overwrite_checkbox.value:
             try:
@@ -479,12 +475,12 @@ def main(page: ft.Page):
             "supabase_url": config_url_input.value.strip(),
             "supabase_key": config_key_input.value.strip(),
             "lang": config_lang_dropdown.value or "lv",
-            "pin": config_pin_input.value.strip(),
+            "pin": "",
             "prefix_rules": prefix_rules_input.value.strip(),
         }
         _save_config(config)
         lang = config["lang"]
-        pin_code = config["pin"]
+        pin_code = ""
         pin_verified = False
         db = InventoryDB(url=config.get("supabase_url"), key=config.get("supabase_key"))
         _apply_language()
@@ -518,37 +514,7 @@ def main(page: ft.Page):
         width=float('inf'),
     )
 
-    pin_input = ft.TextField(label=tr("pin"), password=True, can_reveal_password=True)
-    pin_error = ft.Text("", color=ft.colors.RED)
-
-    def pin_ok(_e):
-        nonlocal pin_verified
-        if pin_input.value.strip() == pin_code:
-            pin_verified = True
-            pin_input.value = ""
-            pin_error.value = ""
-            pin_dialog.open = False
-            page.update()
-            save_device(None)
-        else:
-            pin_error.value = "Invalid PIN"
-            page.update()
-
-    def pin_cancel(_e):
-        pin_input.value = ""
-        pin_error.value = ""
-        pin_dialog.open = False
-        page.update()
-
-    pin_dialog = ft.AlertDialog(
-        title=ft.Text(tr("pin")),
-        content=ft.Column([pin_input, pin_error], tight=True),
-        actions=[
-            ft.TextButton("Cancel", on_click=pin_cancel),
-            ft.TextButton("OK", on_click=pin_ok),
-        ],
-    )
-    page.overlay.append(pin_dialog)
+    # PIN dialog removed for stability on older devices.
 
     button_height = 44
 
