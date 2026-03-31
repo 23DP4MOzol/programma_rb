@@ -7,6 +7,9 @@ on:
       - master
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,7 +37,7 @@ jobs:
 
       - name: Build APK with Flet
         run: |
-          flet build apk mobile_app.py --project RimiInventory
+          yes | flet build apk mobile_app.py --project RimiInventory
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
