@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -33,8 +34,7 @@ jobs:
 
       - name: Build APK with Flet
         run: |
-          # Make sure your main flet python file is named main_mobile.py or similar
-          flet build apk --project RimiInventory
+          flet build apk mobile_app.py --project RimiInventory
           
       - name: Upload APK
         uses: actions/upload-artifact@v3
