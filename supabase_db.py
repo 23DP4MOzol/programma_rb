@@ -48,9 +48,9 @@ class Device:
 class InventoryDB:
     """Supabase Backend Database for multiple scanners."""
 
-    def __init__(self, db_path: str | Path = "inventory.db") -> None:
-        self.url = "https://qvlduxpdcwgmokjdsdfp.supabase.co"
-        self.key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk"
+    def __init__(self, db_path: str | Path = "inventory.db", *, url: str | None = None, key: str | None = None) -> None:
+        self.url = url or os.getenv("SUPABASE_URL") or "https://qvlduxpdcwgmokjdsdfp.supabase.co"
+        self.key = key or os.getenv("SUPABASE_KEY") or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk"
         self.supabase: Client = create_client(self.url, self.key)
 
     def init_db(self) -> None:

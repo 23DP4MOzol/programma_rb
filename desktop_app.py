@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 import traceback
 import tkinter as tk
 from tkinter import font as tkfont
+from tkinter import simpledialog
 import re
 from dataclasses import asdict
 from pathlib import Path
@@ -313,14 +316,19 @@ class DeviceEditor(tk.Toplevel):
 
     def _on_save(self) -> None:
         try:
+            if not self.app._require_pin():
+                return
+            fields = {
+                "device_type": self.app._code_from_display(self.type_var.get(), kind="type") or "scanner",
+                "model": self.model_var.get().strip() or None,
+                "from_store": self.from_store_var.get().strip() or None,
+                "to_store": self.to_store_var.get().strip() or None,
+                "status": self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
+                "comment": self.comment_var.get().strip() or None,
+            }
             changed = self.app.db.update_device(
                 self.serial,
-                device_type=self.app._code_from_display(self.type_var.get(), kind="type") or "scanner",
-                model=self.model_var.get().strip() or None,
-                from_store=self.from_store_var.get().strip() or None,
-                to_store=self.to_store_var.get().strip() or None,
-                status=self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
-                comment=self.comment_var.get().strip() or None,
+                **fields,
             )
             if not changed:
                 raise ValueError(self.app.tr("not_found_or_no_fields"))
@@ -330,10 +338,17 @@ class DeviceEditor(tk.Toplevel):
             self.app._on_row_selected()
             self.destroy()
         except Exception as exc:  # noqa: BLE001
+            if self.app._is_offline_error(exc):
+                self.app._enqueue_op({"action": "update", "serial": self.serial, "fields": fields})
+                messagebox.showinfo(self.app.tr("desktop_config_title"), "Offline: queued update", parent=self)
+                self.destroy()
+                return
             messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
 
     def _on_delete(self) -> None:
         try:
+            if not self.app._require_pin():
+                return
             msg = self.app.tr("web_confirm_delete", serial=self.serial)
             if not messagebox.askyesno(self.app.tr("desktop_confirm_title"), msg, parent=self):
                 return
@@ -347,6 +362,11 @@ class DeviceEditor(tk.Toplevel):
             self.app.refresh_list()
             self.destroy()
         except Exception as exc:  # noqa: BLE001
+            if self.app._is_offline_error(exc):
+                self.app._enqueue_op({"action": "delete", "serial": self.serial})
+                messagebox.showinfo(self.app.tr("desktop_config_title"), "Offline: queued delete", parent=self)
+                self.destroy()
+                return
             messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
 
 
@@ -356,9 +376,27 @@ class DesktopApp:
         self.db_path = str(db_path)
         self.lang = lang
 
+        self._config_path = Path(self.db_path).with_name("app_config.json")
+        self._pending_ops_path = Path(self.db_path).with_name("pending_ops.json")
+        self._config_defaults = {
+            "supabase_url": "https://qvlduxpdcwgmokjdsdfp.supabase.co",
+            "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
+            "lang": self.lang,
+            "pin": "",
+            "prefix_rules": "",
+        }
+        self.config = self._load_config()
+        self.lang = (self.config.get("lang") or self.lang).lower()
+        self._pin_code = self.config.get("pin") or ""
+        self._custom_prefix_rules = self._load_prefix_rules()
+
         self.translations = load_translations()
         self._rebuild_display_maps()
-        self.db = InventoryDB(self.db_path)
+        self.db = InventoryDB(
+            self.db_path,
+            url=self.config.get("supabase_url"),
+            key=self.config.get("supabase_key"),
+        )
         self.db.init_db()
 
         self._selected_serial: str | None = None
@@ -371,6 +409,10 @@ class DesktopApp:
         self._build_ui()
         self._apply_i18n()
         self.refresh_list()
+
+        synced, remaining = self._flush_pending_ops()
+        if synced or remaining:
+            self._write_result({"ok": True, "sync": synced, "pending": remaining})
 
     # ---------- i18n ----------
 
@@ -451,6 +493,95 @@ class DesktopApp:
             return self._type_display_to_code.get(display, display)
         return display
 
+    # ---------- Config / Prefix Rules ----------
+
+    def _load_config(self) -> dict:
+        cfg = dict(self._config_defaults)
+        try:
+            if self._config_path.exists():
+                data = json.loads(self._config_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    cfg.update(data)
+        except Exception:
+            pass
+        return cfg
+
+    def _save_config(self) -> None:
+        try:
+            self._config_path.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_prefix_rules(self) -> dict[str, tuple[str, str, str]]:
+        rules: dict[str, tuple[str, str, str]] = {}
+        raw = (self.config or {}).get("prefix_rules")
+        if not raw:
+            return rules
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, (list, tuple)) and len(v) == 3:
+                        rules[str(k)] = (str(v[0]), str(v[1]), str(v[2]))
+        except Exception:
+            pass
+        return rules
+
+    def _get_prefix_rules(self) -> dict[str, tuple[str, str, str]]:
+        merged = dict(SERIAL_PREFIX_MAP)
+        merged.update(self._custom_prefix_rules or {})
+        return merged
+
+    # ---------- Offline Queue ----------
+
+    def _load_pending_ops(self) -> list[dict]:
+        try:
+            if self._pending_ops_path.exists():
+                data = json.loads(self._pending_ops_path.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            pass
+        return []
+
+    def _save_pending_ops(self, ops: list[dict]) -> None:
+        try:
+            self._pending_ops_path.write_text(json.dumps(ops, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _enqueue_op(self, op: dict) -> None:
+        ops = self._load_pending_ops()
+        ops.append(op)
+        self._save_pending_ops(ops)
+
+    def _flush_pending_ops(self) -> tuple[int, int]:
+        ops = self._load_pending_ops()
+        if not ops:
+            return 0, 0
+        remaining: list[dict] = []
+        synced = 0
+        for op in ops:
+            try:
+                action = op.get("action")
+                if action == "add":
+                    dev = Device(**op.get("device", {}))
+                    self.db.add_device(dev, overwrite=bool(op.get("overwrite")))
+                elif action == "update":
+                    self.db.update_device(op.get("serial", ""), **op.get("fields", {}))
+                elif action == "status":
+                    self.db.change_status(op.get("serial", ""), op.get("status", "RECEIVED"), to_store=op.get("to_store"), comment=op.get("comment"))
+                elif action == "delete":
+                    self.db.delete_device(op.get("serial", ""))
+                else:
+                    raise ValueError("Unknown op")
+                synced += 1
+            except Exception:
+                remaining.append(op)
+
+        self._save_pending_ops(remaining)
+        return synced, len(remaining)
+
     # ---------- Action (form) dependent dropdowns ----------
 
     def _refresh_action_make_model_values(self, *, preserve_typed_model: bool) -> None:
@@ -521,7 +652,7 @@ class DesktopApp:
 
         # 3. Check hardcoded prefixes from the internet / your rules
         upper_scan = raw_scan.upper()
-        for prefix, (guess_type, guess_make, guess_model) in SERIAL_PREFIX_MAP.items():
+        for prefix, (guess_type, guess_make, guess_model) in self._get_prefix_rules().items():
             if upper_scan.startswith(prefix.upper()):
                 # Auto-fill using the rules engine!
                 self.type_var.set(self._display_from_code(guess_type, "type"))
@@ -723,6 +854,9 @@ class DesktopApp:
         self.theme_btn = ttk.Button(right, command=self.toggle_theme, style="Top.TButton")
         self.theme_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
+        self.settings_btn = ttk.Button(right, command=self._open_settings_dialog, style="Top.TButton")
+        self.settings_btn.pack(side=tk.RIGHT, padx=(0, 10))
+
         body = ttk.Frame(self.root, padding=14, style="Body.TFrame")
         body.pack(fill=tk.BOTH, expand=True)
 
@@ -752,6 +886,7 @@ class DesktopApp:
         self.status_var = tk.StringVar(value="RECEIVED")
         self.comment_var = tk.StringVar()
         self.overwrite_var = tk.BooleanVar(value=False)
+        self.bulk_scan_var = tk.BooleanVar(value=False)
 
         self.serial_entry = self._field(form, 0, 0, "web_serial", self.serial_var)
         self.serial_entry.bind("<Return>", self._on_serial_scanned)
@@ -825,6 +960,9 @@ class DesktopApp:
         self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var, style="App.TCheckbutton")
         self.overwrite_chk.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
+        self.bulk_scan_chk = ttk.Checkbutton(self.form_card, variable=self.bulk_scan_var, style="App.TCheckbutton")
+        self.bulk_scan_chk.grid(row=2, column=0, sticky="e", pady=(10, 0))
+
         btns = ttk.Frame(self.form_card, style="Card.TFrame")
         btns.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         btns.columnconfigure(0, weight=1)
@@ -835,6 +973,12 @@ class DesktopApp:
 
         self.clear_form_btn = ttk.Button(btns, command=self.clear_form, style="Secondary.TButton")
         self.clear_form_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        self.sync_btn = ttk.Button(btns, command=self._sync_now, style="Secondary.TButton")
+        self.sync_btn.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+
+        self.camera_btn = ttk.Button(btns, command=self._camera_scan, style="Secondary.TButton")
+        self.camera_btn.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
 
 
         self.result_lbl = ttk.Label(self.form_card, text="", style="Muted.TLabel")
@@ -1409,6 +1553,7 @@ class DesktopApp:
         self.theme_btn.config(
             text=self.tr("desktop_theme_dark") if (self.theme or "light") == "light" else self.tr("desktop_theme_bright")
         )
+        self.settings_btn.config(text=self.tr("desktop_settings"))
 
         self.actions_title.config(text=self.tr("web_action"))
         self.list_title.config(text=self.tr("web_list"))
@@ -1424,9 +1569,12 @@ class DesktopApp:
         self.comment_lbl.config(text=self.tr("web_comment"))
 
         self.overwrite_chk.config(text=self.tr("web_overwrite"))
+        self.bulk_scan_chk.config(text=self.tr("desktop_bulk_scan"))
 
         self.add_btn.config(text=self.tr("web_add"))
         self.clear_form_btn.config(text=self.tr("desktop_clear_form"))
+        self.sync_btn.config(text=self.tr("desktop_sync"))
+        self.camera_btn.config(text=self.tr("desktop_camera_scan"))
         # Update / Status / Delete buttons removed from Action section (use editor/context menu)
 
         self.result_lbl.config(text=self.tr("web_result"))
@@ -1705,6 +1853,8 @@ class DesktopApp:
 
     def _on_lang_changed(self) -> None:
         self._apply_i18n()
+        self.config["lang"] = self.lang
+        self._save_config()
         self.refresh_list()
         self._refresh_open_editors_i18n()
 
@@ -1722,6 +1872,137 @@ class DesktopApp:
             except Exception:
                 # Best-effort; don't break language switching
                 pass
+
+    def _is_offline_error(self, exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(
+            token in msg
+            for token in (
+                "timeout",
+                "connection",
+                "network",
+                "failed to establish",
+                "name or service",
+                "temporary failure",
+                "host",
+                "dns",
+                "ssl",
+            )
+        )
+
+    def _require_pin(self) -> bool:
+        if not self._pin_code:
+            return True
+        pin = simpledialog.askstring(self.tr("desktop_pin_prompt"), self.tr("desktop_pin_prompt"), show="*")
+        if pin == self._pin_code:
+            return True
+        messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_pin_invalid"))
+        return False
+
+    def _after_save(self) -> None:
+        if self.bulk_scan_var.get():
+            self.serial_var.set("")
+            self.serial_entry.focus_set()
+            self.overwrite_var.set(False)
+            return
+        self.clear_form()
+
+    def _sync_now(self) -> None:
+        synced, remaining = self._flush_pending_ops()
+        self._write_result({"ok": True, "sync": synced, "pending": remaining})
+        self.refresh_list()
+
+    def _camera_scan(self) -> None:
+        try:
+            import cv2  # type: ignore
+            from pyzbar import pyzbar  # type: ignore
+        except Exception:
+            manual = simpledialog.askstring(self.tr("desktop_camera_scan"), "Paste serial to scan:")
+            if manual:
+                self.serial_var.set(manual.strip())
+                self._on_serial_scanned()
+            return
+
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            messagebox.showerror(self.tr("desktop_error_title"), "Camera not available")
+            return
+
+        serial = None
+        for _ in range(60):
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            codes = pyzbar.decode(frame)
+            if codes:
+                try:
+                    serial = codes[0].data.decode("utf-8")
+                except Exception:
+                    serial = None
+                break
+        cap.release()
+
+        if serial:
+            self.serial_var.set(serial)
+            self._on_serial_scanned()
+        else:
+            messagebox.showinfo(self.tr("desktop_camera_scan"), "No barcode detected")
+
+    def _open_settings_dialog(self) -> None:
+        win = tk.Toplevel(self.root)
+        win.title(self.tr("desktop_config_title"))
+        win.geometry("520x520")
+        win.transient(self.root)
+
+        frm = ttk.Frame(win, padding=14)
+        frm.pack(fill=tk.BOTH, expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        url_var = tk.StringVar(value=self.config.get("supabase_url", ""))
+        key_var = tk.StringVar(value=self.config.get("supabase_key", ""))
+        lang_var = tk.StringVar(value=self.lang)
+        pin_var = tk.StringVar(value=self._pin_code)
+
+        ttk.Label(frm, text=self.tr("desktop_config_supabase_url")).grid(row=0, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=url_var).grid(row=0, column=1, sticky="ew")
+
+        ttk.Label(frm, text=self.tr("desktop_config_supabase_key")).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(frm, textvariable=key_var, show="*").grid(row=1, column=1, sticky="ew", pady=(8, 0))
+
+        ttk.Label(frm, text=self.tr("web_language")).grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Combobox(frm, textvariable=lang_var, values=["lv", "en"], state="readonly").grid(row=2, column=1, sticky="ew", pady=(8, 0))
+
+        ttk.Label(frm, text=self.tr("desktop_config_pin")).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(frm, textvariable=pin_var, show="*").grid(row=3, column=1, sticky="ew", pady=(8, 0))
+
+        ttk.Label(frm, text=self.tr("desktop_config_prefix_rules")).grid(row=4, column=0, sticky="w", pady=(8, 0))
+        prefix_txt = tk.Text(frm, height=8, wrap="word")
+        prefix_txt.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(4, 0))
+        frm.rowconfigure(5, weight=1)
+        prefix_txt.insert("1.0", self.config.get("prefix_rules", ""))
+
+        def _save() -> None:
+            self.config["supabase_url"] = url_var.get().strip()
+            self.config["supabase_key"] = key_var.get().strip()
+            self.config["lang"] = lang_var.get().strip() or "lv"
+            self.config["pin"] = pin_var.get().strip()
+            self.config["prefix_rules"] = prefix_txt.get("1.0", tk.END).strip()
+            self._save_config()
+
+            self.lang = self.config["lang"]
+            self._pin_code = self.config["pin"]
+            self._custom_prefix_rules = self._load_prefix_rules()
+            self.db = InventoryDB(
+                self.db_path,
+                url=self.config.get("supabase_url"),
+                key=self.config.get("supabase_key"),
+            )
+            self._apply_i18n()
+            self.refresh_list()
+            messagebox.showinfo(self.tr("desktop_config_title"), self.tr("desktop_config_saved"))
+            win.destroy()
+
+        ttk.Button(frm, text=self.tr("desktop_config_save"), command=_save).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
     # ---------- Data actions ----------
 
@@ -1775,22 +2056,35 @@ class DesktopApp:
         )
 
     def add_device(self) -> None:
+        device: Device | None = None
+        overwrite = bool(self.overwrite_var.get())
         try:
             device = self._current_device_from_form()
-            overwrite = bool(self.overwrite_var.get())
+            if overwrite or device.status != "RECEIVED":
+                if not self._require_pin():
+                    return
             self.db.add_device(device, overwrite=overwrite)
             self._selected_serial = device.serial
             self._write_result({"ok": True, "action": "add", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
+            self._after_save()
         except Exception as exc:  # noqa: BLE001
+            if self._is_offline_error(exc) and device and device.serial:
+                self._enqueue_op({"action": "add", "device": asdict(device), "overwrite": overwrite})
+                self._write_result({"ok": True, "offline": True, "action": "add", "serial": device.serial})
+                self._after_save()
+                return
             messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def update_device(self) -> None:
+        device: Device | None = None
         try:
             device = self._current_device_from_form()
             if not device.serial:
                 raise ValueError("serial is required")
+            if not self._require_pin():
+                return
 
             changed = self.db.update_device(
                 device.serial,
@@ -1807,19 +2101,43 @@ class DesktopApp:
             self._selected_serial = device.serial
             self._write_result({"ok": True, "action": "update", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
+            self._after_save()
         except Exception as exc:  # noqa: BLE001
+            if self._is_offline_error(exc) and device and device.serial:
+                self._enqueue_op(
+                    {
+                        "action": "update",
+                        "serial": device.serial,
+                        "fields": {
+                            "device_type": device.device_type,
+                            "model": device.model,
+                            "from_store": device.from_store,
+                            "to_store": device.to_store,
+                            "status": device.status,
+                            "comment": device.comment,
+                        },
+                    }
+                )
+                self._write_result({"ok": True, "offline": True, "action": "update", "serial": device.serial})
+                self._after_save()
+                return
             messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def change_status(self) -> None:
+        serial = ""
+        status_code = "RECEIVED"
         try:
             serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
                 raise ValueError("serial is required")
+            if not self._require_pin():
+                return
 
+            status_code = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
             changed = self.db.change_status(
                 serial,
-                self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
+                status_code,
                 to_store=self.to_store_var.get().strip() or None,
                 comment=self.comment_var.get().strip() or None,
             )
@@ -1832,19 +2150,36 @@ class DesktopApp:
                     "ok": True,
                     "action": "status",
                     "serial": serial,
-                    "status": self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
+                    "status": status_code,
                 }
             )
             self.refresh_list(select_serial=serial)
+            self._after_save()
         except Exception as exc:  # noqa: BLE001
+            if self._is_offline_error(exc) and serial:
+                self._enqueue_op(
+                    {
+                        "action": "status",
+                        "serial": serial,
+                        "status": status_code,
+                        "to_store": self.to_store_var.get().strip() or None,
+                        "comment": self.comment_var.get().strip() or None,
+                    }
+                )
+                self._write_result({"ok": True, "offline": True, "action": "status", "serial": serial})
+                self._after_save()
+                return
             messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
     def delete_selected(self) -> None:
+        serial = ""
         try:
             serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
                 raise ValueError("serial is required")
+            if not self._require_pin():
+                return
 
             msg = self.tr("web_confirm_delete", serial=serial)
             if not messagebox.askyesno(self.tr("desktop_confirm_title"), msg):
@@ -1858,6 +2193,11 @@ class DesktopApp:
             self.clear_form()
             self.refresh_list()
         except Exception as exc:  # noqa: BLE001
+            if self._is_offline_error(exc) and serial:
+                self._enqueue_op({"action": "delete", "serial": serial})
+                self._write_result({"ok": True, "offline": True, "action": "delete", "serial": serial})
+                self.clear_form()
+                return
             messagebox.showerror(self.tr("desktop_error_title"), str(exc))
             self._write_result({"ok": False, "error": str(exc)}, ok=False)
 
@@ -1871,6 +2211,7 @@ class DesktopApp:
         self.to_store_var.set("")
         self.status_var.set(self._display_value("RECEIVED", kind="status"))
         self.comment_var.set("")
+        self.overwrite_var.set(False)
 
         try:
             self._refresh_action_make_model_values(preserve_typed_model=True)
