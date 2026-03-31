@@ -37,7 +37,7 @@ jobs:
 
       - name: Build APK with Flet
         run: |
-          flet build apk --module-name mobile_app --project RimiInventory
+          yes | flet build apk --module-name mobile_app --project RimiInventory
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
