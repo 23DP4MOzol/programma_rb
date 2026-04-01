@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from i18n import load_translations, t
+from inventory_db import format_device_table
 from supabase_db import Device, InventoryDB
 
 

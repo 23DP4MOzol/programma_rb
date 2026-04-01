@@ -1,5 +1,4 @@
 import flet as ft
-from typing import Any
 
 SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     # Prefix: ("device_type", "Make", "Make Model")
@@ -21,15 +20,14 @@ def main(page: ft.Page):
     page.padding = 12
 
     try:
-        from supabase_db import InventoryDB, Device
+        from supabase_db import InventoryDB, Device  # type: ignore
 
-        db: Any = InventoryDB()
+        db = InventoryDB()
         db_error = ""
     except Exception as exc:
         db = None
         db_error = str(exc)
 
-    # UI Elements
     result_text = ft.Text("", color=ft.colors.GREEN, size=12)
     new_device_text = ft.Text("", color=ft.colors.AMBER, size=12)
     header_text = ft.Text("Rimi Inventory", size=20, weight=ft.FontWeight.BOLD)
@@ -217,7 +215,6 @@ def main(page: ft.Page):
 
         page.update()
 
-    # When scanner presses 'Enter' (on_submit), load device details
     serial_input.on_submit = load_device
 
     button_height = 44
