@@ -1,5 +1,5 @@
 import flet as ft
-from supabase_db import InventoryDB, Device
+from typing import Any
 
 SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     # Prefix: ("device_type", "Make", "Make Model")
@@ -20,7 +20,14 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 12
 
-    db = InventoryDB()
+    try:
+        from supabase_db import InventoryDB, Device
+
+        db: Any = InventoryDB()
+        db_error = ""
+    except Exception as exc:
+        db = None
+        db_error = str(exc)
 
     # UI Elements
     result_text = ft.Text("", color=ft.colors.GREEN, size=12)
@@ -102,6 +109,12 @@ def main(page: ft.Page):
         if not serial:
             return
 
+        if db is None:
+            result_text.value = f"Database not available: {db_error}"
+            result_text.color = ft.colors.RED
+            page.update()
+            return
+
         try:
             device = db.get_device(serial)
         except Exception as exc:
@@ -148,6 +161,12 @@ def main(page: ft.Page):
         serial = serial_input.value.strip()
         if not serial:
             result_text.value = "Serial is required"
+            result_text.color = ft.colors.RED
+            page.update()
+            return
+
+        if db is None:
+            result_text.value = f"Database not available: {db_error}"
             result_text.color = ft.colors.RED
             page.update()
             return
@@ -246,6 +265,9 @@ def main(page: ft.Page):
         spacing=8,
     )
 
+    if db_error:
+        result_text.value = f"Database init failed: {db_error}"
+        result_text.color = ft.colors.RED
     page.add(content)
 
 
