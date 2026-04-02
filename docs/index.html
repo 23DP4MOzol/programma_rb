@@ -107,6 +107,31 @@
         <button id="saveSettings" class="btn">Save settings</button>
       </section>
 
+      <section class="card" id="devicesCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Devices</div>
+            <div class="card__subtitle">Read-only list from database</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="listStatus"></div>
+            <button id="refreshList" class="btn btn--small">Refresh</button>
+          </div>
+        </div>
+        <div class="list-tools">
+          <input id="listFilter" class="input" type="text" placeholder="Filter by serial/model/status" />
+        </div>
+        <div class="table">
+          <div class="row row--head">
+            <span>Serial</span>
+            <span>Type</span>
+            <span>Model</span>
+            <span>Status</span>
+          </div>
+          <div id="devicesList" class="rows"></div>
+        </div>
+      </section>
+
       <footer class="footer">Hosted on GitHub Pages</footer>
     </main>
 

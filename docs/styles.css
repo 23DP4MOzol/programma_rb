@@ -40,10 +40,16 @@ body {
   color: #ffffff;
   font-weight: 800;
   letter-spacing: 0.08em;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-radius: 10px;
-  font-size: 18px;
+  font-size: 24px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  min-height: 42px;
+  text-transform: uppercase;
 }
 
 .brand {
@@ -54,6 +60,34 @@ body {
 }
 .hidden {
   display: none;
+}
+
+.table {
+  display: grid;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 1.4fr 0.8fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.row--head {
+  background: #f3f3f3;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.rows {
+  display: grid;
+  gap: 6px;
 }
 
 .brand__name {
@@ -105,6 +139,12 @@ body {
   color: var(--muted);
   text-align: right;
   min-width: 140px;
+}
+
+.card__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .label {
@@ -166,6 +206,11 @@ body {
   font-size: 14px;
 }
 
+.btn--small {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
 .btn.primary {
   background: var(--accent);
   color: #fff4f4;
@@ -183,6 +228,11 @@ body {
   font-size: 12px;
   color: var(--muted);
   padding-bottom: 10px;
+}
+
+.list-tools {
+  display: grid;
+  gap: 8px;
 }
 
 @media (max-width: 560px) {

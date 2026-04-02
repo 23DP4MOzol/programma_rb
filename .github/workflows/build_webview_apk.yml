@@ -20,12 +20,14 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android platforms
         run: |
+          yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install Gradle
@@ -36,7 +38,7 @@ jobs:
       - name: Build APK
         working-directory: android
         run: |
-          ../gradle-8.7/bin/gradle :app:assembleDebug
+          ../gradle-8.7/bin/gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

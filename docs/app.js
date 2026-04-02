@@ -4,6 +4,9 @@ const DEFAULTS = {
   prefixRules: "",
 };
 
+const SERIAL_DIGITS_MIN = 13;
+const SERIAL_DIGITS_MAX = 14;
+
 const store = {
   get() {
     try {
@@ -36,10 +39,16 @@ const els = {
   prefixRules: document.getElementById("prefixRules"),
   saveSettings: document.getElementById("saveSettings"),
   settingsCard: document.getElementById("settingsCard"),
+  devicesList: document.getElementById("devicesList"),
+  listStatus: document.getElementById("listStatus"),
+  listFilter: document.getElementById("listFilter"),
+  refreshList: document.getElementById("refreshList"),
 };
 
 let supabase = null;
 let pending = [];
+let devicesCache = [];
+let lastLoadedSerial = "";
 
 function status(msg, tone = "info") {
   els.status.textContent = msg;
@@ -80,21 +89,41 @@ function normalizeSerialInput(raw) {
   const text = (raw || "").trim();
   if (!text) return { ok: false, serial: "" };
 
-  // Prefer tokens that start with S + digits (device serial)
+  // Only accept tokens that are exactly S + 13-14 digits (device serial)
   const tokens = text.split(/[\s,;|]+/).filter(Boolean);
   for (const token of tokens) {
-    if (/^S\d{3,}$/i.test(token)) {
+    const re = new RegExp(`^S\\d{${SERIAL_DIGITS_MIN},${SERIAL_DIGITS_MAX}}$`, "i");
+    if (re.test(token)) {
       return { ok: true, serial: token.toUpperCase().slice(1) };
     }
   }
 
-  // Look for embedded S+digits in longer strings
-  const match = text.match(/S\d{3,}/i);
-  if (match) {
-    return { ok: true, serial: match[0].toUpperCase().slice(1) };
+  return { ok: false, serial: "" };
+}
+
+function inferGuessFromCache(serial) {
+  if (!serial || !devicesCache.length) return null;
+  const prefix2 = serial.slice(0, 2);
+  if (!prefix2) return null;
+
+  const counts = new Map();
+  for (const row of devicesCache) {
+    const s = String(row.serial || "");
+    if (!s.startsWith(prefix2) || !row.model) continue;
+    const key = `${row.device_type || "scanner"}||${row.model}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
   }
 
-  return { ok: false, serial: "" };
+  let best = null;
+  let bestCount = 0;
+  for (const [key, count] of counts.entries()) {
+    if (count > bestCount) {
+      bestCount = count;
+      const [device_type, model] = key.split("||");
+      best = { device_type, model };
+    }
+  }
+  return best;
 }
 
 function fillDevice(dev) {
@@ -111,11 +140,16 @@ function fillDevice(dev) {
 async function loadDevice(serial) {
   const normalized = normalizeSerialInput(serial);
   if (!normalized.ok) {
-    status("Scan the serial barcode (starts with S)", "error");
+    if ((serial || "").trim().length > 5) {
+      els.serial.value = "";
+      status(`Only serial barcode is allowed: S + ${SERIAL_DIGITS_MIN}-${SERIAL_DIGITS_MAX} digits`, "error");
+    }
     return;
   }
-  els.serial.value = normalized.serial;
   serial = normalized.serial;
+  els.serial.value = serial;
+  if (lastLoadedSerial === serial) return;
+  lastLoadedSerial = serial;
   if (!supabase) supabase = initSupabase();
   if (!supabase) return;
 
@@ -152,7 +186,7 @@ async function loadDevice(serial) {
     }
   }
 
-  const guessed = await guessFromDatabase(serial);
+  const guessed = inferGuessFromCache(serial) || (await guessFromDatabase(serial));
   if (guessed) {
     els.type.value = guessed.device_type || "scanner";
     const [make, model] = splitMakeModel(guessed.model || "");
@@ -219,7 +253,7 @@ async function guessFromDatabase(serial) {
 async function saveDevice() {
   const normalized = normalizeSerialInput(els.serial.value);
   if (!normalized.ok) {
-    status("Scan the serial barcode (starts with S)", "error");
+    status(`Only serial barcode is allowed: S + ${SERIAL_DIGITS_MIN}-${SERIAL_DIGITS_MAX} digits`, "error");
     return;
   }
   els.serial.value = normalized.serial;
@@ -238,7 +272,54 @@ async function saveDevice() {
   if (!els.bulk.checked) {
     els.serial.value = "";
   }
+  lastLoadedSerial = "";
   els.serial.focus();
+  await loadDevice(els.serial.value || normalized.serial);
+  await loadDevicesList();
+}
+
+async function loadDevicesList() {
+  if (!supabase) supabase = initSupabase();
+  if (!supabase) return;
+
+  const { data, error } = await supabase
+    .from("devices")
+    .select("serial,device_type,model,status")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    els.listStatus.textContent = "DB error";
+    return;
+  }
+
+  devicesCache = data || [];
+  renderDevicesList();
+}
+
+function renderDevicesList() {
+  const filter = (els.listFilter?.value || "").trim().toLowerCase();
+  const rows = !filter
+    ? devicesCache
+    : devicesCache.filter((row) => {
+        return [row.serial, row.device_type, row.model, row.status]
+          .map((v) => String(v || "").toLowerCase())
+          .some((v) => v.includes(filter));
+      });
+
+  els.listStatus.textContent = `Showing ${rows.length}`;
+  els.devicesList.innerHTML = rows
+    .map(
+      (row) => `
+      <div class="row">
+        <span>${row.serial || ""}</span>
+        <span>${row.device_type || ""}</span>
+        <span>${row.model || ""}</span>
+        <span>${row.status || ""}</span>
+      </div>
+    `
+    )
+    .join("");
 }
 
 function applySettings() {
@@ -265,6 +346,12 @@ els.saveSettings.addEventListener("click", () => {
   status("Settings saved", "ok");
 });
 
+let serialTimer = null;
+els.serial.addEventListener("input", () => {
+  clearTimeout(serialTimer);
+  serialTimer = setTimeout(() => loadDevice(els.serial.value), 80);
+});
+
 els.serial.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     loadDevice(els.serial.value);
@@ -272,6 +359,13 @@ els.serial.addEventListener("keydown", (e) => {
 });
 
 els.save.addEventListener("click", saveDevice);
+els.sync.addEventListener("click", () => {
+  status("Sync not needed: direct write to Supabase is active.", "ok");
+  loadDevicesList();
+});
+els.listFilter.addEventListener("input", renderDevicesList);
+els.refreshList.addEventListener("click", loadDevicesList);
 
 applySettings();
 els.serial.focus();
+loadDevicesList();
