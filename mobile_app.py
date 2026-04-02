@@ -55,34 +55,43 @@ def main(page: ft.Page):
             db_state["db"].add_device(dev, overwrite=True)
             status_text.value = "Saved"
             status_text.color = ft.colors.GREEN
-            serial_input.value = ""
-            serial_input.focus()
-        except Exception as exc:
-            status_text.value = f"Save failed: {exc}"
-            status_text.color = ft.colors.RED
-        page.update()
+            import flet as ft
 
-    init_btn = ft.ElevatedButton("Init DB", on_click=init_db, width=float("inf"))
-    save_btn = ft.ElevatedButton("Save", on_click=save_device, width=float("inf"))
 
-    content = ft.Column(
-        [
-            ft.Text("Rimi Inventory (Safe Mode)", size=20, weight=ft.FontWeight.BOLD),
-            status_text,
-            serial_input,
-            model_input,
-            from_store_input,
-            to_store_input,
-            comment_input,
-            init_btn,
-            save_btn,
-        ],
-        spacing=8,
-        scroll=ft.ScrollMode.AUTO,
-        expand=True,
-    )
+            def main(page: ft.Page) -> None:
+                page.title = "Rimi Inventory Diagnostic"
+                page.vertical_alignment = ft.MainAxisAlignment.START
+                page.padding = 16
 
-    page.add(content)
+                status = ft.Text("UI loaded", size=18, color=ft.colors.GREEN)
+                info = ft.Text("If you can see this, the Flet runtime works.", size=14)
 
-if __name__ == "__main__":
-    ft.app(target=main)
+                def init_db(_e):
+                    try:
+                        from supabase_db import InventoryDB  # noqa: WPS433
+
+                        InventoryDB()
+                        status.value = "Supabase import OK"
+                        status.color = ft.colors.GREEN
+                    except Exception as exc:
+                        status.value = f"DB init failed: {exc}"
+                        status.color = ft.colors.RED
+                    page.update()
+
+                btn = ft.ElevatedButton("Init DB", on_click=init_db, width=200)
+
+                page.add(
+                    ft.Column(
+                        [
+                            ft.Text("Rimi Inventory", size=24, weight=ft.FontWeight.BOLD),
+                            status,
+                            info,
+                            btn,
+                        ],
+                        spacing=12,
+                    )
+                )
+
+
+            if __name__ == "__main__":
+                ft.app(target=main)
