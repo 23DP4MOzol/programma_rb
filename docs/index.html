@@ -23,13 +23,13 @@
         <div class="card__head">
           <div>
             <div class="card__title">Action</div>
-            <div class="card__subtitle">Scan serial barcode only: S + 13-14 digits</div>
+            <div class="card__subtitle">Scan serial barcode only: S + 14 digits</div>
           </div>
           <div class="card__status" id="status"></div>
         </div>
 
         <label class="label" for="serial">Serial (scan here)</label>
-        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" />
+        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" maxlength="15" placeholder="S12345678901234" />
 
         <div class="grid">
           <div>
@@ -96,7 +96,7 @@
         </div>
         <div class="list-tools">
           <div class="lookup-row">
-            <input id="lookupSerial" class="input" type="text" placeholder="Find exact serial (S18167522504743 or 18167522504743)" />
+            <input id="lookupSerial" class="input" type="text" maxlength="15" placeholder="Find exact serial (S18167522504743 or 18167522504743)" />
             <button id="lookupLoad" class="btn btn--small">Load</button>
           </div>
           <input id="listFilter" class="input" type="text" placeholder="Filter by serial/model/status" />
@@ -118,7 +118,6 @@
       <footer class="footer">Hosted on GitHub Pages</footer>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -26,11 +26,8 @@ const els = {
   lookupLoad: document.getElementById("lookupLoad"),
 };
 
-let supabase = null;
 let scanTimer = null;
 let devicesCache = [];
-let activeSerialDigits = "";
-let recordLoaded = false;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -47,20 +44,56 @@ function setTypeEditable(enabled) {
   els.type.disabled = !enabled;
 }
 
-function initSupabase() {
-  if (!window.supabase || !window.supabase.createClient) {
-    setStatus("Supabase script failed to load", "error");
-    return null;
+function sanitizeSerialField(value) {
+  const clean = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!clean.startsWith("S")) return "";
+  const digits = clean.slice(1).replace(/\D/g, "").slice(0, 14);
+  return `S${digits}`;
+}
+
+function sanitizeLookupField(value) {
+  const raw = String(value || "").toUpperCase().trim().replace(/[^A-Z0-9]/g, "");
+  if (!raw) return "";
+  if (raw.startsWith("S")) {
+    const digits = raw.slice(1).replace(/\D/g, "").slice(0, 14);
+    return `S${digits}`;
   }
-  return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  return raw.replace(/\D/g, "").slice(0, 14);
+}
+
+async function restRequest(path, { method = "GET", body = null, prefer = "" } = {}) {
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+  };
+  if (body !== null) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (prefer) {
+    headers.Prefer = prefer;
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers,
+    body: body === null ? undefined : JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    const msg = (json && (json.message || json.error_description || json.error)) || text || response.statusText;
+    throw new Error(msg);
+  }
+  return json;
 }
 
 function splitModel(modelText) {
   const text = String(modelText || "").trim();
   if (!text) return ["", ""];
   const parts = text.split(" ", 2);
-  if (parts.length === 1) return [parts[0], ""];
-  return [parts[0], parts[1]];
+  return parts.length === 1 ? [parts[0], ""] : [parts[0], parts[1]];
 }
 
 function composeModel(make, model) {
@@ -74,14 +107,11 @@ function composeModel(make, model) {
 }
 
 function extractSerialToken(raw) {
-  const text = String(raw || "").trim();
+  const text = String(raw || "").trim().toUpperCase();
   if (!text) return null;
-
   const tokens = text.split(/[\s,;|]+/).filter(Boolean);
   for (const t of tokens) {
-    if (SERIAL_RE.test(t)) {
-      return t.toUpperCase();
-    }
+    if (SERIAL_RE.test(t)) return t;
   }
   return null;
 }
@@ -92,13 +122,15 @@ function serialDigitsFromAnyInput(raw) {
   if (/^\d{14}$/.test(text)) return text;
   const token = extractSerialToken(text);
   if (!token) return "";
-  const m = token.match(SERIAL_RE);
-  return m ? m[1] : "";
+  const match = token.match(SERIAL_RE);
+  return match ? match[1] : "";
+}
+
+function serialTokenFromDigits(serialDigits) {
+  return /^\d{14}$/.test(serialDigits || "") ? `S${serialDigits}` : "";
 }
 
 function resetForm() {
-  activeSerialDigits = "";
-  recordLoaded = false;
   els.serial.value = "";
   els.type.value = "scanner";
   setTypeEditable(true);
@@ -111,7 +143,6 @@ function resetForm() {
 }
 
 function fillFormFromDevice(device) {
-  recordLoaded = true;
   els.type.value = device.device_type || "scanner";
   setTypeEditable(false);
   const [make, model] = splitModel(device.model || "");
@@ -124,7 +155,6 @@ function fillFormFromDevice(device) {
 }
 
 function applyGuess(guess) {
-  recordLoaded = false;
   setTypeEditable(true);
   els.type.value = guess.device_type || "scanner";
   if (guess.make && guess.model) {
@@ -143,7 +173,7 @@ function guessFromCache(serialDigits) {
 
   const counts = new Map();
   for (const row of devicesCache) {
-    const s = String(row.serial || "");
+    const s = serialDigitsFromAnyInput(row.serial || "");
     if (!s.startsWith(prefix2) || !row.model) continue;
     const key = `${row.device_type || "scanner"}||${row.model}`;
     counts.set(key, (counts.get(key) || 0) + 1);
@@ -161,45 +191,22 @@ function guessFromCache(serialDigits) {
   return winner;
 }
 
-async function guessFromDb(serialDigits) {
-  const prefix2 = serialDigits.slice(0, 2);
-  if (!prefix2) return null;
-
-  const { data, error } = await supabase
-    .from("devices")
-    .select("serial,device_type,model")
-    .ilike("serial", `${prefix2}%`)
-    .limit(200);
-
-  if (error || !Array.isArray(data) || !data.length) return null;
-
-  const counts = new Map();
-  for (const row of data) {
-    if (!row.model) continue;
-    const key = `${row.device_type || "scanner"}||${row.model}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-
-  let winner = null;
-  let best = 0;
-  for (const [key, count] of counts.entries()) {
-    if (count > best) {
-      best = count;
-      const [device_type, model] = key.split("||");
-      winner = { device_type, model };
-    }
-  }
-  return winner;
+async function getDeviceBySerial(serialDigits) {
+  const serialToken = serialTokenFromDigits(serialDigits);
+  if (!serialToken) return null;
+  const path =
+    `devices?select=*` +
+    `&or=(serial.eq.${encodeURIComponent(serialDigits)},serial.eq.${encodeURIComponent(serialToken)})` +
+    `&order=updated_at.desc&limit=1`;
+  const rows = await restRequest(path);
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
 async function loadByScannedValue(rawValue) {
   const token = extractSerialToken(rawValue);
   if (!token) {
-    const typed = String(rawValue || "").trim();
-    if (typed.length > 0) {
+    if (String(rawValue || "").trim()) {
       els.serial.value = "";
-      activeSerialDigits = "";
-      recordLoaded = false;
       setTypeEditable(true);
       setStatus("Only serial barcode is allowed (S + 14 digits)", "error");
     }
@@ -214,37 +221,28 @@ async function loadByScannedValue(rawValue) {
   }
 
   els.serial.value = token;
-  if (!supabase) supabase = initSupabase();
-  if (!supabase) return;
 
-  const { data, error } = await supabase
-    .from("devices")
-    .select("*")
-    .eq("serial", serialDigits)
-    .maybeSingle();
-
-  if (error) {
+  let device = null;
+  try {
+    device = await getDeviceBySerial(serialDigits);
+  } catch (error) {
     setStatus(`Database error: ${error.message}`, "error");
     return;
   }
 
-  activeSerialDigits = serialDigits;
-
-  if (data) {
-    fillFormFromDevice(data);
+  if (device) {
+    fillFormFromDevice(device);
     setStatus("Loaded from database", "ok");
     return;
   }
 
-  recordLoaded = false;
   setTypeEditable(true);
   els.statusSelect.value = "RECEIVED";
   els.fromStore.value = "";
   els.toStore.value = "";
   els.comment.value = "";
 
-  const hint = PREFIX_HINTS[serialDigits.slice(0, 2)] || null;
-  const guessed = hint || guessFromCache(serialDigits) || (await guessFromDb(serialDigits));
+  const guessed = PREFIX_HINTS[serialDigits.slice(0, 2)] || guessFromCache(serialDigits);
   if (guessed) {
     applyGuess(guessed);
     setStatus("Auto-filled by existing scanner prefixes", "ok");
@@ -265,17 +263,13 @@ async function saveDevice() {
   }
 
   const serialDigits = token.match(SERIAL_RE)[1];
-  if (!supabase) supabase = initSupabase();
-  if (!supabase) return;
+  const serialToken = serialTokenFromDigits(serialDigits);
 
-  const { data: existing, error: findError } = await supabase
-    .from("devices")
-    .select("id,serial")
-    .eq("serial", serialDigits)
-    .maybeSingle();
-
-  if (findError) {
-    setStatus(`Lookup failed: ${findError.message}`, "error");
+  let existing = null;
+  try {
+    existing = await getDeviceBySerial(serialDigits);
+  } catch (error) {
+    setStatus(`Lookup failed: ${error.message}`, "error");
     return;
   }
 
@@ -286,26 +280,24 @@ async function saveDevice() {
     comment: els.comment.value.trim(),
   };
 
-  if (existing) {
-    const { error } = await supabase.from("devices").update(editPayload).eq("serial", serialDigits);
-    if (error) {
-      setStatus(`Update failed: ${error.message}`, "error");
-      return;
+  try {
+    if (existing) {
+      const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
+      await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
+      setStatus("Updated", "ok");
+    } else {
+      const insertPayload = {
+        serial: serialToken,
+        device_type: (els.type.value || "scanner").trim(),
+        model: composeModel(els.make.value, els.model.value),
+        ...editPayload,
+      };
+      await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=minimal" });
+      setStatus("Added", "ok");
     }
-    setStatus("Updated", "ok");
-  } else {
-    const insertPayload = {
-      serial: serialDigits,
-      device_type: (els.type.value || "scanner").trim(),
-      model: composeModel(els.make.value, els.model.value),
-      ...editPayload,
-    };
-    const { error } = await supabase.from("devices").insert(insertPayload);
-    if (error) {
-      setStatus(`Insert failed: ${error.message}`, "error");
-      return;
-    }
-    setStatus("Added", "ok");
+  } catch (error) {
+    setStatus(`Save failed: ${error.message}`, "error");
+    return;
   }
 
   await loadDevicesList();
@@ -323,6 +315,23 @@ function renderDevicesList() {
       });
 
   els.listStatus.textContent = `Showing ${rows.length}`;
+
+  if (!rows.length) {
+    const helper = filter ? "No rows match this filter" : "Check Supabase SELECT policy for anon role";
+    els.devicesList.innerHTML = `
+      <div class="row">
+        <span>No devices visible</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>${helper}</span>
+      </div>
+    `;
+    return;
+  }
+
   els.devicesList.innerHTML = rows
     .map(
       (row) => `
@@ -341,23 +350,40 @@ function renderDevicesList() {
 }
 
 async function loadDevicesList() {
-  if (!supabase) supabase = initSupabase();
-  if (!supabase) return;
+  els.listStatus.textContent = "Loading...";
+  els.devicesList.innerHTML = `
+    <div class="row">
+      <span>Loading database...</span>
+      <span>-</span>
+      <span>-</span>
+      <span>-</span>
+      <span>-</span>
+      <span>-</span>
+      <span>Please wait</span>
+    </div>
+  `;
 
-  const { data, error } = await supabase
-    .from("devices")
-    .select("serial,device_type,model,status,from_store,to_store,comment,updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
+  try {
+    const data = await restRequest(
+      "devices?select=serial,device_type,model,status,from_store,to_store,comment,updated_at&order=updated_at.desc&limit=200"
+    );
+    devicesCache = Array.isArray(data) ? data : [];
+    renderDevicesList();
+  } catch (error) {
+    devicesCache = [];
     els.listStatus.textContent = `Database error: ${error.message}`;
-    els.devicesList.innerHTML = "";
-    return;
+    els.devicesList.innerHTML = `
+      <div class="row">
+        <span>Database error</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>${String(error.message || "Unknown error")}</span>
+      </div>
+    `;
   }
-
-  devicesCache = Array.isArray(data) ? data : [];
-  renderDevicesList();
 }
 
 async function loadFromLookup() {
@@ -372,11 +398,15 @@ async function loadFromLookup() {
 }
 
 els.serial.addEventListener("input", () => {
-  els.serial.value = String(els.serial.value || "").toUpperCase().trim();
+  els.serial.value = sanitizeSerialField(els.serial.value);
   clearTimeout(scanTimer);
+  if (!els.serial.value) {
+    setTypeEditable(true);
+    return;
+  }
   scanTimer = setTimeout(() => {
     loadByScannedValue(els.serial.value);
-  }, 160);
+  }, 120);
 });
 
 els.serial.addEventListener("keydown", (e) => {
@@ -401,18 +431,21 @@ els.lookupSerial.addEventListener("keydown", (e) => {
     loadFromLookup();
   }
 });
+els.lookupSerial.addEventListener("input", () => {
+  els.lookupSerial.value = sanitizeLookupField(els.lookupSerial.value);
+});
 els.devicesList.addEventListener("click", (e) => {
   const row = e.target.closest(".row[data-serial]");
   if (!row) return;
-  const serial = row.getAttribute("data-serial") || "";
+  const serial = serialDigitsFromAnyInput(row.getAttribute("data-serial") || "");
   if (!serial) return;
   els.lookupSerial.value = `S${serial}`;
   loadFromLookup();
 });
 
-supabase = initSupabase();
 resetForm();
 els.serial.focus();
 loadDevicesList();
 setTimeout(loadDevicesList, 1200);
 window.addEventListener("focus", loadDevicesList);
+setInterval(loadDevicesList, 15000);

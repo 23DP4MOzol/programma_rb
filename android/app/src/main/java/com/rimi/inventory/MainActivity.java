@@ -26,6 +26,7 @@ public class MainActivity extends AppCompatActivity {
         webView.setWebViewClient(new WebViewClient());
         webView.clearCache(true);
         webView.clearHistory();
-        webView.loadUrl(getString(R.string.web_app_url) + "?v=20260402-2");
+        String cacheBust = String.valueOf(System.currentTimeMillis());
+        webView.loadUrl(getString(R.string.web_app_url) + "?v=" + cacheBust);
     }
 }
