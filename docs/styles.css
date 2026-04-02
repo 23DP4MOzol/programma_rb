@@ -36,22 +36,13 @@ body {
 }
 
 .logo {
-  background: #cf2e2e;
-  color: #ffffff;
-  font-family: "Arial Black", "Segoe UI", sans-serif;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  padding: 8px 14px;
-  border-radius: 12px;
-  font-size: 22px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 98px;
-  min-height: 44px;
-  text-transform: uppercase;
+  display: block;
+  width: 110px;
+  height: auto;
+  border-radius: 10px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  background: #cf2e2e;
+  padding: 4px;
 }
 
 .brand {
