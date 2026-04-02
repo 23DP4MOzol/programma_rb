@@ -21,8 +21,11 @@ public class MainActivity extends AppCompatActivity {
         settings.setDomStorageEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         webView.setWebViewClient(new WebViewClient());
-        webView.loadUrl(getString(R.string.web_app_url));
+        webView.clearCache(true);
+        webView.clearHistory();
+        webView.loadUrl(getString(R.string.web_app_url) + "?v=20260402-1");
     }
 }

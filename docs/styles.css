@@ -39,8 +39,8 @@ body {
   background: #cf2e2e;
   color: #ffffff;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  padding: 8px 14px;
+  letter-spacing: 0.14em;
+  padding: 8px 16px;
   border-radius: 10px;
   font-size: 24px;
   line-height: 1;
@@ -69,12 +69,18 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr 1.4fr 0.8fr;
+  grid-template-columns: 1.1fr 0.7fr 1.1fr 0.8fr 0.8fr 0.8fr 1.3fr;
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
+}
+
+.row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row--head {
