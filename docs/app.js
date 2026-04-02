@@ -75,6 +75,27 @@ function splitMakeModel(modelText) {
   return parts.length === 2 ? parts : [parts[0], ""];
 }
 
+function normalizeSerialInput(raw) {
+  const text = (raw || "").trim();
+  if (!text) return "";
+
+  // Prefer tokens that start with S + digits (device serial)
+  const tokens = text.split(/[\s,;|]+/).filter(Boolean);
+  for (const token of tokens) {
+    if (/^S\d{3,}$/i.test(token)) {
+      return token.toUpperCase();
+    }
+  }
+
+  // Look for embedded S+digits in longer strings
+  const match = text.match(/S\d{3,}/i);
+  if (match) {
+    return match[0].toUpperCase();
+  }
+
+  return text;
+}
+
 function fillDevice(dev) {
   els.type.value = dev.device_type || "scanner";
   els.statusSelect.value = dev.status || "RECEIVED";
@@ -87,6 +108,10 @@ function fillDevice(dev) {
 }
 
 async function loadDevice(serial) {
+  const normalized = normalizeSerialInput(serial);
+  if (!normalized) return;
+  els.serial.value = normalized;
+  serial = normalized;
   if (!supabase) supabase = initSupabase();
   if (!supabase) return;
 
@@ -145,11 +170,12 @@ function buildPayload() {
 }
 
 async function saveDevice() {
-  const serial = els.serial.value.trim();
+  const serial = normalizeSerialInput(els.serial.value);
   if (!serial) {
     status("Serial is required", "error");
     return;
   }
+  els.serial.value = serial;
 
   if (!supabase) supabase = initSupabase();
   if (!supabase) return;
@@ -187,7 +213,7 @@ els.saveSettings.addEventListener("click", () => {
 
 els.serial.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
-    loadDevice(els.serial.value.trim());
+    loadDevice(els.serial.value);
   }
 });
 
