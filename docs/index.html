@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rimi Inventory Scanner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="hero__title">Rimi Inventory</div>
+        <div class="hero__subtitle">Scan. Fill. Save.</div>
+      </header>
+
+      <section class="card">
+        <label class="label" for="serial">Serial (scan here)</label>
+        <input id="serial" class="input" type="text" inputmode="text" autocomplete="off" />
+        <div id="status" class="status"></div>
+
+        <div class="section-title">Device</div>
+        <div class="grid">
+          <div>
+            <label class="label" for="type">Type</label>
+            <select id="type" class="input">
+              <option value="scanner">Scanner</option>
+              <option value="laptop">Laptop</option>
+              <option value="tablet">Tablet</option>
+              <option value="phone">Phone</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="statusSelect">Status</label>
+            <select id="statusSelect" class="input">
+              <option value="RECEIVED">Received</option>
+              <option value="PREPARING">Preparing</option>
+              <option value="PREPARED">Prepared</option>
+              <option value="SENT">Sent</option>
+              <option value="IN_USE">In use</option>
+              <option value="RETURNED">Returned</option>
+              <option value="RETIRED">Retired</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="make">Make</label>
+            <input id="make" class="input" type="text" />
+          </div>
+          <div>
+            <label class="label" for="model">Model</label>
+            <input id="model" class="input" type="text" />
+          </div>
+          <div>
+            <label class="label" for="fromStore">From store</label>
+            <input id="fromStore" class="input" type="text" />
+          </div>
+          <div>
+            <label class="label" for="toStore">To store</label>
+            <input id="toStore" class="input" type="text" />
+          </div>
+        </div>
+
+        <label class="label" for="comment">Comment</label>
+        <input id="comment" class="input" type="text" />
+
+        <div class="actions">
+          <label class="check">
+            <input id="overwrite" type="checkbox" />
+            <span>Overwrite if exists</span>
+          </label>
+          <label class="check">
+            <input id="bulk" type="checkbox" />
+            <span>Bulk scan mode</span>
+          </label>
+          <button id="save" class="btn primary">Save / Update</button>
+          <button id="sync" class="btn">Sync offline</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">Settings</div>
+        <label class="label" for="supabaseUrl">Supabase URL</label>
+        <input id="supabaseUrl" class="input" type="text" />
+        <label class="label" for="supabaseKey">Supabase Key</label>
+        <input id="supabaseKey" class="input" type="password" />
+        <label class="label" for="prefixRules">Prefix rules (JSON)</label>
+        <textarea id="prefixRules" class="input textarea" rows="4"></textarea>
+        <button id="saveSettings" class="btn">Save settings</button>
+      </section>
+
+      <footer class="footer">Hosted on GitHub Pages</footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

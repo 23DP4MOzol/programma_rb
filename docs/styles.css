@@ -1,0 +1,136 @@
+:root {
+  --bg: #f6f4ef;
+  --ink: #17130f;
+  --muted: #5b544d;
+  --accent: #c2362b;
+  --accent-2: #1b5f5a;
+  --card: #ffffff;
+  --border: #e3ddd4;
+  --shadow: 0 10px 24px rgba(32, 24, 16, 0.12);
+  --radius: 16px;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #fff6e8 0%, #f6f4ef 60%, #eee7de 100%);
+  color: var(--ink);
+}
+
+.shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.hero {
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #1b5f5a, #0f3532);
+  color: #fef6f0;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.hero__title {
+  font-size: 22px;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+}
+
+.hero__subtitle {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.section-title {
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: #f2ede6;
+  color: var(--ink);
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: #fff6f0;
+  border: none;
+}
+
+.status {
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.footer {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 10px;
+}
+
+@media (max-width: 480px) {
+  .hero__title {
+    font-size: 20px;
+  }
+  .btn {
+    font-size: 14px;
+  }
+}
