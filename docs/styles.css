@@ -1,24 +1,24 @@
 :root {
-  --bg: #f6f4ef;
-  --ink: #17130f;
-  --muted: #5b544d;
-  --accent: #c2362b;
-  --accent-2: #1b5f5a;
+  --bg: #f5f5f5;
+  --ink: #1a1a1a;
+  --muted: #6b6b6b;
+  --accent: #cf2e2e;
+  --accent-dark: #8d1f1f;
   --card: #ffffff;
-  --border: #e3ddd4;
-  --shadow: 0 10px 24px rgba(32, 24, 16, 0.12);
-  --radius: 16px;
+  --border: #e3e3e3;
+  --shadow: 0 10px 22px rgba(18, 18, 18, 0.12);
+  --radius: 14px;
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #fff6e8 0%, #f6f4ef 60%, #eee7de 100%);
+  background: radial-gradient(circle at top, #ffffff 0%, #f6f6f6 45%, #ededed 100%);
   color: var(--ink);
 }
 
 .shell {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 16px;
   display: grid;
@@ -26,20 +26,35 @@ body {
 }
 
 .hero {
-  padding: 18px 20px;
-  background: linear-gradient(135deg, #1b5f5a, #0f3532);
-  color: #fef6f0;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  color: #fff4f4;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  display: grid;
+  gap: 4px;
 }
 
-.hero__title {
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.brand__name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.brand__title {
   font-size: 22px;
-  letter-spacing: 0.4px;
   font-weight: 700;
 }
 
-.hero__subtitle {
+.brand__subtitle {
   font-size: 13px;
   opacity: 0.85;
 }
@@ -54,8 +69,32 @@ body {
   gap: 12px;
 }
 
-.label {
+.card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.card__title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.card__subtitle {
   font-size: 12px;
+  color: var(--muted);
+}
+
+.card__status {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  min-width: 140px;
+}
+
+.label {
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -64,11 +103,16 @@ body {
 .input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 10px 12px;
-  font-size: 15px;
+  font-size: 14px;
   background: #fff;
   box-sizing: border-box;
+}
+
+.input--large {
+  font-size: 16px;
+  padding: 12px 14px;
 }
 
 .textarea {
@@ -81,14 +125,15 @@ body {
   gap: 12px;
 }
 
-.section-title {
-  font-weight: 700;
-  color: var(--accent-2);
-}
-
 .actions {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+}
+
+.actions__buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
 }
 
 .check {
@@ -100,16 +145,16 @@ body {
 
 .btn {
   border: 1px solid var(--border);
-  background: #f2ede6;
+  background: #f1f1f1;
   color: var(--ink);
   padding: 12px;
-  border-radius: 12px;
-  font-size: 15px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .btn.primary {
   background: var(--accent);
-  color: #fff6f0;
+  color: #fff4f4;
   border: none;
 }
 
@@ -126,11 +171,18 @@ body {
   padding-bottom: 10px;
 }
 
-@media (max-width: 480px) {
-  .hero__title {
-    font-size: 20px;
+@media (max-width: 560px) {
+  .shell {
+    padding: 12px;
   }
-  .btn {
-    font-size: 14px;
+  .card__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .card__status {
+    text-align: left;
+  }
+  .brand__title {
+    font-size: 20px;
   }
 }

@@ -1,6 +1,6 @@
 const DEFAULTS = {
   supabaseUrl: "https://qvlduxpdcwgmokjdsdfp.supabase.co",
-  supabaseKey: "",
+  supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
   prefixRules: "",
 };
 

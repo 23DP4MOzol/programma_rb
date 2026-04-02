@@ -1,0 +1,45 @@
+name: Build WebView APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install Gradle
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          ../gradle-8.7/bin/gradle :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimiInventory-WebView-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

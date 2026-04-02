@@ -9,16 +9,25 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <div class="hero__title">Rimi Inventory</div>
-        <div class="hero__subtitle">Scan. Fill. Save.</div>
+        <div class="brand">
+          <div class="brand__name">Rimi Baltic</div>
+          <div class="brand__title">Inventory</div>
+        </div>
+        <div class="brand__subtitle">Device tracking</div>
       </header>
 
-      <section class="card">
-        <label class="label" for="serial">Serial (scan here)</label>
-        <input id="serial" class="input" type="text" inputmode="text" autocomplete="off" />
-        <div id="status" class="status"></div>
+      <section class="card card--action">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Action</div>
+            <div class="card__subtitle">Scan a serial and update details</div>
+          </div>
+          <div class="card__status" id="status"></div>
+        </div>
 
-        <div class="section-title">Device</div>
+        <label class="label" for="serial">Serial (scan here)</label>
+        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" />
+
         <div class="grid">
           <div>
             <label class="label" for="type">Type</label>
@@ -72,13 +81,20 @@
             <input id="bulk" type="checkbox" />
             <span>Bulk scan mode</span>
           </label>
-          <button id="save" class="btn primary">Save / Update</button>
-          <button id="sync" class="btn">Sync offline</button>
+          <div class="actions__buttons">
+            <button id="save" class="btn primary">Save / Update</button>
+            <button id="sync" class="btn">Sync offline</button>
+          </div>
         </div>
       </section>
 
-      <section class="card">
-        <div class="section-title">Settings</div>
+      <section class="card card--settings">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Settings</div>
+            <div class="card__subtitle">Supabase connection + prefixes</div>
+          </div>
+        </div>
         <label class="label" for="supabaseUrl">Supabase URL</label>
         <input id="supabaseUrl" class="input" type="text" />
         <label class="label" for="supabaseKey">Supabase Key</label>
