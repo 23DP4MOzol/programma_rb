@@ -1,7 +1,7 @@
 const SUPABASE_URL = "https://qvlduxpdcwgmokjdsdfp.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk";
 
-const SERIAL_RE = /^S(\d{13,14})$/i;
+const SERIAL_RE = /^S(\d{14})$/i;
 const PREFIX_HINTS = {
   "18": { device_type: "scanner", make: "Zebra", model: "TC51" },
 };
@@ -22,12 +22,15 @@ const els = {
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
   refreshList: document.getElementById("refreshList"),
+  lookupSerial: document.getElementById("lookupSerial"),
+  lookupLoad: document.getElementById("lookupLoad"),
 };
 
 let supabase = null;
 let scanTimer = null;
 let devicesCache = [];
 let activeSerialDigits = "";
+let recordLoaded = false;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -38,6 +41,10 @@ function setStatus(message, tone = "info") {
   } else {
     els.statusText.style.color = "#6b6b6b";
   }
+}
+
+function setTypeEditable(enabled) {
+  els.type.disabled = !enabled;
 }
 
 function initSupabase() {
@@ -79,10 +86,22 @@ function extractSerialToken(raw) {
   return null;
 }
 
+function serialDigitsFromAnyInput(raw) {
+  const text = String(raw || "").trim().toUpperCase();
+  if (!text) return "";
+  if (/^\d{14}$/.test(text)) return text;
+  const token = extractSerialToken(text);
+  if (!token) return "";
+  const m = token.match(SERIAL_RE);
+  return m ? m[1] : "";
+}
+
 function resetForm() {
   activeSerialDigits = "";
+  recordLoaded = false;
   els.serial.value = "";
   els.type.value = "scanner";
+  setTypeEditable(true);
   els.make.value = "";
   els.model.value = "";
   els.statusSelect.value = "RECEIVED";
@@ -92,7 +111,9 @@ function resetForm() {
 }
 
 function fillFormFromDevice(device) {
+  recordLoaded = true;
   els.type.value = device.device_type || "scanner";
+  setTypeEditable(false);
   const [make, model] = splitModel(device.model || "");
   els.make.value = make;
   els.model.value = model;
@@ -103,6 +124,8 @@ function fillFormFromDevice(device) {
 }
 
 function applyGuess(guess) {
+  recordLoaded = false;
+  setTypeEditable(true);
   els.type.value = guess.device_type || "scanner";
   if (guess.make && guess.model) {
     els.make.value = guess.make;
@@ -172,10 +195,13 @@ async function guessFromDb(serialDigits) {
 async function loadByScannedValue(rawValue) {
   const token = extractSerialToken(rawValue);
   if (!token) {
-    if (String(rawValue || "").trim().length > 0) {
+    const typed = String(rawValue || "").trim();
+    if (typed.length > 0) {
       els.serial.value = "";
       activeSerialDigits = "";
-      setStatus("Only serial barcode is allowed (S + 13-14 digits)", "error");
+      recordLoaded = false;
+      setTypeEditable(true);
+      setStatus("Only serial barcode is allowed (S + 14 digits)", "error");
     }
     return;
   }
@@ -210,6 +236,8 @@ async function loadByScannedValue(rawValue) {
     return;
   }
 
+  recordLoaded = false;
+  setTypeEditable(true);
   els.statusSelect.value = "RECEIVED";
   els.fromStore.value = "";
   els.toStore.value = "";
@@ -232,7 +260,7 @@ async function loadByScannedValue(rawValue) {
 async function saveDevice() {
   const token = extractSerialToken(els.serial.value);
   if (!token) {
-    setStatus("Only serial barcode is allowed (S + 13-14 digits)", "error");
+    setStatus("Only serial barcode is allowed (S + 14 digits)", "error");
     return;
   }
 
@@ -268,7 +296,7 @@ async function saveDevice() {
   } else {
     const insertPayload = {
       serial: serialDigits,
-      device_type: els.type.value || "scanner",
+      device_type: (els.type.value || "scanner").trim(),
       model: composeModel(els.make.value, els.model.value),
       ...editPayload,
     };
@@ -298,7 +326,7 @@ function renderDevicesList() {
   els.devicesList.innerHTML = rows
     .map(
       (row) => `
-      <div class="row">
+      <div class="row" data-serial="${row.serial || ""}">
         <span>${row.serial || ""}</span>
         <span>${row.device_type || ""}</span>
         <span>${row.model || ""}</span>
@@ -323,7 +351,8 @@ async function loadDevicesList() {
     .limit(200);
 
   if (error) {
-    els.listStatus.textContent = "Database error";
+    els.listStatus.textContent = `Database error: ${error.message}`;
+    els.devicesList.innerHTML = "";
     return;
   }
 
@@ -331,11 +360,23 @@ async function loadDevicesList() {
   renderDevicesList();
 }
 
+async function loadFromLookup() {
+  const serialDigits = serialDigitsFromAnyInput(els.lookupSerial.value);
+  if (!serialDigits) {
+    setStatus("Enter serial as S + 14 digits or 14 digits", "error");
+    return;
+  }
+  const token = `S${serialDigits}`;
+  els.serial.value = token;
+  await loadByScannedValue(token);
+}
+
 els.serial.addEventListener("input", () => {
+  els.serial.value = String(els.serial.value || "").toUpperCase().trim();
   clearTimeout(scanTimer);
   scanTimer = setTimeout(() => {
     loadByScannedValue(els.serial.value);
-  }, 60);
+  }, 160);
 });
 
 els.serial.addEventListener("keydown", (e) => {
@@ -353,8 +394,25 @@ els.clear.addEventListener("click", () => {
 });
 els.refreshList.addEventListener("click", loadDevicesList);
 els.listFilter.addEventListener("input", renderDevicesList);
+els.lookupLoad.addEventListener("click", loadFromLookup);
+els.lookupSerial.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    loadFromLookup();
+  }
+});
+els.devicesList.addEventListener("click", (e) => {
+  const row = e.target.closest(".row[data-serial]");
+  if (!row) return;
+  const serial = row.getAttribute("data-serial") || "";
+  if (!serial) return;
+  els.lookupSerial.value = `S${serial}`;
+  loadFromLookup();
+});
 
 supabase = initSupabase();
 resetForm();
 els.serial.focus();
 loadDevicesList();
+setTimeout(loadDevicesList, 1200);
+window.addEventListener("focus", loadDevicesList);

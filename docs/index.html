@@ -34,7 +34,7 @@
         <div class="grid">
           <div>
             <label class="label" for="type">Type</label>
-            <select id="type" class="input" disabled>
+            <select id="type" class="input">
               <option value="scanner">Scanner</option>
               <option value="laptop">Laptop</option>
               <option value="tablet">Tablet</option>
@@ -95,6 +95,10 @@
           </div>
         </div>
         <div class="list-tools">
+          <div class="lookup-row">
+            <input id="lookupSerial" class="input" type="text" placeholder="Find exact serial (S18167522504743 or 18167522504743)" />
+            <button id="lookupLoad" class="btn btn--small">Load</button>
+          </div>
           <input id="listFilter" class="input" type="text" placeholder="Filter by serial/model/status" />
         </div>
         <div class="table">
