@@ -67,22 +67,28 @@ body {
 .table {
   display: grid;
   gap: 6px;
+  overflow-x: auto;
 }
 
 .row {
   display: grid;
-  grid-template-columns: 1.1fr 0.7fr 1.1fr 0.8fr 0.8fr 0.8fr 1.3fr;
+  grid-template-columns: 1.4fr 0.8fr 1.3fr 0.9fr 0.9fr 0.9fr 1.4fr;
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
+  background: #fff;
+  align-items: start;
+  min-width: 760px;
 }
 
 .row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
 }
 
 .row--head {
@@ -96,6 +102,7 @@ body {
 .rows {
   display: grid;
   gap: 6px;
+  min-height: 120px;
 }
 
 .rows .row[data-serial] {
@@ -268,5 +275,35 @@ body {
   }
   .brand__title {
     font-size: 20px;
+  }
+
+  .row {
+    min-width: 0;
+  }
+
+  .row--head {
+    display: none;
+  }
+
+  .rows .row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .rows .row span[data-label] {
+    display: grid;
+    grid-template-columns: 94px 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .rows .row span[data-label]::before {
+    content: attr(data-label);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
   }
 }

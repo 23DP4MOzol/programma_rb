@@ -336,13 +336,13 @@ function renderDevicesList() {
     .map(
       (row) => `
       <div class="row" data-serial="${row.serial || ""}">
-        <span>${row.serial || ""}</span>
-        <span>${row.device_type || ""}</span>
-        <span>${row.model || ""}</span>
-        <span>${row.status || ""}</span>
-        <span>${row.from_store || ""}</span>
-        <span>${row.to_store || ""}</span>
-        <span>${row.comment || ""}</span>
+        <span data-label="Serial">${row.serial || ""}</span>
+        <span data-label="Type">${row.device_type || ""}</span>
+        <span data-label="Model">${row.model || ""}</span>
+        <span data-label="Status">${row.status || ""}</span>
+        <span data-label="From">${row.from_store || ""}</span>
+        <span data-label="To">${row.to_store || ""}</span>
+        <span data-label="Comment">${row.comment || ""}</span>
       </div>
     `
     )
