@@ -35,6 +35,7 @@ const els = {
   supabaseKey: document.getElementById("supabaseKey"),
   prefixRules: document.getElementById("prefixRules"),
   saveSettings: document.getElementById("saveSettings"),
+  settingsCard: document.getElementById("settingsCard"),
 };
 
 let supabase = null;
@@ -77,23 +78,23 @@ function splitMakeModel(modelText) {
 
 function normalizeSerialInput(raw) {
   const text = (raw || "").trim();
-  if (!text) return "";
+  if (!text) return { ok: false, serial: "" };
 
   // Prefer tokens that start with S + digits (device serial)
   const tokens = text.split(/[\s,;|]+/).filter(Boolean);
   for (const token of tokens) {
     if (/^S\d{3,}$/i.test(token)) {
-      return token.toUpperCase();
+      return { ok: true, serial: token.toUpperCase().slice(1) };
     }
   }
 
   // Look for embedded S+digits in longer strings
   const match = text.match(/S\d{3,}/i);
   if (match) {
-    return match[0].toUpperCase();
+    return { ok: true, serial: match[0].toUpperCase().slice(1) };
   }
 
-  return text;
+  return { ok: false, serial: "" };
 }
 
 function fillDevice(dev) {
@@ -109,9 +110,12 @@ function fillDevice(dev) {
 
 async function loadDevice(serial) {
   const normalized = normalizeSerialInput(serial);
-  if (!normalized) return;
-  els.serial.value = normalized;
-  serial = normalized;
+  if (!normalized.ok) {
+    status("Scan the serial barcode (starts with S)", "error");
+    return;
+  }
+  els.serial.value = normalized.serial;
+  serial = normalized.serial;
   if (!supabase) supabase = initSupabase();
   if (!supabase) return;
 
@@ -148,6 +152,16 @@ async function loadDevice(serial) {
     }
   }
 
+  const guessed = await guessFromDatabase(serial);
+  if (guessed) {
+    els.type.value = guessed.device_type || "scanner";
+    const [make, model] = splitMakeModel(guessed.model || "");
+    els.make.value = make;
+    els.model.value = model;
+    status("Auto-filled from existing devices", "ok");
+    return;
+  }
+
   status("New device. Fill details.");
 }
 
@@ -169,13 +183,46 @@ function buildPayload() {
   };
 }
 
+async function guessFromDatabase(serial) {
+  if (!supabase) return null;
+  const prefix2 = serial.slice(0, 2);
+  if (!prefix2) return null;
+
+  const { data, error } = await supabase
+    .from("devices")
+    .select("serial,device_type,model")
+    .ilike("serial", `${prefix2}%`)
+    .limit(200);
+
+  if (error || !data || !data.length) return null;
+
+  const counts = new Map();
+  for (const row of data) {
+    if (!row.model) continue;
+    const key = `${row.device_type || "scanner"}||${row.model}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  let best = null;
+  let bestCount = 0;
+  for (const [key, count] of counts.entries()) {
+    if (count > bestCount) {
+      bestCount = count;
+      const [device_type, model] = key.split("||");
+      best = { device_type, model };
+    }
+  }
+
+  return best;
+}
+
 async function saveDevice() {
-  const serial = normalizeSerialInput(els.serial.value);
-  if (!serial) {
-    status("Serial is required", "error");
+  const normalized = normalizeSerialInput(els.serial.value);
+  if (!normalized.ok) {
+    status("Scan the serial barcode (starts with S)", "error");
     return;
   }
-  els.serial.value = serial;
+  els.serial.value = normalized.serial;
 
   if (!supabase) supabase = initSupabase();
   if (!supabase) return;
@@ -199,6 +246,13 @@ function applySettings() {
   els.supabaseUrl.value = settings.supabaseUrl || "";
   els.supabaseKey.value = settings.supabaseKey || "";
   els.prefixRules.value = settings.prefixRules || "";
+
+  const hasDefaults = settings.supabaseUrl && settings.supabaseKey;
+  if (hasDefaults) {
+    els.supabaseUrl.setAttribute("readonly", "readonly");
+    els.supabaseKey.setAttribute("readonly", "readonly");
+    els.settingsCard.classList.add("hidden");
+  }
 }
 
 els.saveSettings.addEventListener("click", () => {

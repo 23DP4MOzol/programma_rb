@@ -35,11 +35,25 @@ body {
   gap: 4px;
 }
 
+.logo {
+  background: #cf2e2e;
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 18px;
+  line-height: 1;
+}
+
 .brand {
   display: flex;
   gap: 12px;
   align-items: baseline;
   flex-wrap: wrap;
+}
+.hidden {
+  display: none;
 }
 
 .brand__name {
