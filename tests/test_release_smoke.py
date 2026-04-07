@@ -17,6 +17,8 @@ class ReleaseSmokeTests(unittest.TestCase):
             'id="authInfo"',
             'id="scanPopup"',
             'id="scanPopupRegister"',
+            'id="prefixRulesCard"',
+            'id="conflictPopup"',
         ]
         for marker in required_ids:
             self.assertIn(marker, html)
@@ -36,6 +38,10 @@ class ReleaseSmokeTests(unittest.TestCase):
             "showScanPopup",
             "registerPendingDevice",
             "applyWebLanguageLabels",
+            "loadPrefixRulesAdmin",
+            "savePrefixRule",
+            "deletePrefixRule",
+            "askConflictResolution",
         ]
         for marker in required_markers:
             self.assertIn(marker, js)
@@ -57,6 +63,8 @@ class ReleaseSmokeTests(unittest.TestCase):
             "def _show_scan_result_popup(self",
             "desktop_register_new_device",
             "desktop_scan_popup_title",
+            "askyesnocancel",
+            "overwrite with current values",
         ]
         for marker in required_markers:
             self.assertIn(marker, py)

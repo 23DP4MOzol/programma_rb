@@ -2370,10 +2370,57 @@ class DesktopApp:
             self.refresh_list(select_serial=device.serial)
             self._after_save()
         except SyncConflictError as exc:
-            messagebox.showwarning(self.tr("desktop_error_title"), str(exc))
-            self._write_result({"ok": False, "error": str(exc)}, ok=False)
-            if device and device.serial:
-                self.refresh_list(select_serial=device.serial)
+            choice = messagebox.askyesnocancel(
+                self.tr("desktop_error_title"),
+                f"{exc}\n\nYes = overwrite with current values\nNo = reload latest from database\nCancel = keep current form",
+            )
+
+            if choice is True and device and device.serial:
+                try:
+                    changed = self.db.update_device(
+                        device.serial,
+                        device_type=device.device_type,
+                        model=device.model,
+                        from_store=device.from_store,
+                        to_store=device.to_store,
+                        status=device.status,
+                        comment=device.comment,
+                        expected_updated_at=None,
+                    )
+                    if not changed:
+                        raise ValueError(self.tr("not_found_or_no_fields"))
+
+                    refreshed = self.db.get_device(device.serial)
+                    self._selected_serial = device.serial
+                    self._selected_updated_at = refreshed.updated_at if refreshed else None
+                    self._write_result(
+                        {"ok": True, "action": "update", "serial": device.serial, "conflict": "overwrite"}
+                    )
+                    self.refresh_list(select_serial=device.serial)
+                    self._after_save()
+                    return
+                except Exception as overwrite_exc:  # noqa: BLE001
+                    messagebox.showerror(self.tr("desktop_error_title"), str(overwrite_exc))
+                    self._write_result({"ok": False, "error": str(overwrite_exc)}, ok=False)
+                    return
+
+            if choice is False and device and device.serial:
+                try:
+                    latest = self.db.get_device(device.serial)
+                    if latest:
+                        self._fill_action_form(latest)
+                        self.serial_var.set(latest.serial)
+                    self._write_result(
+                        {"ok": False, "serial": device.serial, "conflict": "reloaded_latest"},
+                        ok=False,
+                    )
+                    self.refresh_list(select_serial=device.serial)
+                    return
+                except Exception:
+                    self.refresh_list(select_serial=device.serial)
+                    return
+
+            self._write_result({"ok": False, "error": str(exc), "conflict": "cancelled"}, ok=False)
             return
         except Exception as exc:  # noqa: BLE001
             if self._is_offline_error(exc) and device and device.serial:

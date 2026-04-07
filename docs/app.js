@@ -38,6 +38,24 @@ const WEB_I18N = {
       "Not found data in database. According to database prefix rules, data was automatically filled. Register new device?",
     scanNotFoundStatus: "Not found in database. Register new device.",
     scanNotFoundPopup: "Not found data in database. Register new device?",
+    conflictTitle: "Conflict detected",
+    conflictMessage: "This device was updated elsewhere. Choose how to continue.",
+    conflictReload: "Reload latest",
+    conflictOverwrite: "Overwrite with my values",
+    conflictCancel: "Cancel",
+    conflictReloadedStatus: "Conflict: latest database values reloaded.",
+    conflictOverwrittenStatus: "Conflict resolved: overwritten with your values.",
+    conflictNoChangeStatus: "Conflict detected. No changes applied.",
+    prefixRulesAdminOnly: "Admin access required",
+    prefixRulesLoadedStatus: "Rules loaded: {count}",
+    prefixRuleSavedStatus: "Rule saved",
+    prefixRuleDeletedStatus: "Rule deleted",
+    prefixRuleInvalidKey: "Prefix key is required",
+    prefixRuleDeleteSelect: "Select a rule to delete",
+    prefixRuleDeleteConfirm: "Delete selected prefix rule?",
+    prefixRulesLoadError: "Prefix rules load failed: {error}",
+    prefixRulesSaveError: "Prefix rule save failed: {error}",
+    prefixRulesDeleteError: "Prefix rule delete failed: {error}",
   },
   lv: {
     scanPopupTitle: "Skenēšanas rezultāts",
@@ -54,6 +72,24 @@ const WEB_I18N = {
       "Datubāzē dati nav atrasti. Pēc prefiksu noteikumiem dati automātiski aizpildīti. Reģistrēt jaunu ierīci?",
     scanNotFoundStatus: "Datubāzē nav atrasts. Reģistrē jaunu ierīci.",
     scanNotFoundPopup: "Datubāzē dati nav atrasti. Reģistrēt jaunu ierīci?",
+    conflictTitle: "Konflikts atrasts",
+    conflictMessage: "Šo ierīci citur jau atjaunināja. Izvēlies, kā turpināt.",
+    conflictReload: "Ielādēt jaunāko",
+    conflictOverwrite: "Pārrakstīt ar manām vērtībām",
+    conflictCancel: "Atcelt",
+    conflictReloadedStatus: "Konflikts: ielādētas jaunākās datubāzes vērtības.",
+    conflictOverwrittenStatus: "Konflikts atrisināts: pārrakstīts ar tavām vērtībām.",
+    conflictNoChangeStatus: "Konflikts atrasts. Izmaiņas netika saglabātas.",
+    prefixRulesAdminOnly: "Nepieciešama admin piekļuve",
+    prefixRulesLoadedStatus: "Noteikumi ielādēti: {count}",
+    prefixRuleSavedStatus: "Noteikums saglabāts",
+    prefixRuleDeletedStatus: "Noteikums dzēsts",
+    prefixRuleInvalidKey: "Prefiksa atslēga ir obligāta",
+    prefixRuleDeleteSelect: "Izvēlies noteikumu dzēšanai",
+    prefixRuleDeleteConfirm: "Dzēst izvēlēto prefiksa noteikumu?",
+    prefixRulesLoadError: "Prefiksu noteikumu ielāde neizdevās: {error}",
+    prefixRulesSaveError: "Prefiksa noteikuma saglabāšana neizdevās: {error}",
+    prefixRulesDeleteError: "Prefiksa noteikuma dzēšana neizdevās: {error}",
   },
 };
 
@@ -93,6 +129,11 @@ function trWeb(key) {
   return WEB_I18N[WEB_LANG]?.[key] || WEB_I18N.en[key] || key;
 }
 
+function trWebFmt(key, vars = {}) {
+  const template = trWeb(key);
+  return String(template).replace(/\{(\w+)\}/g, (_m, k) => String(vars[k] ?? ""));
+}
+
 const els = {
   serial: document.getElementById("serial"),
   statusText: document.getElementById("status"),
@@ -119,6 +160,19 @@ const els = {
   auditStatus: document.getElementById("auditStatus"),
   auditList: document.getElementById("auditList"),
   auditCard: document.getElementById("auditCard"),
+  prefixRulesCard: document.getElementById("prefixRulesCard"),
+  prefixRulesStatus: document.getElementById("prefixRulesStatus"),
+  prefixRulesRefresh: document.getElementById("prefixRulesRefresh"),
+  prefixKey: document.getElementById("prefixKey"),
+  prefixType: document.getElementById("prefixType"),
+  prefixMake: document.getElementById("prefixMake"),
+  prefixModel: document.getElementById("prefixModel"),
+  prefixPriority: document.getElementById("prefixPriority"),
+  prefixActive: document.getElementById("prefixActive"),
+  prefixSave: document.getElementById("prefixSave"),
+  prefixDelete: document.getElementById("prefixDelete"),
+  prefixClear: document.getElementById("prefixClear"),
+  prefixRulesList: document.getElementById("prefixRulesList"),
   diagStatus: document.getElementById("diagStatus"),
   diagOnline: document.getElementById("diagOnline"),
   diagQueue: document.getElementById("diagQueue"),
@@ -131,6 +185,12 @@ const els = {
   scanPopupMessage: document.getElementById("scanPopupMessage"),
   scanPopupRegister: document.getElementById("scanPopupRegister"),
   scanPopupClose: document.getElementById("scanPopupClose"),
+  conflictPopup: document.getElementById("conflictPopup"),
+  conflictPopupTitle: document.getElementById("conflictPopupTitle"),
+  conflictPopupMessage: document.getElementById("conflictPopupMessage"),
+  conflictReload: document.getElementById("conflictReload"),
+  conflictOverwrite: document.getElementById("conflictOverwrite"),
+  conflictCancel: document.getElementById("conflictCancel"),
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
   authInfo: document.getElementById("authInfo"),
@@ -148,6 +208,9 @@ let prefixHintsByKey = { ...FALLBACK_PREFIX_HINTS };
 const loadedRevisionBySerial = new Map();
 let authContext = null;
 let pendingRegisterSerial = "";
+let prefixRulesCache = [];
+let selectedPrefixRuleId = "";
+let conflictResolve = null;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -238,6 +301,200 @@ function applyWebLanguageLabels() {
   if (els.scanPopupClose) {
     els.scanPopupClose.textContent = trWeb("scanPopupClose");
   }
+  if (els.conflictPopupTitle) {
+    els.conflictPopupTitle.textContent = trWeb("conflictTitle");
+  }
+  if (els.conflictPopupMessage) {
+    els.conflictPopupMessage.textContent = trWeb("conflictMessage");
+  }
+  if (els.conflictReload) {
+    els.conflictReload.textContent = trWeb("conflictReload");
+  }
+  if (els.conflictOverwrite) {
+    els.conflictOverwrite.textContent = trWeb("conflictOverwrite");
+  }
+  if (els.conflictCancel) {
+    els.conflictCancel.textContent = trWeb("conflictCancel");
+  }
+}
+
+function normalizePrefixKey(value) {
+  let raw = String(value || "").toUpperCase().replace(/[^A-Z0-9:]/g, "").trim();
+  if (!raw) return "";
+  if (raw.includes(":")) {
+    const parts = raw.split(":", 2);
+    return `${parts[0]}:${parts[1] || ""}`;
+  }
+  return raw;
+}
+
+function clearPrefixRuleForm() {
+  selectedPrefixRuleId = "";
+  if (els.prefixKey) els.prefixKey.value = "";
+  if (els.prefixType) els.prefixType.value = "scanner";
+  if (els.prefixMake) els.prefixMake.value = "";
+  if (els.prefixModel) els.prefixModel.value = "";
+  if (els.prefixPriority) els.prefixPriority.value = "100";
+  if (els.prefixActive) els.prefixActive.checked = true;
+}
+
+function fillPrefixRuleForm(row) {
+  selectedPrefixRuleId = String(row?.id || "");
+  if (els.prefixKey) els.prefixKey.value = String(row?.prefix_key || "");
+  if (els.prefixType) els.prefixType.value = String(row?.device_type || "scanner");
+  if (els.prefixMake) els.prefixMake.value = String(row?.make || "");
+  if (els.prefixModel) els.prefixModel.value = String(row?.model || "");
+  if (els.prefixPriority) els.prefixPriority.value = String(row?.priority ?? 100);
+  if (els.prefixActive) els.prefixActive.checked = row?.active !== false;
+}
+
+function renderPrefixRules(rows) {
+  if (!els.prefixRulesList) return;
+  if (!Array.isArray(rows) || !rows.length) {
+    els.prefixRulesList.innerHTML = `
+      <div class="prefix-row">
+        <span>No rules</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+      </div>
+    `;
+    return;
+  }
+
+  els.prefixRulesList.innerHTML = rows
+    .map(
+      (row) => `
+      <div class="prefix-row" data-prefix-id="${row.id}">
+        <span>${row.prefix_key || ""}</span>
+        <span>${row.device_type || ""}</span>
+        <span>${row.make || ""}</span>
+        <span>${row.model || ""}</span>
+        <span>${row.priority ?? ""}</span>
+        <span>${row.active === false ? "no" : "yes"}</span>
+      </div>
+    `
+    )
+    .join("");
+}
+
+async function loadPrefixRulesAdmin() {
+  if (!authContext?.isAdmin) {
+    if (els.prefixRulesStatus) {
+      els.prefixRulesStatus.textContent = trWeb("prefixRulesAdminOnly");
+    }
+    renderPrefixRules([]);
+    return;
+  }
+
+  if (els.prefixRulesStatus) {
+    els.prefixRulesStatus.textContent = "Loading...";
+  }
+
+  try {
+    const rows = await restRequest(
+      "device_prefix_rules?select=id,prefix_key,device_type,make,model,priority,active,updated_at&order=priority.asc"
+    );
+    prefixRulesCache = Array.isArray(rows) ? rows : [];
+    renderPrefixRules(prefixRulesCache);
+    if (els.prefixRulesStatus) {
+      els.prefixRulesStatus.textContent = trWebFmt("prefixRulesLoadedStatus", { count: prefixRulesCache.length });
+    }
+  } catch (error) {
+    if (els.prefixRulesStatus) {
+      els.prefixRulesStatus.textContent = trWebFmt("prefixRulesLoadError", { error: error.message });
+    }
+    setStatus(trWebFmt("prefixRulesLoadError", { error: error.message }), "error");
+  }
+}
+
+async function savePrefixRule() {
+  if (!authContext?.isAdmin) {
+    setStatus(trWeb("prefixRulesAdminOnly"), "error");
+    return;
+  }
+
+  const prefixKey = normalizePrefixKey(els.prefixKey?.value || "");
+  if (!prefixKey) {
+    setStatus(trWeb("prefixRuleInvalidKey"), "error");
+    return;
+  }
+
+  const payload = {
+    prefix_key: prefixKey,
+    device_type: String(els.prefixType?.value || "scanner").trim() || "scanner",
+    make: String(els.prefixMake?.value || "").trim(),
+    model: String(els.prefixModel?.value || "").trim(),
+    priority: Number(els.prefixPriority?.value || 100) || 100,
+    active: Boolean(els.prefixActive?.checked),
+  };
+
+  try {
+    if (selectedPrefixRuleId) {
+      await restRequest(`device_prefix_rules?id=eq.${encodeURIComponent(selectedPrefixRuleId)}`, {
+        method: "PATCH",
+        body: payload,
+      });
+    } else {
+      await restRequest("device_prefix_rules", {
+        method: "POST",
+        body: payload,
+        prefer: "return=representation",
+      });
+    }
+    setStatus(trWeb("prefixRuleSavedStatus"), "ok");
+    await loadPrefixRules();
+    await loadPrefixRulesAdmin();
+    clearPrefixRuleForm();
+  } catch (error) {
+    setStatus(trWebFmt("prefixRulesSaveError", { error: error.message }), "error");
+  }
+}
+
+async function deletePrefixRule() {
+  if (!authContext?.isAdmin) {
+    setStatus(trWeb("prefixRulesAdminOnly"), "error");
+    return;
+  }
+  if (!selectedPrefixRuleId) {
+    setStatus(trWeb("prefixRuleDeleteSelect"), "error");
+    return;
+  }
+  if (!window.confirm(trWeb("prefixRuleDeleteConfirm"))) {
+    return;
+  }
+  try {
+    await restRequest(`device_prefix_rules?id=eq.${encodeURIComponent(selectedPrefixRuleId)}`, {
+      method: "DELETE",
+    });
+    setStatus(trWeb("prefixRuleDeletedStatus"), "ok");
+    await loadPrefixRules();
+    await loadPrefixRulesAdmin();
+    clearPrefixRuleForm();
+  } catch (error) {
+    setStatus(trWebFmt("prefixRulesDeleteError", { error: error.message }), "error");
+  }
+}
+
+function askConflictResolution() {
+  if (!els.conflictPopup) {
+    return Promise.resolve("reload");
+  }
+  return new Promise((resolve) => {
+    conflictResolve = resolve;
+    els.conflictPopup.classList.remove("hidden");
+  });
+}
+
+function resolveConflictPopup(choice) {
+  if (els.conflictPopup) {
+    els.conflictPopup.classList.add("hidden");
+  }
+  const done = conflictResolve;
+  conflictResolve = null;
+  if (done) done(choice);
 }
 
 function readStorageText(key) {
@@ -377,6 +634,17 @@ function applyAuthUiState() {
       els.auditCard.classList.add("hidden");
       if (els.auditStatus) {
         els.auditStatus.textContent = "Admin only";
+      }
+    }
+  }
+
+  if (els.prefixRulesCard) {
+    if (authContext?.isAdmin) {
+      els.prefixRulesCard.classList.remove("hidden");
+    } else {
+      els.prefixRulesCard.classList.add("hidden");
+      if (els.prefixRulesStatus) {
+        els.prefixRulesStatus.textContent = trWeb("prefixRulesAdminOnly");
       }
     }
   }
@@ -1143,15 +1411,33 @@ async function saveDevice() {
         : `devices?id=eq.${encodeURIComponent(existing.id)}`;
       const rows = await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=representation" });
       if (expected && Array.isArray(rows) && rows.length === 0) {
-        setStatus("Conflict: device changed elsewhere. Reload and try again.", "error");
-        await loadByScannedValue(cleaned);
-        return;
+        const decision = await askConflictResolution();
+        if (decision === "overwrite") {
+          const overwriteRows = await restRequest(`devices?id=eq.${encodeURIComponent(existing.id)}`, {
+            method: "PATCH",
+            body: editPayload,
+            prefer: "return=representation",
+          });
+          if (Array.isArray(overwriteRows) && overwriteRows[0]?.updated_at) {
+            rememberRevisionForToken(cleaned, overwriteRows[0].updated_at);
+          }
+          setStatus(trWeb("conflictOverwrittenStatus"), "ok");
+          markSave(cleaned);
+        } else if (decision === "reload") {
+          await loadByScannedValue(cleaned);
+          setStatus(trWeb("conflictReloadedStatus"), "error");
+          return;
+        } else {
+          setStatus(trWeb("conflictNoChangeStatus"), "error");
+          return;
+        }
+      } else {
+        if (Array.isArray(rows) && rows[0]?.updated_at) {
+          rememberRevisionForToken(cleaned, rows[0].updated_at);
+        }
+        setStatus("Updated existing device", "ok");
+        markSave(cleaned);
       }
-      if (Array.isArray(rows) && rows[0]?.updated_at) {
-        rememberRevisionForToken(cleaned, rows[0].updated_at);
-      }
-      setStatus("Updated existing device", "ok");
-      markSave(cleaned);
     } else {
       const insertPayload = {
         serial: normalizeForStore(cleaned),
@@ -1396,11 +1682,55 @@ if (els.scanPopup) {
     }
   });
 }
+if (els.conflictReload) {
+  els.conflictReload.addEventListener("click", () => resolveConflictPopup("reload"));
+}
+if (els.conflictOverwrite) {
+  els.conflictOverwrite.addEventListener("click", () => resolveConflictPopup("overwrite"));
+}
+if (els.conflictCancel) {
+  els.conflictCancel.addEventListener("click", () => resolveConflictPopup("cancel"));
+}
+if (els.conflictPopup) {
+  els.conflictPopup.addEventListener("click", (e) => {
+    if (e.target === els.conflictPopup) {
+      resolveConflictPopup("cancel");
+    }
+  });
+}
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     hideScanPopup();
+    resolveConflictPopup("cancel");
   }
 });
+if (els.prefixRulesRefresh) {
+  els.prefixRulesRefresh.addEventListener("click", loadPrefixRulesAdmin);
+}
+if (els.prefixSave) {
+  els.prefixSave.addEventListener("click", savePrefixRule);
+}
+if (els.prefixDelete) {
+  els.prefixDelete.addEventListener("click", deletePrefixRule);
+}
+if (els.prefixClear) {
+  els.prefixClear.addEventListener("click", clearPrefixRuleForm);
+}
+if (els.prefixKey) {
+  els.prefixKey.addEventListener("input", () => {
+    els.prefixKey.value = normalizePrefixKey(els.prefixKey.value);
+  });
+}
+if (els.prefixRulesList) {
+  els.prefixRulesList.addEventListener("click", (e) => {
+    const row = e.target.closest(".prefix-row[data-prefix-id]");
+    if (!row) return;
+    const id = String(row.getAttribute("data-prefix-id") || "");
+    if (!id) return;
+    const found = prefixRulesCache.find((x) => String(x?.id || "") === id);
+    if (found) fillPrefixRuleForm(found);
+  });
+}
 if (els.diagRefresh) {
   els.diagRefresh.addEventListener("click", () => {
     updateDiagnosticsPanel();
@@ -1445,10 +1775,12 @@ if (recoveredDraft) {
   }
 }
 loadPrefixRules();
+loadPrefixRulesAdmin();
 els.serial.focus();
 loadDevicesList();
 setTimeout(() => {
   loadPrefixRules();
+  loadPrefixRulesAdmin();
   loadDevicesList();
   processQueuedSaves();
 }, 1200);
@@ -1456,6 +1788,7 @@ window.addEventListener("focus", () => {
   authContext = resolveAuthContext();
   applyAuthUiState();
   loadPrefixRules();
+  loadPrefixRulesAdmin();
   loadDevicesList();
   processQueuedSaves();
 });
@@ -1474,6 +1807,7 @@ setInterval(() => {
   authContext = resolveAuthContext();
   applyAuthUiState();
   loadPrefixRules();
+  loadPrefixRulesAdmin();
   loadDevicesList();
   processQueuedSaves();
 }, 20000);

@@ -165,6 +165,70 @@
         </div>
       </section>
 
+      <section class="card" id="prefixRulesCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Prefix Rules (Admin)</div>
+            <div class="card__subtitle">Manage DB prefix->device model mapping</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="prefixRulesStatus"></div>
+            <button id="prefixRulesRefresh" class="btn btn--small">Refresh rules</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label class="label" for="prefixKey">Prefix key</label>
+            <input id="prefixKey" class="input" type="text" maxlength="24" placeholder="A3:5CG or D2:24" />
+          </div>
+          <div>
+            <label class="label" for="prefixType">Type</label>
+            <select id="prefixType" class="input">
+              <option value="scanner">Scanner</option>
+              <option value="laptop">Laptop</option>
+              <option value="tablet">Tablet</option>
+              <option value="phone">Phone</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="prefixMake">Make</label>
+            <input id="prefixMake" class="input" type="text" maxlength="40" />
+          </div>
+          <div>
+            <label class="label" for="prefixModel">Model</label>
+            <input id="prefixModel" class="input" type="text" maxlength="80" />
+          </div>
+          <div>
+            <label class="label" for="prefixPriority">Priority</label>
+            <input id="prefixPriority" class="input" type="number" min="1" max="9999" value="100" />
+          </div>
+          <div class="check">
+            <input id="prefixActive" type="checkbox" checked />
+            <label for="prefixActive">Active</label>
+          </div>
+        </div>
+
+        <div class="actions__buttons">
+          <button id="prefixSave" class="btn primary">Save rule</button>
+          <button id="prefixDelete" class="btn">Delete rule</button>
+          <button id="prefixClear" class="btn">Clear form</button>
+        </div>
+
+        <div class="table">
+          <div class="prefix-row prefix-row--head">
+            <span>Key</span>
+            <span>Type</span>
+            <span>Make</span>
+            <span>Model</span>
+            <span>Priority</span>
+            <span>Active</span>
+          </div>
+          <div id="prefixRulesList" class="prefix-rows"></div>
+        </div>
+      </section>
+
       <footer class="footer">
         <div>Hosted on GitHub Pages</div>
         <div class="footer__meta">
@@ -182,6 +246,20 @@
         <div class="popup__actions">
           <button id="scanPopupRegister" class="btn primary">Register new device</button>
           <button id="scanPopupClose" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="conflictPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="conflictPopupTitle">
+      <div class="popup__card">
+        <div class="popup__title" id="conflictPopupTitle">Conflict detected</div>
+        <div class="popup__message" id="conflictPopupMessage">
+          This device was updated elsewhere. Choose how to continue.
+        </div>
+        <div class="popup__actions">
+          <button id="conflictReload" class="btn">Reload latest</button>
+          <button id="conflictOverwrite" class="btn primary">Overwrite with my values</button>
+          <button id="conflictCancel" class="btn">Cancel</button>
         </div>
       </div>
     </div>

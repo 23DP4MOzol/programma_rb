@@ -103,6 +103,36 @@ body {
   min-height: 80px;
 }
 
+.prefix-rows {
+  display: grid;
+  gap: 6px;
+  min-height: 80px;
+}
+
+.prefix-row {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr 1fr 1.2fr 0.8fr 0.8fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  background: #fff;
+  align-items: start;
+}
+
+.prefix-row--head {
+  background: #f3f3f3;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.prefix-rows .prefix-row[data-prefix-id] {
+  cursor: pointer;
+}
+
 .audit-row {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr 1.1fr 1.2fr;
@@ -433,6 +463,14 @@ body {
   }
 
   .audit-rows .audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .prefix-row--head {
+    display: none;
+  }
+
+  .prefix-rows .prefix-row {
     grid-template-columns: 1fr;
   }
 
