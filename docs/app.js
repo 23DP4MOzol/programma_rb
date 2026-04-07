@@ -18,11 +18,14 @@ const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
 const SCAN_DEBOUNCE_MS = 900;
 const SAVE_DEBOUNCE_MS = 1400;
+const WEB_APP_VERSION = "web-2026.04.07";
 
 const els = {
   serial: document.getElementById("serial"),
   statusText: document.getElementById("status"),
   queueStatus: document.getElementById("queueStatus"),
+  appVersion: document.getElementById("appVersion"),
+  syncInfo: document.getElementById("syncInfo"),
   type: document.getElementById("type"),
   statusSelect: document.getElementById("statusSelect"),
   make: document.getElementById("make"),
@@ -36,6 +39,8 @@ const els = {
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
   refreshList: document.getElementById("refreshList"),
+  syncNow: document.getElementById("syncNow"),
+  exportCsv: document.getElementById("exportCsv"),
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
 };
@@ -47,6 +52,7 @@ let lastLoadedSerial = "";
 let lastLoadedAt = 0;
 let lastSavedSerial = "";
 let lastSavedAt = 0;
+let lastSuccessfulSyncAt = "";
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -56,6 +62,23 @@ function setStatus(message, tone = "info") {
     els.statusText.style.color = "#0a7a2f";
   } else {
     els.statusText.style.color = "#6b6b6b";
+  }
+}
+
+function setSyncInfo(message, tone = "info") {
+  if (!els.syncInfo) return;
+  let text = `Sync: ${message}`;
+  if (message === "up to date" && lastSuccessfulSyncAt) {
+    const local = new Date(lastSuccessfulSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    text = `Sync: ${message} (${local})`;
+  }
+  els.syncInfo.textContent = text;
+  if (tone === "error") {
+    els.syncInfo.style.color = "#b00020";
+  } else if (tone === "ok") {
+    els.syncInfo.style.color = "#0a7a2f";
+  } else {
+    els.syncInfo.style.color = "#6b6b6b";
   }
 }
 
@@ -294,6 +317,76 @@ function buildSaveOperation(cleanedToken) {
   };
 }
 
+function getFilteredRows() {
+  const filter = String(els.listFilter.value || "").trim().toLowerCase();
+  if (!filter) return devicesCache;
+
+  return devicesCache.filter((row) => {
+    return [row.serial, row.device_type, row.model, row.status, row.from_store, row.to_store, row.comment]
+      .map((v) => String(v || "").toLowerCase())
+      .some((v) => v.includes(filter));
+  });
+}
+
+function csvEscape(value) {
+  const text = String(value || "");
+  if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function exportVisibleDevicesCsv() {
+  const rows = getFilteredRows();
+  if (!rows.length) {
+    setStatus("No rows to export", "error");
+    return;
+  }
+
+  const headers = ["serial", "device_type", "model", "status", "from_store", "to_store", "comment", "updated_at"];
+  const lines = [headers.join(",")];
+
+  for (const row of rows) {
+    const vals = [
+      row.serial,
+      row.device_type,
+      row.model,
+      row.status,
+      row.from_store,
+      row.to_store,
+      row.comment,
+      row.updated_at,
+    ].map(csvEscape);
+    lines.push(vals.join(","));
+  }
+
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  a.href = url;
+  a.download = `devices_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  setStatus(`Exported ${rows.length} row(s) to CSV`, "ok");
+}
+
+async function syncNow() {
+  setStatus("Manual sync started...");
+  await processQueuedSaves();
+  await loadDevicesList();
+  const pending = getQueuedSaves().length;
+  if (pending > 0) {
+    setStatus(`Manual sync done. Pending queue: ${pending}`, "error");
+  } else {
+    setStatus("Manual sync complete", "ok");
+  }
+}
+
 function getPrefixKey(token) {
   const t = cleanToken(token);
   if (isScannerToken(t)) {
@@ -483,6 +576,7 @@ async function processQueuedSaves() {
   if (!queue.length) return;
 
   queueSyncInProgress = true;
+  setSyncInfo("syncing queued saves");
 
   let synced = 0;
   const remaining = [];
@@ -529,12 +623,17 @@ async function processQueuedSaves() {
   }
 
   if (synced > 0) {
+    lastSuccessfulSyncAt = new Date().toISOString();
     setStatus(`Synced ${synced} queued save(s)`, "ok");
+    setSyncInfo(`synced ${synced} queued save(s)`, "ok");
     await loadDevicesList();
   }
 
   if (remaining.length && navigator.onLine) {
     setStatus(`Queue pending: ${remaining.length} save(s)`, "error");
+    setSyncInfo(`queued pending ${remaining.length}`, "error");
+  } else if (!remaining.length && navigator.onLine) {
+    setSyncInfo("up to date", "ok");
   }
 }
 
@@ -668,14 +767,7 @@ async function saveDevice() {
 }
 
 function renderDevicesList() {
-  const filter = String(els.listFilter.value || "").trim().toLowerCase();
-  const rows = !filter
-    ? devicesCache
-    : devicesCache.filter((row) => {
-        return [row.serial, row.device_type, row.model, row.status, row.from_store, row.to_store, row.comment]
-          .map((v) => String(v || "").toLowerCase())
-          .some((v) => v.includes(filter));
-      });
+  const rows = getFilteredRows();
 
   els.listStatus.textContent = `Showing ${rows.length}`;
 
@@ -714,6 +806,7 @@ function renderDevicesList() {
 
 async function loadDevicesList() {
   els.listStatus.textContent = "Loading...";
+  setSyncInfo("loading device list");
   els.devicesList.innerHTML = `
     <div class="row">
       <span>Loading database...</span>
@@ -732,9 +825,12 @@ async function loadDevicesList() {
     );
     devicesCache = Array.isArray(data) ? data : [];
     renderDevicesList();
+    lastSuccessfulSyncAt = new Date().toISOString();
+    setSyncInfo("up to date", "ok");
   } catch (error) {
     devicesCache = [];
     els.listStatus.textContent = `Database error: ${error.message}`;
+    setSyncInfo("database error", "error");
     els.devicesList.innerHTML = `
       <div class="row">
         <span>Database error</span>
@@ -802,6 +898,8 @@ els.lookupSerial.addEventListener("keydown", (e) => {
 
 els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
+els.syncNow.addEventListener("click", syncNow);
+els.exportCsv.addEventListener("click", exportVisibleDevicesCsv);
 els.clear.addEventListener("click", () => {
   resetForm();
   clearDraft();
@@ -823,6 +921,10 @@ els.devicesList.addEventListener("click", (e) => {
 
 resetForm();
 updateQueueStatus();
+if (els.appVersion) {
+  els.appVersion.textContent = `Version: ${WEB_APP_VERSION}`;
+}
+setSyncInfo(navigator.onLine ? "starting" : "offline", navigator.onLine ? "info" : "error");
 const recoveredDraft = restoreDraft();
 if (recoveredDraft) {
   setStatus("Recovered unsaved draft");
@@ -842,10 +944,12 @@ window.addEventListener("focus", () => {
 });
 window.addEventListener("online", () => {
   setStatus("Back online. Syncing queued saves...");
+  setSyncInfo("back online", "ok");
   processQueuedSaves();
 });
 window.addEventListener("offline", () => {
   setStatus("Offline mode: saves will be queued", "error");
+  setSyncInfo("offline", "error");
 });
 setInterval(() => {
   loadDevicesList();

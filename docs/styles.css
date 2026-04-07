@@ -254,6 +254,14 @@ body {
   padding-bottom: 10px;
 }
 
+.footer__meta {
+  margin-top: 6px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .list-tools {
   display: grid;
   gap: 8px;

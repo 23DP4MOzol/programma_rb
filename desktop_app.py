@@ -13,6 +13,7 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from i18n import load_translations, t
+from serial_parsing import extract_preferred_serial, normalize_for_store
 from supabase_db import ALLOWED_STATUSES, Device, InventoryDB
 
 
@@ -641,32 +642,14 @@ class DesktopApp:
         if not raw_scan:
             return
 
-        # Parse scanner and laptop QR payloads.
-        # - Scanner serial: S + 13/14 digits
-        # - Laptop QR payloads can be comma-separated and serial is usually first token
-        tokens = [t.strip().upper() for t in re.split(r"[\s,;|]+", raw_scan) if t.strip()]
-
-        serial_token = ""
-        for tok in tokens:
-            if re.fullmatch(r"S\d{13,14}", tok):
-                serial_token = tok
-                break
-
-        if not serial_token and ("," in raw_scan or ";" in raw_scan or "|" in raw_scan) and tokens:
-            first = tokens[0]
-            if re.fullmatch(r"[A-Z0-9]{8,20}", first):
-                serial_token = first
-
-        if not serial_token:
-            candidate = tokens[0] if tokens else raw_scan.upper()
-            if re.fullmatch(r"\d{13,14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
-                serial_token = candidate
+        # Parse scanner and laptop QR payloads into one canonical serial token.
+        serial_token = extract_preferred_serial(raw_scan, mode="scanner")
 
         if not serial_token:
             self._write_result({"ok": False, "error": "Invalid serial barcode format"}, ok=False)
             return
 
-        normalized_serial = serial_token[1:] if re.fullmatch(r"S\d{13,14}", serial_token) else serial_token
+        normalized_serial = normalize_for_store(serial_token)
         self.serial_var.set(normalized_serial)
 
         # 1. Check if device exists in DB (support both with and without S prefix)
@@ -2123,30 +2106,13 @@ class DesktopApp:
     def _current_device_from_form(self) -> Device:
         raw_serial = self.serial_var.get().strip()
         serial = raw_serial
+        device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
 
         if raw_serial:
-            tokens = [t.strip().upper() for t in re.split(r"[\s,;|]+", raw_serial) if t.strip()]
-            serial_token = ""
-
-            for tok in tokens:
-                if re.fullmatch(r"S\d{13,14}", tok):
-                    serial_token = tok
-                    break
-
-            if not serial_token and ("," in raw_serial or ";" in raw_serial or "|" in raw_serial) and tokens:
-                first = tokens[0]
-                if re.fullmatch(r"[A-Z0-9]{8,20}", first):
-                    serial_token = first
-
-            if not serial_token:
-                candidate = tokens[0] if tokens else raw_serial.upper()
-                if re.fullmatch(r"\d{13,14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
-                    serial_token = candidate
-
+            serial_token = extract_preferred_serial(raw_serial, mode=device_type)
             if serial_token:
-                serial = serial_token[1:] if re.fullmatch(r"S\d{13,14}", serial_token) else serial_token
+                serial = normalize_for_store(serial_token)
 
-        device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
         make = self.make_var.get().strip() or None
         model_text = self.model_var.get().strip() or None
         from_store = self.from_store_var.get().strip() or None

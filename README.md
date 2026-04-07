@@ -59,6 +59,27 @@ Atļautās vērtības:
 - DB fails pēc noklusējuma ir `inventory.db` (vari mainīt ar `--db c:\path\to\file.db`).
 - LV/EN tekstus vari mainīt failā `i18n.json`.
 
+### Supabase migrācija (ierobežojumi + audita vēsture)
+
+Lai ieslēgtu datu ierobežojumus un automātisku izmaiņu auditu Supabase pusē, izpildi SQL skriptu:
+
+- `supabase/migrations/20260407_hardening_and_audit.sql`
+
+To vari palaist Supabase SQL Editor vai ar CLI. Skripts pievieno:
+
+- unikālu indeksu normalizētam `serial`
+- statusa `CHECK` ierobežojumu
+- `device_audit_log` tabulu
+- triggeri, kas automātiski žurnalē `INSERT/UPDATE/DELETE` izmaiņas
+
+RLS sadalījums:
+
+- parastie lietotāji (`anon` / `authenticated`) var lasīt / pievienot / atjaunot ierakstus
+- esošām ierīcēm laukus `serial`, `device_type`, `model` drīkst mainīt tikai `device_admin`
+- dzēst drīkst tikai `device_admin`
+
+`device_admin` tiek atpazīts no JWT (`app_metadata.device_admin=true` vai `device_admin=true`).
+
 ## English
 
 Simple local device inventory app (Python + SQLite) with a desktop UI (Tkinter). Devices are identified by `serial` and you can edit type/model/store/status.
@@ -115,3 +136,32 @@ Allowed values:
 
 - Default DB file is `inventory.db` (override with `--db c:\path\to\file.db`).
 - You can edit LV/EN texts in `i18n.json`.
+
+### Supabase migration (constraints + audit history)
+
+To enable stricter data constraints and automatic audit logging in Supabase, run:
+
+- `supabase/migrations/20260407_hardening_and_audit.sql`
+
+You can run it in Supabase SQL Editor or via CLI. It adds:
+
+- unique index on normalized `serial`
+- `CHECK` constraint for allowed statuses
+- `device_audit_log` table
+- trigger-based logging for `INSERT/UPDATE/DELETE`
+
+RLS split:
+
+- normal users (`anon` / `authenticated`) can read / insert / update records
+- changing `serial`, `device_type`, `model` on existing records is allowed only for `device_admin`
+- delete is allowed only for `device_admin`
+
+`device_admin` is derived from JWT (`app_metadata.device_admin=true` or `device_admin=true`).
+
+### Tests
+
+Run serial parsing tests with:
+
+```powershell
+python -m unittest tests.test_serial_parsing
+```

@@ -94,7 +94,9 @@
           </div>
           <div class="card__head-actions">
             <div class="card__status" id="listStatus"></div>
+            <button id="syncNow" class="btn btn--small">Sync now</button>
             <button id="refreshList" class="btn btn--small">Refresh</button>
+            <button id="exportCsv" class="btn btn--small">Export CSV</button>
           </div>
         </div>
         <div class="list-tools">
@@ -118,7 +120,13 @@
         </div>
       </section>
 
-      <footer class="footer">Hosted on GitHub Pages</footer>
+      <footer class="footer">
+        <div>Hosted on GitHub Pages</div>
+        <div class="footer__meta">
+          <span id="appVersion">Version: web-2026.04.07</span>
+          <span id="syncInfo">Sync: waiting</span>
+        </div>
+      </footer>
     </main>
 
     <script src="app.js"></script>
