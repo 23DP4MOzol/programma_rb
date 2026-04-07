@@ -7,6 +7,10 @@ const GENERIC_SERIAL_RE = /^[A-Z0-9]{8,20}$/;
 
 const PREFIX_HINTS = {
   "D2:18": { device_type: "scanner", make: "Zebra", model: "TC51" },
+  "D2:19": { device_type: "scanner", make: "Zebra", model: "TC52" },
+  "D2:20": { device_type: "scanner", make: "Zebra", model: "TC52" },
+  "D2:21": { device_type: "scanner", make: "Zebra", model: "TC52" },
+  "D2:24": { device_type: "scanner", make: "Zebra", model: "TC52" },
   "A3:5CG": { device_type: "laptop", make: "HP", model: "EliteBook 840 G10" },
 };
 

@@ -23,9 +23,10 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     # Zebra scanners often start with these (example patterns, edit these to match your actual fleet!)
     "19": ("scanner", "Zebra", "Zebra TC52"),    # e.g., 19055...
     "20": ("scanner", "Zebra", "Zebra TC52"),    # e.g., 20334...
+    "24": ("scanner", "Zebra", "Zebra TC52"),
     "17": ("scanner", "Zebra", "Zebra TC51"),    # e.g., 17094...
     "18": ("scanner", "Zebra", "Zebra TC51"),
-    "21": ("scanner", "Zebra", "Zebra TC57"),
+    "21": ("scanner", "Zebra", "Zebra TC52"),
     "40": ("scanner", "Zebra", "Zebra MC3300"),
     "PF": ("laptop",  "Lenovo", "Lenovo ThinkPad"), # Lenovo laptops usually start with PF, PC, MJ
     "PC": ("laptop",  "Lenovo", "Lenovo ThinkPad"),
