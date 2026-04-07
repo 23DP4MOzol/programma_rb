@@ -73,11 +73,18 @@ class ReleaseSmokeTests(unittest.TestCase):
         workflows = ROOT / ".github" / "workflows"
         self.assertTrue((workflows / "release_e2e_smoke.yml").exists())
         self.assertTrue((workflows / "build_webview_apk_production.yml").exists())
+        self.assertTrue((workflows / "build_webview_apk.yml").exists())
 
         production_text = (workflows / "build_webview_apk_production.yml").read_text(encoding="utf-8")
         self.assertIn("rollout_track", production_text)
         self.assertIn("stable", production_text)
         self.assertIn("test", production_text)
+        self.assertIn("sha256sum", production_text)
+        self.assertIn("manifest.json", production_text)
+
+        default_build_text = (workflows / "build_webview_apk.yml").read_text(encoding="utf-8")
+        self.assertIn("sha256sum", default_build_text)
+        self.assertIn("manifest.json", default_build_text)
 
     def test_backup_runbook_exists(self) -> None:
         self.assertTrue((ROOT / "BACKUP_RECOVERY_RUNBOOK.md").exists())

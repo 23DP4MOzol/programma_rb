@@ -99,8 +99,32 @@ jobs:
         run: |
           test -f android/app/build/outputs/apk/release/app-release.apk
 
+      - name: Prepare production artifact package
+        env:
+          ROLLOUT_TRACK: ${{ github.event.inputs.rollout_track }}
+          VERSION_NAME: ${{ github.event.inputs.version_name }}
+        run: |
+          mkdir -p artifacts/production
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/production/
+          sha256sum artifacts/production/app-release.apk | awk '{print $1}' > artifacts/production/app-release.apk.sha256
+          cat > artifacts/production/manifest.json <<EOF
+          {
+            "build_type": "release",
+            "channel": "${ROLLOUT_TRACK}",
+            "version_name": "${VERSION_NAME}",
+            "run_number": "${{ github.run_number }}",
+            "run_id": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "apk": "app-release.apk",
+            "checksum_file": "app-release.apk.sha256"
+          }
+          EOF
+
       - name: Upload signed production APK
         uses: actions/upload-artifact@v4
         with:
           name: RimiInventory-WebView-APK-${{ github.event.inputs.rollout_track }}-signed
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            artifacts/production/app-release.apk
+            artifacts/production/app-release.apk.sha256
+            artifacts/production/manifest.json

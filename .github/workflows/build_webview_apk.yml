@@ -40,6 +40,22 @@ jobs:
         run: |
           ../gradle-8.7/bin/gradle :app:assembleDebug --no-daemon
 
+      - name: Prepare debug artifact package
+        run: |
+          mkdir -p artifacts/debug
+          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/debug/
+          sha256sum artifacts/debug/app-debug.apk | awk '{print $1}' > artifacts/debug/app-debug.apk.sha256
+          cat > artifacts/debug/manifest.json <<EOF
+          {
+            "build_type": "debug",
+            "run_number": "${{ github.run_number }}",
+            "run_id": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "apk": "app-debug.apk",
+            "checksum_file": "app-debug.apk.sha256"
+          }
+          EOF
+
       - name: Build Release APK (unsigned fallback)
         id: release_build
         continue-on-error: true
@@ -57,24 +73,50 @@ jobs:
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "path=android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "name=app-release.apk" >> "$GITHUB_OUTPUT"
           elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "path=android/app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_OUTPUT"
+            echo "name=app-release-unsigned.apk" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "path=" >> "$GITHUB_OUTPUT"
+            echo "name=" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Prepare release artifact package
+        if: always() && steps.release_apk_check.outputs.exists == 'true'
+        run: |
+          mkdir -p artifacts/release
+          cp "${{ steps.release_apk_check.outputs.path }}" "artifacts/release/${{ steps.release_apk_check.outputs.name }}"
+          sha256sum "artifacts/release/${{ steps.release_apk_check.outputs.name }}" | awk '{print $1}' > "artifacts/release/${{ steps.release_apk_check.outputs.name }}.sha256"
+          cat > artifacts/release/manifest.json <<EOF
+          {
+            "build_type": "release",
+            "run_number": "${{ github.run_number }}",
+            "run_id": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "apk": "${{ steps.release_apk_check.outputs.name }}",
+            "checksum_file": "${{ steps.release_apk_check.outputs.name }}.sha256"
+          }
+          EOF
 
       - name: Upload Debug APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: RimiInventory-WebView-APK-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            artifacts/debug/app-debug.apk
+            artifacts/debug/app-debug.apk.sha256
+            artifacts/debug/manifest.json
 
       - name: Upload Release APK
         if: always() && steps.release_apk_check.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: RimiInventory-WebView-APK-release
-          path: ${{ steps.release_apk_check.outputs.path }}
+          path: |
+            artifacts/release/${{ steps.release_apk_check.outputs.name }}
+            artifacts/release/${{ steps.release_apk_check.outputs.name }}.sha256
+            artifacts/release/manifest.json
