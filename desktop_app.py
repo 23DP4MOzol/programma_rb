@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import traceback
@@ -56,6 +57,32 @@ DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
         "Apple": ["Apple iPhone 12", "Apple iPhone 13", "Apple iPhone 14", "Apple iPhone 15", "Apple iPhone SE"],
     },
 }
+
+
+def _claim_to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return text in {"true", "1", "yes"}
+    return False
+
+
+def _decode_jwt_claims(token: str) -> dict[str, object]:
+    parts = str(token or "").split(".")
+    if len(parts) < 2:
+        return {}
+
+    payload = parts[1].replace("-", "+").replace("_", "/")
+    padding = "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.b64decode(payload + padding)
+        parsed = json.loads(decoded.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
 
 def _try_load_photo_image(path: Path) -> tk.PhotoImage | None:
     try:
@@ -392,6 +419,9 @@ class DesktopApp:
         self.lang = (self.config.get("lang") or self.lang).lower()
         self._pin_code = self.config.get("pin") or ""
         self._custom_prefix_rules = self._load_prefix_rules()
+        self._auth_role = "anon"
+        self._is_device_admin = False
+        self._refresh_auth_claims()
 
         self.translations = load_translations()
         self._rebuild_display_maps()
@@ -409,8 +439,11 @@ class DesktopApp:
         self._filter_refresh_job: str | None = None
         self._sort_col: str | None = None
         self._sort_desc: bool = False
+        self._focus_lock_job: str | None = None
 
         self._build_ui()
+        self._schedule_scanner_focus_lock()
+        self._apply_role_controls()
         self._apply_i18n()
         self.refresh_list()
 
@@ -1050,7 +1083,12 @@ class DesktopApp:
         self.overwrite_chk = ttk.Checkbutton(self.form_card, variable=self.overwrite_var, style="App.TCheckbutton")
         self.overwrite_chk.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
-        self.bulk_scan_chk = ttk.Checkbutton(self.form_card, variable=self.bulk_scan_var, style="App.TCheckbutton")
+        self.bulk_scan_chk = ttk.Checkbutton(
+            self.form_card,
+            variable=self.bulk_scan_var,
+            command=self._on_bulk_scan_toggle,
+            style="App.TCheckbutton",
+        )
         self.bulk_scan_chk.grid(row=2, column=0, sticky="e", pady=(10, 0))
 
         btns = ttk.Frame(self.form_card, style="Card.TFrame")
@@ -1966,6 +2004,27 @@ class DesktopApp:
                 # Best-effort; don't break language switching
                 pass
 
+    def _refresh_auth_claims(self) -> None:
+        claims = _decode_jwt_claims(self.config.get("supabase_key") or "")
+        role = str(claims.get("role") or "anon").strip() or "anon"
+
+        app_metadata = claims.get("app_metadata")
+        app_metadata_dict = app_metadata if isinstance(app_metadata, dict) else {}
+
+        self._auth_role = role
+        self._is_device_admin = (
+            role.lower() == "service_role"
+            or _claim_to_bool(claims.get("device_admin"))
+            or _claim_to_bool(app_metadata_dict.get("device_admin"))
+        )
+
+    def _apply_role_controls(self) -> None:
+        state = "normal" if self._is_device_admin else "disabled"
+        try:
+            self.audit_btn.configure(state=state)
+        except Exception:
+            pass
+
     def _is_offline_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
         return any(
@@ -1999,6 +2058,35 @@ class DesktopApp:
             self.overwrite_var.set(False)
             return
         self.clear_form()
+
+    def _on_bulk_scan_toggle(self) -> None:
+        if self.bulk_scan_var.get():
+            try:
+                self.serial_entry.focus_set()
+                self.serial_entry.icursor(tk.END)
+            except Exception:
+                pass
+
+    def _schedule_scanner_focus_lock(self) -> None:
+        if self._focus_lock_job:
+            try:
+                self.root.after_cancel(self._focus_lock_job)
+            except Exception:
+                pass
+        self._focus_lock_job = self.root.after(350, self._scanner_focus_lock_tick)
+
+    def _scanner_focus_lock_tick(self) -> None:
+        self._focus_lock_job = None
+        try:
+            if self.bulk_scan_var.get():
+                current_focus = self.root.focus_get()
+                top = current_focus.winfo_toplevel() if current_focus is not None else None
+                if top is self.root and current_focus is not self.serial_entry:
+                    self.serial_entry.focus_set()
+                    self.serial_entry.icursor(tk.END)
+        except Exception:
+            pass
+        self._schedule_scanner_focus_lock()
 
     def _sync_now(self) -> None:
         synced, remaining = self._flush_pending_ops()
@@ -2085,12 +2173,14 @@ class DesktopApp:
             self.lang = self.config["lang"]
             self._pin_code = self.config["pin"]
             self._custom_prefix_rules = self._load_prefix_rules()
+            self._refresh_auth_claims()
             self.db = InventoryDB(
                 self.db_path,
                 url=self.config.get("supabase_url"),
                 key=self.config.get("supabase_key"),
             )
             self._apply_i18n()
+            self._apply_role_controls()
             self.refresh_list()
             messagebox.showinfo(self.tr("desktop_config_title"), self.tr("desktop_config_saved"))
             win.destroy()
@@ -2445,6 +2535,10 @@ class DesktopApp:
             self._selected_updated_at = None
 
     def _open_audit_viewer(self) -> None:
+        if not self._is_device_admin:
+            messagebox.showerror(self.tr("desktop_error_title"), "Admin role required for audit viewer")
+            return
+
         if not self._require_pin():
             return
 

@@ -1,0 +1,72 @@
+name: Release E2E Smoke
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  app-smoke-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run parser and release smoke tests
+        run: |
+          python -m unittest tests.test_serial_parsing tests.test_release_smoke
+
+  android-debug-smoke:
+    runs-on: ubuntu-latest
+    needs: app-smoke-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install Gradle
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+
+      - name: Build debug APK smoke
+        working-directory: android
+        run: |
+          ../gradle-8.7/bin/gradle :app:assembleDebug --no-daemon
+
+      - name: Verify debug artifact exists
+        run: |
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-e2e-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

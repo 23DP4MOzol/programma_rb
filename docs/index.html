@@ -120,6 +120,26 @@
         </div>
       </section>
 
+      <section class="card" id="diagnosticsCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Diagnostics</div>
+            <div class="card__subtitle">Current connectivity and sync health</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="diagStatus">Waiting...</div>
+            <button id="diagRefresh" class="btn btn--small">Refresh diagnostics</button>
+          </div>
+        </div>
+        <div class="diag-grid">
+          <div class="diag-item"><span>Online</span><strong id="diagOnline">-</strong></div>
+          <div class="diag-item"><span>Queue</span><strong id="diagQueue">-</strong></div>
+          <div class="diag-item"><span>Role</span><strong id="diagRole">-</strong></div>
+          <div class="diag-item"><span>Last sync</span><strong id="diagLastSync">-</strong></div>
+          <div class="diag-item diag-item--wide"><span>API</span><strong id="diagApi">-</strong></div>
+        </div>
+      </section>
+
       <section class="card" id="auditCard">
         <div class="card__head">
           <div>
@@ -148,6 +168,7 @@
       <footer class="footer">
         <div>Hosted on GitHub Pages</div>
         <div class="footer__meta">
+          <span id="authInfo">Role: anon (operator, anon)</span>
           <span id="appVersion">Version: web-2026.04.07</span>
           <span id="syncInfo">Sync: waiting</span>
         </div>

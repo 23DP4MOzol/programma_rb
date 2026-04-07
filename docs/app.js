@@ -16,6 +16,7 @@ const FALLBACK_PREFIX_HINTS = {
 
 const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
+const AUTH_TOKEN_STORAGE_KEY = "rimi.inventory.auth_jwt";
 const SCAN_DEBOUNCE_MS = 900;
 const SAVE_DEBOUNCE_MS = 1400;
 const WEB_APP_VERSION = "web-2026.04.07";
@@ -45,8 +46,17 @@ const els = {
   auditLoad: document.getElementById("auditLoad"),
   auditStatus: document.getElementById("auditStatus"),
   auditList: document.getElementById("auditList"),
+  auditCard: document.getElementById("auditCard"),
+  diagStatus: document.getElementById("diagStatus"),
+  diagOnline: document.getElementById("diagOnline"),
+  diagQueue: document.getElementById("diagQueue"),
+  diagRole: document.getElementById("diagRole"),
+  diagLastSync: document.getElementById("diagLastSync"),
+  diagApi: document.getElementById("diagApi"),
+  diagRefresh: document.getElementById("diagRefresh"),
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
+  authInfo: document.getElementById("authInfo"),
 };
 
 let devicesCache = [];
@@ -59,6 +69,7 @@ let lastSavedAt = 0;
 let lastSuccessfulSyncAt = "";
 let prefixHintsByKey = { ...FALLBACK_PREFIX_HINTS };
 const loadedRevisionBySerial = new Map();
+let authContext = null;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -86,6 +97,7 @@ function setSyncInfo(message, tone = "info") {
   } else {
     els.syncInfo.style.color = "#6b6b6b";
   }
+  updateDiagnosticsPanel();
 }
 
 function updateQueueStatus() {
@@ -98,12 +110,189 @@ function updateQueueStatus() {
     els.queueStatus.textContent = "Queued: 0";
     els.queueStatus.style.color = "#0a7a2f";
   }
+  updateDiagnosticsPanel();
 }
 
 function setIdentityEditable(enabled) {
   els.type.disabled = !enabled;
   els.make.readOnly = !enabled;
   els.model.readOnly = !enabled;
+}
+
+function readStorageText(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? String(raw) : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStorageText(key, value) {
+  try {
+    localStorage.setItem(key, String(value || ""));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function normalizeTokenInput(raw) {
+  return String(raw || "").trim().replace(/^Bearer\s+/i, "");
+}
+
+function decodeJwtPayload(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+  const payloadPart = parts[1];
+  if (!payloadPart) return null;
+
+  try {
+    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const bytes = Uint8Array.from(atob(padded), (ch) => ch.charCodeAt(0));
+    const payloadJson = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(payloadJson);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function claimToBool(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    return text === "true" || text === "1" || text === "yes";
+  }
+  return false;
+}
+
+function extractAccessTokenFromUrl() {
+  const tokenKeys = ["access_token", "token", "jwt"];
+  let found = "";
+
+  try {
+    const search = new URLSearchParams(window.location.search || "");
+    for (const key of tokenKeys) {
+      const value = normalizeTokenInput(search.get(key) || "");
+      if (value) {
+        found = value;
+        search.delete(key);
+      }
+    }
+    if (found) {
+      const nextSearch = search.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", nextUrl);
+      return found;
+    }
+  } catch {
+    // ignore URL parsing issues
+  }
+
+  try {
+    const hash = String(window.location.hash || "").replace(/^#/, "");
+    const hashParams = new URLSearchParams(hash);
+    for (const key of tokenKeys) {
+      const value = normalizeTokenInput(hashParams.get(key) || "");
+      if (value) {
+        found = value;
+        break;
+      }
+    }
+    if (found) {
+      const nextUrl = `${window.location.pathname}${window.location.search || ""}`;
+      window.history.replaceState({}, "", nextUrl);
+      return found;
+    }
+  } catch {
+    // ignore URL parsing issues
+  }
+
+  return "";
+}
+
+function resolveAuthContext() {
+  const tokenFromUrl = extractAccessTokenFromUrl();
+  if (tokenFromUrl) {
+    writeStorageText(AUTH_TOKEN_STORAGE_KEY, tokenFromUrl);
+  }
+
+  const storedToken = normalizeTokenInput(readStorageText(AUTH_TOKEN_STORAGE_KEY));
+  const jwtToken = normalizeTokenInput(tokenFromUrl || storedToken);
+  const jwtClaims = decodeJwtPayload(jwtToken);
+
+  const anonClaims = decodeJwtPayload(SUPABASE_KEY) || {};
+  const roleFromJwt = String((jwtClaims && jwtClaims.role) || "").trim();
+  const role = roleFromJwt || String(anonClaims.role || "anon");
+
+  const appMetadata = (jwtClaims && typeof jwtClaims.app_metadata === "object" && jwtClaims.app_metadata) || {};
+  const isAdmin =
+    role.toLowerCase() === "service_role" ||
+    claimToBool(jwtClaims && jwtClaims.device_admin) ||
+    claimToBool(appMetadata.device_admin);
+
+  return {
+    role,
+    isAdmin,
+    hasJwtSession: Boolean(jwtToken),
+    bearerToken: jwtToken || SUPABASE_KEY,
+  };
+}
+
+function applyAuthUiState() {
+  if (els.authInfo) {
+    const mode = authContext?.hasJwtSession ? "session" : "anon";
+    const adminText = authContext?.isAdmin ? "admin" : "operator";
+    els.authInfo.textContent = `Role: ${authContext?.role || "anon"} (${adminText}, ${mode})`;
+    els.authInfo.style.color = authContext?.isAdmin ? "#0a7a2f" : "#6b6b6b";
+  }
+
+  if (els.auditCard) {
+    if (authContext?.isAdmin) {
+      els.auditCard.classList.remove("hidden");
+    } else {
+      els.auditCard.classList.add("hidden");
+      if (els.auditStatus) {
+        els.auditStatus.textContent = "Admin only";
+      }
+    }
+  }
+
+  updateDiagnosticsPanel();
+}
+
+function updateDiagnosticsPanel() {
+  if (!els.diagStatus) return;
+
+  const queued = getQueuedSaves().length;
+  const roleText = `${authContext?.role || "anon"} (${authContext?.isAdmin ? "admin" : "operator"})`;
+  const lastSyncText = lastSuccessfulSyncAt
+    ? new Date(lastSuccessfulSyncAt).toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "n/a";
+
+  if (els.diagOnline) {
+    els.diagOnline.textContent = navigator.onLine ? "yes" : "no";
+    els.diagOnline.style.color = navigator.onLine ? "#0a7a2f" : "#b00020";
+  }
+  if (els.diagQueue) {
+    els.diagQueue.textContent = String(queued);
+    els.diagQueue.style.color = queued > 0 ? "#b00020" : "#0a7a2f";
+  }
+  if (els.diagRole) {
+    els.diagRole.textContent = roleText;
+  }
+  if (els.diagLastSync) {
+    els.diagLastSync.textContent = lastSyncText;
+  }
+  if (els.diagApi) {
+    els.diagApi.textContent = SUPABASE_URL;
+  }
+
+  const health = !navigator.onLine ? "offline" : queued > 0 ? "queue pending" : "healthy";
+  els.diagStatus.textContent = `Health: ${health}`;
+  els.diagStatus.style.color = health === "healthy" ? "#0a7a2f" : "#b00020";
 }
 
 function readStorageJson(key, fallbackValue) {
@@ -297,8 +486,9 @@ function sanitizeLookupField(value) {
 function splitModel(modelText) {
   const text = String(modelText || "").trim();
   if (!text) return ["", ""];
-  const parts = text.split(" ", 2);
-  return parts.length === 1 ? [parts[0], ""] : [parts[0], parts[1]];
+  const firstSpace = text.indexOf(" ");
+  if (firstSpace < 0) return [text, ""];
+  return [text.slice(0, firstSpace), text.slice(firstSpace + 1).trim()];
 }
 
 function composeModel(make, model) {
@@ -595,7 +785,7 @@ function guessFromCache(token) {
 async function restRequest(path, { method = "GET", body = null, prefer = "" } = {}) {
   const headers = {
     apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
+    Authorization: `Bearer ${authContext?.bearerToken || SUPABASE_KEY}`,
   };
   if (body !== null) headers["Content-Type"] = "application/json";
   if (prefer) headers.Prefer = prefer;
@@ -976,6 +1166,12 @@ function renderAuditRows(rows) {
 async function loadAuditLogs() {
   if (!els.auditList || !els.auditStatus) return;
 
+  if (!authContext?.isAdmin) {
+    renderAuditRows([]);
+    els.auditStatus.textContent = "Admin only";
+    return;
+  }
+
   const serialFilter = cleanToken(els.auditSerial?.value || "");
   let path = "device_audit_log?select=id,event_time,operation,serial,actor,source,txid&order=event_time.desc&limit=120";
   if (serialFilter) {
@@ -1060,6 +1256,13 @@ if (els.auditSerial) {
     }
   });
 }
+if (els.diagRefresh) {
+  els.diagRefresh.addEventListener("click", () => {
+    updateDiagnosticsPanel();
+    loadDevicesList();
+    processQueuedSaves();
+  });
+}
 els.clear.addEventListener("click", () => {
   resetForm();
   clearDraft();
@@ -1084,7 +1287,10 @@ updateQueueStatus();
 if (els.appVersion) {
   els.appVersion.textContent = `Version: ${WEB_APP_VERSION}`;
 }
+authContext = resolveAuthContext();
+applyAuthUiState();
 setSyncInfo(navigator.onLine ? "starting" : "offline", navigator.onLine ? "info" : "error");
+updateDiagnosticsPanel();
 const recoveredDraft = restoreDraft();
 if (recoveredDraft) {
   setStatus("Recovered unsaved draft");
@@ -1101,6 +1307,8 @@ setTimeout(() => {
   processQueuedSaves();
 }, 1200);
 window.addEventListener("focus", () => {
+  authContext = resolveAuthContext();
+  applyAuthUiState();
   loadPrefixRules();
   loadDevicesList();
   processQueuedSaves();
@@ -1108,13 +1316,17 @@ window.addEventListener("focus", () => {
 window.addEventListener("online", () => {
   setStatus("Back online. Syncing queued saves...");
   setSyncInfo("back online", "ok");
+  updateDiagnosticsPanel();
   processQueuedSaves();
 });
 window.addEventListener("offline", () => {
   setStatus("Offline mode: saves will be queued", "error");
   setSyncInfo("offline", "error");
+  updateDiagnosticsPanel();
 });
 setInterval(() => {
+  authContext = resolveAuthContext();
+  applyAuthUiState();
   loadPrefixRules();
   loadDevicesList();
   processQueuedSaves();

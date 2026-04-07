@@ -112,6 +112,8 @@ python .\main.py delete --lang lv --serial SN-001
 python -m unittest tests.test_serial_parsing
 ```
 
+Backup un atjaunošanas procedūra: `BACKUP_RECOVERY_RUNBOOK.md`.
+
 ## English
 
 Unified inventory system with two clients:
@@ -221,3 +223,5 @@ python .\main.py delete --lang en --serial SN-001
 ```powershell
 python -m unittest tests.test_serial_parsing
 ```
+
+Backup and recovery procedure: `BACKUP_RECOVERY_RUNBOOK.md`.
