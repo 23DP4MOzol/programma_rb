@@ -153,6 +153,18 @@ body {
   min-width: 140px;
 }
 
+.card__status-wrap {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+
+.card__queue {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .card__head-actions {
   display: flex;
   align-items: center;
@@ -264,6 +276,9 @@ body {
   }
   .card__status {
     text-align: left;
+  }
+  .card__status-wrap {
+    justify-items: start;
   }
   .brand__title {
     font-size: 20px;

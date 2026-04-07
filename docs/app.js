@@ -16,10 +16,13 @@ const PREFIX_HINTS = {
 
 const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
+const SCAN_DEBOUNCE_MS = 900;
+const SAVE_DEBOUNCE_MS = 1400;
 
 const els = {
   serial: document.getElementById("serial"),
   statusText: document.getElementById("status"),
+  queueStatus: document.getElementById("queueStatus"),
   type: document.getElementById("type"),
   statusSelect: document.getElementById("statusSelect"),
   make: document.getElementById("make"),
@@ -40,6 +43,10 @@ const els = {
 let devicesCache = [];
 let scanTimer = null;
 let queueSyncInProgress = false;
+let lastLoadedSerial = "";
+let lastLoadedAt = 0;
+let lastSavedSerial = "";
+let lastSavedAt = 0;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -49,6 +56,18 @@ function setStatus(message, tone = "info") {
     els.statusText.style.color = "#0a7a2f";
   } else {
     els.statusText.style.color = "#6b6b6b";
+  }
+}
+
+function updateQueueStatus() {
+  if (!els.queueStatus) return;
+  const count = getQueuedSaves().length;
+  if (count > 0) {
+    els.queueStatus.textContent = `Queued: ${count}`;
+    els.queueStatus.style.color = "#b00020";
+  } else {
+    els.queueStatus.textContent = "Queued: 0";
+    els.queueStatus.style.color = "#0a7a2f";
   }
 }
 
@@ -123,12 +142,33 @@ function getQueuedSaves() {
 
 function setQueuedSaves(queue) {
   writeStorageJson(QUEUE_STORAGE_KEY, Array.isArray(queue) ? queue : []);
+  updateQueueStatus();
 }
 
 function enqueueSaveOperation(operation) {
   const queue = getQueuedSaves();
   queue.push({ ...operation, queued_at: new Date().toISOString() });
   setQueuedSaves(queue);
+}
+
+function shouldThrottleScan(cleanedSerial) {
+  const now = Date.now();
+  if (cleanedSerial === lastLoadedSerial && now - lastLoadedAt < SCAN_DEBOUNCE_MS) {
+    return true;
+  }
+  lastLoadedSerial = cleanedSerial;
+  lastLoadedAt = now;
+  return false;
+}
+
+function shouldThrottleSave(cleanedSerial) {
+  const now = Date.now();
+  return cleanedSerial === lastSavedSerial && now - lastSavedAt < SAVE_DEBOUNCE_MS;
+}
+
+function markSave(cleanedSerial) {
+  lastSavedSerial = cleanedSerial;
+  lastSavedAt = Date.now();
 }
 
 function isConnectivityError(error) {
@@ -511,6 +551,10 @@ async function loadByScannedValue(rawValue) {
   }
 
   const cleaned = cleanToken(token);
+  if (shouldThrottleScan(cleaned)) {
+    return;
+  }
+
   els.serial.value = cleaned;
   els.lookupSerial.value = cleaned;
   saveDraft();
@@ -559,6 +603,11 @@ async function saveDevice() {
   }
 
   const cleaned = cleanToken(token);
+  if (shouldThrottleSave(cleaned)) {
+    setStatus("Ignored duplicate save tap");
+    return;
+  }
+
   els.serial.value = cleaned;
   saveDraft();
 
@@ -570,6 +619,7 @@ async function saveDevice() {
   } catch (error) {
     if (isConnectivityError(error)) {
       enqueueSaveOperation(queuedOperation);
+      markSave(cleaned);
       setStatus("Offline: save queued and will sync automatically", "error");
       return;
     }
@@ -589,6 +639,7 @@ async function saveDevice() {
       const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
       await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
       setStatus("Updated existing device", "ok");
+      markSave(cleaned);
     } else {
       const insertPayload = {
         serial: normalizeForStore(cleaned),
@@ -598,10 +649,12 @@ async function saveDevice() {
       };
       await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=minimal" });
       setStatus("Added new device", "ok");
+      markSave(cleaned);
     }
   } catch (error) {
     if (isConnectivityError(error)) {
       enqueueSaveOperation(queuedOperation);
+      markSave(cleaned);
       setStatus("Offline: save queued and will sync automatically", "error");
       return;
     }
@@ -769,6 +822,7 @@ els.devicesList.addEventListener("click", (e) => {
 });
 
 resetForm();
+updateQueueStatus();
 const recoveredDraft = restoreDraft();
 if (recoveredDraft) {
   setStatus("Recovered unsaved draft");

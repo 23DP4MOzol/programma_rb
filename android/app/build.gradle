@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application'
 }
 
+def versionCodeProp = (project.findProperty("VERSION_CODE") ?: "1").toString()
+def versionNameProp = (project.findProperty("VERSION_NAME") ?: "1.0").toString()
+def hasReleaseSigning =
+        project.hasProperty("MYAPP_UPLOAD_STORE_FILE") &&
+        project.hasProperty("MYAPP_UPLOAD_STORE_PASSWORD") &&
+        project.hasProperty("MYAPP_UPLOAD_KEY_ALIAS") &&
+        project.hasProperty("MYAPP_UPLOAD_KEY_PASSWORD")
+
 android {
     namespace = "com.rimi.inventory"
     compileSdk = 34
@@ -10,13 +18,27 @@ android {
         applicationId = "com.rimi.inventory"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = versionCodeProp.toInteger()
+        versionName = versionNameProp
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(project.property("MYAPP_UPLOAD_STORE_FILE"))
+                storePassword project.property("MYAPP_UPLOAD_STORE_PASSWORD")
+                keyAlias project.property("MYAPP_UPLOAD_KEY_ALIAS")
+                keyPassword project.property("MYAPP_UPLOAD_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             minifyEnabled false
