@@ -641,13 +641,13 @@ class DesktopApp:
             return
 
         # Parse scanner and laptop QR payloads.
-        # - Scanner serial: S + 14 digits
+        # - Scanner serial: S + 13/14 digits
         # - Laptop QR payloads can be comma-separated and serial is usually first token
         tokens = [t.strip().upper() for t in re.split(r"[\s,;|]+", raw_scan) if t.strip()]
 
         serial_token = ""
         for tok in tokens:
-            if re.fullmatch(r"S\d{14}", tok):
+            if re.fullmatch(r"S\d{13,14}", tok):
                 serial_token = tok
                 break
 
@@ -658,14 +658,14 @@ class DesktopApp:
 
         if not serial_token:
             candidate = tokens[0] if tokens else raw_scan.upper()
-            if re.fullmatch(r"\d{14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
+            if re.fullmatch(r"\d{13,14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
                 serial_token = candidate
 
         if not serial_token:
             self._write_result({"ok": False, "error": "Invalid serial barcode format"}, ok=False)
             return
 
-        normalized_serial = serial_token[1:] if re.fullmatch(r"S\d{14}", serial_token) else serial_token
+        normalized_serial = serial_token[1:] if re.fullmatch(r"S\d{13,14}", serial_token) else serial_token
         self.serial_var.set(normalized_serial)
 
         # 1. Check if device exists in DB (support both with and without S prefix)
@@ -688,8 +688,87 @@ class DesktopApp:
             self._write_result({"ok": True, "info": "Device loaded from database!"})
             return
 
-        # 2. Prefix rules
         upper_scan = normalized_serial.upper()
+
+        # 2. Smart learning from existing serial prefixes (variable length)
+        try:
+            all_devs = self.db.list_devices()
+
+            def _serial_family_and_comparable(value: str | None) -> tuple[str, str] | None:
+                token = (value or "").strip().upper()
+                if re.fullmatch(r"S\d{13,14}", token):
+                    return ("scanner", token[1:])
+                if re.fullmatch(r"\d{13,14}", token):
+                    return ("scanner", token)
+                if re.fullmatch(r"[A-Z0-9]{8,20}", token):
+                    return ("generic", token)
+                return None
+
+            scan_info = _serial_family_and_comparable(normalized_serial)
+            if scan_info:
+                scan_family, scan_cmp = scan_info
+                min_len = 2 if scan_family == "scanner" else 3
+                max_len = min(len(scan_cmp), 6 if scan_family == "scanner" else 7)
+
+                learned_rows: list[tuple[str, Device]] = []
+                for dev in all_devs:
+                    if not dev.model:
+                        continue
+                    dev_info = _serial_family_and_comparable(dev.serial)
+                    if not dev_info or dev_info[0] != scan_family:
+                        continue
+                    learned_rows.append((dev_info[1], dev))
+
+                from collections import Counter
+
+                for p_len in range(max_len, min_len - 1, -1):
+                    prefix = scan_cmp[:p_len]
+                    matches = [dev for cmp_value, dev in learned_rows if cmp_value.startswith(prefix)]
+                    if not matches:
+                        continue
+
+                    model_counts = Counter(
+                        [f"{(m.device_type or 'scanner')}||{m.model}" for m in matches if m.model]
+                    )
+                    if not model_counts:
+                        continue
+
+                    top_two = model_counts.most_common(2)
+                    best_key, best_count = top_two[0]
+                    second_count = top_two[1][1] if len(top_two) > 1 else 0
+                    total = sum(model_counts.values())
+                    confidence = (best_count / total) if total else 0
+                    clear_winner = (
+                        len(model_counts) == 1
+                        or confidence >= 0.7
+                        or (best_count >= 3 and (best_count - second_count) >= 2)
+                    )
+                    if not clear_winner:
+                        continue
+
+                    guessed_device = next(
+                        (
+                            m
+                            for m in matches
+                            if f"{(m.device_type or 'scanner')}||{m.model}" == best_key
+                        ),
+                        None,
+                    )
+                    if guessed_device:
+                        self._fill_action_form(guessed_device)
+                        self.serial_var.set(normalized_serial)
+                        self.overwrite_var.set(False)
+                        self._write_result(
+                            {
+                                "ok": True,
+                                "info": f"Auto-guessed from learned prefix '{prefix}'",
+                            }
+                        )
+                        return
+        except Exception:
+            pass
+
+        # 3. Prefix rules fallback
         for prefix, (guess_type, guess_make, guess_model) in self._get_prefix_rules().items():
             if upper_scan.startswith(prefix.upper()):
                 self.type_var.set(self._display_from_code(guess_type, "type"))
@@ -700,26 +779,6 @@ class DesktopApp:
                 self.overwrite_var.set(False)
                 self._write_result({"ok": True, "info": f"Auto-detected as {guess_make} {guess_model} (Rule: '{prefix}')"})
                 return
-
-        # 3. Smart learning from existing serial prefixes
-        try:
-            all_devs = self.db.list_devices()
-            if len(normalized_serial) >= 3:
-                prefix3 = upper_scan[:3]
-                matches = [d for d in all_devs if (d.serial or "").upper().startswith(prefix3)]
-                if matches:
-                    from collections import Counter
-
-                    best_match = Counter([d for d in matches if d.model]).most_common(1)
-                    if best_match:
-                        guessed_device = best_match[0][0]
-                        self._fill_action_form(guessed_device)
-                        self.serial_var.set(normalized_serial)
-                        self.overwrite_var.set(False)
-                        self._write_result({"ok": True, "info": f"Auto-guessed from similar serials starting with '{prefix3}'"})
-                        return
-        except Exception:
-            pass
 
         # Keep serial ready for manual entry when no rule matched.
 
@@ -2061,7 +2120,31 @@ class DesktopApp:
         self.result_txt.configure(fg=ok_fg if ok else err_fg)
 
     def _current_device_from_form(self) -> Device:
-        serial = self.serial_var.get().strip()
+        raw_serial = self.serial_var.get().strip()
+        serial = raw_serial
+
+        if raw_serial:
+            tokens = [t.strip().upper() for t in re.split(r"[\s,;|]+", raw_serial) if t.strip()]
+            serial_token = ""
+
+            for tok in tokens:
+                if re.fullmatch(r"S\d{13,14}", tok):
+                    serial_token = tok
+                    break
+
+            if not serial_token and ("," in raw_serial or ";" in raw_serial or "|" in raw_serial) and tokens:
+                first = tokens[0]
+                if re.fullmatch(r"[A-Z0-9]{8,20}", first):
+                    serial_token = first
+
+            if not serial_token:
+                candidate = tokens[0] if tokens else raw_serial.upper()
+                if re.fullmatch(r"\d{13,14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
+                    serial_token = candidate
+
+            if serial_token:
+                serial = serial_token[1:] if re.fullmatch(r"S\d{13,14}", serial_token) else serial_token
+
         device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
         make = self.make_var.get().strip() or None
         model_text = self.model_var.get().strip() or None

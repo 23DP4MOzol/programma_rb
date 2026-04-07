@@ -1,8 +1,8 @@
 const SUPABASE_URL = "https://qvlduxpdcwgmokjdsdfp.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk";
 
-const SCANNER_SERIAL_RE = /^S\d{14}$/i;
-const PLAIN_SCANNER_RE = /^\d{14}$/;
+const SCANNER_SERIAL_RE = /^S\d{13,14}$/i;
+const PLAIN_SCANNER_RE = /^\d{13,14}$/;
 const GENERIC_SERIAL_RE = /^[A-Z0-9]{8,20}$/;
 
 const PREFIX_HINTS = {
@@ -170,6 +170,35 @@ function getPrefixKey(token) {
   return "";
 }
 
+function getTokenFamilyAndComparable(token) {
+  const t = cleanToken(token);
+  if (!t) return null;
+  if (isScannerToken(t)) {
+    return { family: "scanner", comparable: t.slice(1) };
+  }
+  if (isPlainScannerToken(t)) {
+    return { family: "scanner", comparable: t };
+  }
+  if (isGenericToken(t)) {
+    return { family: "generic", comparable: t };
+  }
+  return null;
+}
+
+function getLearningPrefixCandidates(token) {
+  const info = getTokenFamilyAndComparable(token);
+  if (!info || !info.comparable) return [];
+
+  const minLen = info.family === "scanner" ? 2 : 3;
+  const maxLen = Math.min(info.comparable.length, info.family === "scanner" ? 6 : 7);
+  const out = [];
+
+  for (let len = maxLen; len >= minLen; len -= 1) {
+    out.push({ family: info.family, prefix: info.comparable.slice(0, len), len });
+  }
+  return out;
+}
+
 function resetMutableFields() {
   els.statusSelect.value = "RECEIVED";
   els.fromStore.value = "";
@@ -214,33 +243,63 @@ function applyGuess(guess) {
 }
 
 function guessFromCache(token) {
-  const key = getPrefixKey(token);
-  if (!key) return null;
+  const scanInfo = getTokenFamilyAndComparable(token);
+  if (!scanInfo) return null;
 
-  const counts = new Map();
+  const learnedRows = [];
   for (const row of devicesCache) {
+    if (!row.model) continue;
     const rowToken = extractPreferredSerial(row.serial || "");
     if (!rowToken) continue;
-    if (getPrefixKey(rowToken) !== key) continue;
-    if (!row.model) continue;
+    const rowInfo = getTokenFamilyAndComparable(rowToken);
+    if (!rowInfo || rowInfo.family !== scanInfo.family) continue;
 
-    const k = `${row.device_type || "scanner"}||${row.model}`;
-    counts.set(k, (counts.get(k) || 0) + 1);
+    learnedRows.push({
+      comparable: rowInfo.comparable,
+      device_type: row.device_type || "scanner",
+      model: row.model,
+    });
   }
 
-  let bestKey = "";
-  let bestCount = 0;
-  for (const [k, count] of counts.entries()) {
-    if (count > bestCount) {
-      bestKey = k;
-      bestCount = count;
+  if (!learnedRows.length) return null;
+
+  const candidates = getLearningPrefixCandidates(token);
+  for (const candidate of candidates) {
+    const counts = new Map();
+    let total = 0;
+
+    for (const row of learnedRows) {
+      if (!row.comparable.startsWith(candidate.prefix)) continue;
+      total += 1;
+      const k = `${row.device_type}||${row.model}`;
+      counts.set(k, (counts.get(k) || 0) + 1);
     }
+
+    if (!total || !counts.size) continue;
+
+    let bestKey = "";
+    let bestCount = 0;
+    let secondBest = 0;
+    for (const [k, count] of counts.entries()) {
+      if (count > bestCount) {
+        secondBest = bestCount;
+        bestCount = count;
+        bestKey = k;
+      } else if (count > secondBest) {
+        secondBest = count;
+      }
+    }
+
+    const confidence = bestCount / total;
+    const clearWinner = counts.size === 1 || confidence >= 0.7 || (bestCount >= 3 && bestCount - secondBest >= 2);
+    if (!clearWinner) continue;
+
+    const [device_type, fullModel] = bestKey.split("||");
+    const [make, model] = splitModel(fullModel || "");
+    return { device_type, make, model };
   }
 
-  if (!bestKey) return null;
-  const [device_type, fullModel] = bestKey.split("||");
-  const [make, model] = splitModel(fullModel || "");
-  return { device_type, make, model };
+  return null;
 }
 
 async function restRequest(path, { method = "GET", body = null, prefer = "" } = {}) {
@@ -309,17 +368,17 @@ async function loadByScannedValue(rawValue) {
   resetMutableFields();
   setIdentityEditable(true);
 
+  const guessed = guessFromCache(cleaned);
+  if (guessed) {
+    applyGuess(guessed);
+    setStatus("Auto-filled from learned serial prefixes", "ok");
+    return;
+  }
+
   const hinted = PREFIX_HINTS[getPrefixKey(cleaned)] || null;
   if (hinted) {
     applyGuess(hinted);
     setStatus("Auto-filled by known prefix", "ok");
-    return;
-  }
-
-  const guessed = guessFromCache(cleaned);
-  if (guessed) {
-    applyGuess(guessed);
-    setStatus("Auto-filled from existing devices", "ok");
     return;
   }
 
