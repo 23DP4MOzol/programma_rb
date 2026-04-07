@@ -37,12 +37,13 @@ body {
 
 .logo {
   display: block;
-  width: 110px;
+  width: 90px;
   height: auto;
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-  background: #cf2e2e;
-  padding: 4px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  background: transparent;
+  padding: 0;
+  image-rendering: auto;
 }
 
 .brand {

@@ -29,6 +29,7 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     "40": ("scanner", "Zebra", "Zebra MC3300"),
     "PF": ("laptop",  "Lenovo", "Lenovo ThinkPad"), # Lenovo laptops usually start with PF, PC, MJ
     "PC": ("laptop",  "Lenovo", "Lenovo ThinkPad"),
+    "5CG": ("laptop", "HP", "HP EliteBook 840 G10"),
 }
 
 DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
@@ -639,55 +640,88 @@ class DesktopApp:
         if not raw_scan:
             return
 
-        # 1. Check if device exists in DB
-        existing = self.db.get_device(raw_scan)
+        # Parse scanner and laptop QR payloads.
+        # - Scanner serial: S + 14 digits
+        # - Laptop QR payloads can be comma-separated and serial is usually first token
+        tokens = [t.strip().upper() for t in re.split(r"[\s,;|]+", raw_scan) if t.strip()]
+
+        serial_token = ""
+        for tok in tokens:
+            if re.fullmatch(r"S\d{14}", tok):
+                serial_token = tok
+                break
+
+        if not serial_token and ("," in raw_scan or ";" in raw_scan or "|" in raw_scan) and tokens:
+            first = tokens[0]
+            if re.fullmatch(r"[A-Z0-9]{8,20}", first):
+                serial_token = first
+
+        if not serial_token:
+            candidate = tokens[0] if tokens else raw_scan.upper()
+            if re.fullmatch(r"\d{14}", candidate) or re.fullmatch(r"[A-Z0-9]{8,20}", candidate):
+                serial_token = candidate
+
+        if not serial_token:
+            self._write_result({"ok": False, "error": "Invalid serial barcode format"}, ok=False)
+            return
+
+        normalized_serial = serial_token[1:] if re.fullmatch(r"S\d{14}", serial_token) else serial_token
+        self.serial_var.set(normalized_serial)
+
+        # 1. Check if device exists in DB (support both with and without S prefix)
+        existing: Device | None = None
+        lookup_candidates = [normalized_serial]
+        if serial_token != normalized_serial:
+            lookup_candidates.append(serial_token)
+
+        for cand in lookup_candidates:
+            try:
+                existing = self.db.get_device(cand)
+            except Exception:
+                existing = None
+            if existing:
+                break
+
         if existing:
             self._fill_action_form(existing)
+            self.serial_var.set(existing.serial)
             self._write_result({"ok": True, "info": "Device loaded from database!"})
             return
 
-        # 2. Experimental parsing if it's a long QR code
-        if "," in raw_scan or ";" in raw_scan or len(raw_scan) > 20: 
-            pass  # placeholder where we can slice data up in the future!
-
-        # 3. Check hardcoded prefixes from the internet / your rules
-        upper_scan = raw_scan.upper()
+        # 2. Prefix rules
+        upper_scan = normalized_serial.upper()
         for prefix, (guess_type, guess_make, guess_model) in self._get_prefix_rules().items():
             if upper_scan.startswith(prefix.upper()):
-                # Auto-fill using the rules engine!
                 self.type_var.set(self._display_from_code(guess_type, "type"))
                 self._on_action_type_changed()
                 self.make_var.set(guess_make)
                 self._on_action_make_changed()
                 self.model_var.set(guess_model.replace(guess_make + " ", "", 1))
-                self.overwrite_var.set(False) # Brand new device
+                self.overwrite_var.set(False)
                 self._write_result({"ok": True, "info": f"Auto-detected as {guess_make} {guess_model} (Rule: '{prefix}')"})
                 return
 
-        # 4. Smart learning: check the database for similar serial numbers you previously scanned!
+        # 3. Smart learning from existing serial prefixes
         try:
-            # If the database already has a bunch of devices starting with the same 3 characters,
-            # we can guess it's the same model!
             all_devs = self.db.list_devices()
-            if len(raw_scan) >= 4:
+            if len(normalized_serial) >= 3:
                 prefix3 = upper_scan[:3]
-                matches = [d for d in all_devs if d.serial.upper().startswith(prefix3)]
+                matches = [d for d in all_devs if (d.serial or "").upper().startswith(prefix3)]
                 if matches:
-                    # Pick the most common model among matches
                     from collections import Counter
+
                     best_match = Counter([d for d in matches if d.model]).most_common(1)
                     if best_match:
                         guessed_device = best_match[0][0]
                         self._fill_action_form(guessed_device)
-                        self.serial_var.set(raw_scan) # restore the actual new serial back into the box
-                        self.overwrite_var.set(False) # Brand new device
+                        self.serial_var.set(normalized_serial)
+                        self.overwrite_var.set(False)
                         self._write_result({"ok": True, "info": f"Auto-guessed from similar serials starting with '{prefix3}'"})
                         return
         except Exception:
             pass
 
-        # For a brand new device that's just a raw serial number with no prefix match,
-        # it will just leave the serial number in the box ready for the user.
+        # Keep serial ready for manual entry when no rule matched.
 
     def _fill_action_form(self, device: Device) -> None:
         """Helper to fill the Action section fields nicely from a DB record."""

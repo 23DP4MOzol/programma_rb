@@ -1,9 +1,13 @@
 const SUPABASE_URL = "https://qvlduxpdcwgmokjdsdfp.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk";
 
-const SERIAL_RE = /^S(\d{14})$/i;
+const SCANNER_SERIAL_RE = /^S\d{14}$/i;
+const PLAIN_SCANNER_RE = /^\d{14}$/;
+const GENERIC_SERIAL_RE = /^[A-Z0-9]{8,20}$/;
+
 const PREFIX_HINTS = {
-  "18": { device_type: "scanner", make: "Zebra", model: "TC51" },
+  "D2:18": { device_type: "scanner", make: "Zebra", model: "TC51" },
+  "A3:5CG": { device_type: "laptop", make: "HP", model: "EliteBook 840 G10" },
 };
 
 const els = {
@@ -26,8 +30,8 @@ const els = {
   lookupLoad: document.getElementById("lookupLoad"),
 };
 
-let scanTimer = null;
 let devicesCache = [];
+let scanTimer = null;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -40,53 +44,99 @@ function setStatus(message, tone = "info") {
   }
 }
 
-function setTypeEditable(enabled) {
+function setIdentityEditable(enabled) {
   els.type.disabled = !enabled;
+  els.make.readOnly = !enabled;
+  els.model.readOnly = !enabled;
+}
+
+function cleanToken(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function tokenizeScan(rawValue) {
+  return String(rawValue || "")
+    .toUpperCase()
+    .split(/[\s,;|]+/)
+    .map((x) => cleanToken(x))
+    .filter(Boolean);
+}
+
+function isScannerToken(token) {
+  return SCANNER_SERIAL_RE.test(token || "");
+}
+
+function isPlainScannerToken(token) {
+  return PLAIN_SCANNER_RE.test(token || "");
+}
+
+function isGenericToken(token) {
+  return GENERIC_SERIAL_RE.test(token || "");
+}
+
+function extractPreferredSerial(rawValue) {
+  const tokens = tokenizeScan(rawValue);
+  if (!tokens.length) return null;
+
+  const mode = String(els.type?.value || "scanner").toLowerCase();
+  const hasDelimitedPayload = /[,;|]/.test(String(rawValue || ""));
+
+  const scanner = tokens.find((t) => isScannerToken(t));
+  if (scanner) return scanner;
+
+  const plainScanner = tokens.find((t) => isPlainScannerToken(t));
+  if (plainScanner) return plainScanner;
+
+  if (tokens.length > 1) {
+    const first = tokens[0];
+    if ((mode === "laptop" || hasDelimitedPayload) && isGenericToken(first)) return first;
+    return null;
+  }
+
+  const only = tokens[0];
+  if (isScannerToken(only) || isPlainScannerToken(only)) {
+    return only;
+  }
+  if ((mode === "laptop" || mode === "other") && isGenericToken(only)) return only;
+  return null;
+}
+
+function normalizeForStore(token) {
+  const t = cleanToken(token);
+  if (isScannerToken(t)) return t.slice(1);
+  return t;
+}
+
+function serialVariants(token) {
+  const t = cleanToken(token);
+  if (!t) return [];
+
+  const out = new Set([t]);
+  if (isScannerToken(t)) out.add(t.slice(1));
+  if (isPlainScannerToken(t)) out.add(`S${t}`);
+
+  const normalized = normalizeForStore(t);
+  if (normalized) out.add(normalized);
+
+  return Array.from(out);
 }
 
 function sanitizeSerialField(value) {
-  const clean = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!clean.startsWith("S")) return "";
-  const digits = clean.slice(1).replace(/\D/g, "").slice(0, 14);
-  return `S${digits}`;
+  const raw = String(value || "").toUpperCase();
+  if (!raw) return "";
+
+  // Keep delimiters while typing so multi-token QR payloads can be parsed.
+  return raw.replace(/[^A-Z0-9,;|\s]/g, "").slice(0, 20);
 }
 
 function sanitizeLookupField(value) {
-  const raw = String(value || "").toUpperCase().trim().replace(/[^A-Z0-9]/g, "");
+  const raw = String(value || "").toUpperCase();
   if (!raw) return "";
-  if (raw.startsWith("S")) {
-    const digits = raw.slice(1).replace(/\D/g, "").slice(0, 14);
-    return `S${digits}`;
-  }
-  return raw.replace(/\D/g, "").slice(0, 14);
-}
 
-async function restRequest(path, { method = "GET", body = null, prefer = "" } = {}) {
-  const headers = {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
-  };
-  if (body !== null) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (prefer) {
-    headers.Prefer = prefer;
-  }
-
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method,
-    headers,
-    body: body === null ? undefined : JSON.stringify(body),
-  });
-
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    const msg = (json && (json.message || json.error_description || json.error)) || text || response.statusText;
-    throw new Error(msg);
-  }
-  return json;
+  // Same behavior for lookup/paste workflows.
+  return raw.replace(/[^A-Z0-9,;|\s]/g, "").slice(0, 20);
 }
 
 function splitModel(modelText) {
@@ -97,54 +147,51 @@ function splitModel(modelText) {
 }
 
 function composeModel(make, model) {
-  const m = String(make || "").trim();
+  const mk = String(make || "").trim();
   const md = String(model || "").trim();
-  if (!m && !md) return "";
-  if (!m) return md;
-  if (!md) return m;
-  if (md.toLowerCase().startsWith(m.toLowerCase())) return md;
-  return `${m} ${md}`;
+  if (!mk && !md) return "";
+  if (!mk) return md;
+  if (!md) return mk;
+  if (md.toLowerCase().startsWith(mk.toLowerCase())) return md;
+  return `${mk} ${md}`;
 }
 
-function extractSerialToken(raw) {
-  const text = String(raw || "").trim().toUpperCase();
-  if (!text) return null;
-  const tokens = text.split(/[\s,;|]+/).filter(Boolean);
-  for (const t of tokens) {
-    if (SERIAL_RE.test(t)) return t;
+function getPrefixKey(token) {
+  const t = cleanToken(token);
+  if (isScannerToken(t)) {
+    return `D2:${t.slice(1, 3)}`;
   }
-  return null;
+  if (isPlainScannerToken(t)) {
+    return `D2:${t.slice(0, 2)}`;
+  }
+  if (isGenericToken(t)) {
+    return `A3:${t.slice(0, 3)}`;
+  }
+  return "";
 }
 
-function serialDigitsFromAnyInput(raw) {
-  const text = String(raw || "").trim().toUpperCase();
-  if (!text) return "";
-  if (/^\d{14}$/.test(text)) return text;
-  const token = extractSerialToken(text);
-  if (!token) return "";
-  const match = token.match(SERIAL_RE);
-  return match ? match[1] : "";
-}
-
-function serialTokenFromDigits(serialDigits) {
-  return /^\d{14}$/.test(serialDigits || "") ? `S${serialDigits}` : "";
-}
-
-function resetForm() {
-  els.serial.value = "";
-  els.type.value = "scanner";
-  setTypeEditable(true);
-  els.make.value = "";
-  els.model.value = "";
+function resetMutableFields() {
   els.statusSelect.value = "RECEIVED";
   els.fromStore.value = "";
   els.toStore.value = "";
   els.comment.value = "";
 }
 
+function resetIdentityFields() {
+  els.type.value = "scanner";
+  els.make.value = "";
+  els.model.value = "";
+}
+
+function resetForm() {
+  els.serial.value = "";
+  resetIdentityFields();
+  resetMutableFields();
+  setIdentityEditable(true);
+}
+
 function fillFormFromDevice(device) {
   els.type.value = device.device_type || "scanner";
-  setTypeEditable(false);
   const [make, model] = splitModel(device.model || "");
   els.make.value = make;
   els.model.value = model;
@@ -152,79 +199,101 @@ function fillFormFromDevice(device) {
   els.fromStore.value = device.from_store || "";
   els.toStore.value = device.to_store || "";
   els.comment.value = device.comment || "";
+  setIdentityEditable(false);
 }
 
 function applyGuess(guess) {
-  setTypeEditable(true);
+  setIdentityEditable(true);
   els.type.value = guess.device_type || "scanner";
-  if (guess.make && guess.model) {
+  if (guess.make) {
     els.make.value = guess.make;
+  }
+  if (guess.model) {
     els.model.value = guess.model;
-  } else {
-    const [make, model] = splitModel(guess.model || "");
-    els.make.value = make;
-    els.model.value = model;
   }
 }
 
-function guessFromCache(serialDigits) {
-  const prefix2 = serialDigits.slice(0, 2);
-  if (!prefix2) return null;
+function guessFromCache(token) {
+  const key = getPrefixKey(token);
+  if (!key) return null;
 
   const counts = new Map();
   for (const row of devicesCache) {
-    const s = serialDigitsFromAnyInput(row.serial || "");
-    if (!s.startsWith(prefix2) || !row.model) continue;
-    const key = `${row.device_type || "scanner"}||${row.model}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const rowToken = extractPreferredSerial(row.serial || "");
+    if (!rowToken) continue;
+    if (getPrefixKey(rowToken) !== key) continue;
+    if (!row.model) continue;
+
+    const k = `${row.device_type || "scanner"}||${row.model}`;
+    counts.set(k, (counts.get(k) || 0) + 1);
   }
 
-  let winner = null;
-  let best = 0;
-  for (const [key, count] of counts.entries()) {
-    if (count > best) {
-      best = count;
-      const [device_type, model] = key.split("||");
-      winner = { device_type, model };
+  let bestKey = "";
+  let bestCount = 0;
+  for (const [k, count] of counts.entries()) {
+    if (count > bestCount) {
+      bestKey = k;
+      bestCount = count;
     }
   }
-  return winner;
+
+  if (!bestKey) return null;
+  const [device_type, fullModel] = bestKey.split("||");
+  const [make, model] = splitModel(fullModel || "");
+  return { device_type, make, model };
 }
 
-async function getDeviceBySerial(serialDigits) {
-  const serialToken = serialTokenFromDigits(serialDigits);
-  if (!serialToken) return null;
-  const path =
-    `devices?select=*` +
-    `&or=(serial.eq.${encodeURIComponent(serialDigits)},serial.eq.${encodeURIComponent(serialToken)})` +
-    `&order=updated_at.desc&limit=1`;
+async function restRequest(path, { method = "GET", body = null, prefer = "" } = {}) {
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+  };
+  if (body !== null) headers["Content-Type"] = "application/json";
+  if (prefer) headers.Prefer = prefer;
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers,
+    body: body === null ? undefined : JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const msg = (json && (json.message || json.error || json.error_description)) || text || response.statusText;
+    throw new Error(msg);
+  }
+  return json;
+}
+
+async function getDeviceBySerial(token) {
+  const variants = serialVariants(token);
+  if (!variants.length) return null;
+
+  const orExpr = variants.map((v) => `serial.eq.${encodeURIComponent(v)}`).join(",");
+  const path = `devices?select=*&or=(${orExpr})&order=updated_at.desc&limit=1`;
   const rows = await restRequest(path);
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
 async function loadByScannedValue(rawValue) {
-  const token = extractSerialToken(rawValue);
+  const token = extractPreferredSerial(rawValue);
   if (!token) {
     if (String(rawValue || "").trim()) {
       els.serial.value = "";
-      setTypeEditable(true);
-      setStatus("Only serial barcode is allowed (S + 14 digits)", "error");
+      setIdentityEditable(true);
+      setStatus("Serial must be S + 14 digits, or first token like laptop QR serial", "error");
     }
     return;
   }
 
-  const match = token.match(SERIAL_RE);
-  const serialDigits = match ? match[1] : "";
-  if (!serialDigits) {
-    setStatus("Invalid serial barcode", "error");
-    return;
-  }
-
-  els.serial.value = token;
+  const cleaned = cleanToken(token);
+  els.serial.value = cleaned;
+  els.lookupSerial.value = cleaned;
 
   let device = null;
   try {
-    device = await getDeviceBySerial(serialDigits);
+    device = await getDeviceBySerial(cleaned);
   } catch (error) {
     setStatus(`Database error: ${error.message}`, "error");
     return;
@@ -236,38 +305,40 @@ async function loadByScannedValue(rawValue) {
     return;
   }
 
-  setTypeEditable(true);
-  els.statusSelect.value = "RECEIVED";
-  els.fromStore.value = "";
-  els.toStore.value = "";
-  els.comment.value = "";
+  resetIdentityFields();
+  resetMutableFields();
+  setIdentityEditable(true);
 
-  const guessed = PREFIX_HINTS[serialDigits.slice(0, 2)] || guessFromCache(serialDigits);
-  if (guessed) {
-    applyGuess(guessed);
-    setStatus("Auto-filled by existing scanner prefixes", "ok");
+  const hinted = PREFIX_HINTS[getPrefixKey(cleaned)] || null;
+  if (hinted) {
+    applyGuess(hinted);
+    setStatus("Auto-filled by known prefix", "ok");
     return;
   }
 
-  els.type.value = "scanner";
-  els.make.value = "";
-  els.model.value = "";
-  setStatus("New serial. Fill status/store/comment and save.");
+  const guessed = guessFromCache(cleaned);
+  if (guessed) {
+    applyGuess(guessed);
+    setStatus("Auto-filled from existing devices", "ok");
+    return;
+  }
+
+  setStatus("New device detected. Fill Type/Make/Model and save.");
 }
 
 async function saveDevice() {
-  const token = extractSerialToken(els.serial.value);
+  const token = extractPreferredSerial(els.serial.value);
   if (!token) {
-    setStatus("Only serial barcode is allowed (S + 14 digits)", "error");
+    setStatus("Serial must be valid before saving", "error");
     return;
   }
 
-  const serialDigits = token.match(SERIAL_RE)[1];
-  const serialToken = serialTokenFromDigits(serialDigits);
+  const cleaned = cleanToken(token);
+  els.serial.value = cleaned;
 
   let existing = null;
   try {
-    existing = await getDeviceBySerial(serialDigits);
+    existing = await getDeviceBySerial(cleaned);
   } catch (error) {
     setStatus(`Lookup failed: ${error.message}`, "error");
     return;
@@ -284,16 +355,16 @@ async function saveDevice() {
     if (existing) {
       const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
       await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
-      setStatus("Updated", "ok");
+      setStatus("Updated existing device", "ok");
     } else {
       const insertPayload = {
-        serial: serialToken,
-        device_type: (els.type.value || "scanner").trim(),
+        serial: normalizeForStore(cleaned),
+        device_type: (els.type.value || "scanner").trim() || "scanner",
         model: composeModel(els.make.value, els.model.value),
         ...editPayload,
       };
       await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=minimal" });
-      setStatus("Added", "ok");
+      setStatus("Added new device", "ok");
     }
   } catch (error) {
     setStatus(`Save failed: ${error.message}`, "error");
@@ -301,7 +372,7 @@ async function saveDevice() {
   }
 
   await loadDevicesList();
-  await loadByScannedValue(token);
+  await loadByScannedValue(cleaned);
 }
 
 function renderDevicesList() {
@@ -317,7 +388,7 @@ function renderDevicesList() {
   els.listStatus.textContent = `Showing ${rows.length}`;
 
   if (!rows.length) {
-    const helper = filter ? "No rows match this filter" : "Check Supabase SELECT policy for anon role";
+    const helper = filter ? "No rows match this filter" : "No devices visible. Check Supabase SELECT policy.";
     els.devicesList.innerHTML = `
       <div class="row">
         <span>No devices visible</span>
@@ -365,7 +436,7 @@ async function loadDevicesList() {
 
   try {
     const data = await restRequest(
-      "devices?select=serial,device_type,model,status,from_store,to_store,comment,updated_at&order=updated_at.desc&limit=200"
+      "devices?select=id,serial,device_type,model,status,from_store,to_store,comment,updated_at&order=updated_at.desc&limit=300"
     );
     devicesCache = Array.isArray(data) ? data : [];
     renderDevicesList();
@@ -387,26 +458,29 @@ async function loadDevicesList() {
 }
 
 async function loadFromLookup() {
-  const serialDigits = serialDigitsFromAnyInput(els.lookupSerial.value);
-  if (!serialDigits) {
-    setStatus("Enter serial as S + 14 digits or 14 digits", "error");
+  const token = extractPreferredSerial(els.lookupSerial.value);
+  if (!token) {
+    setStatus("Enter serial in scanner or laptop format", "error");
     return;
   }
-  const token = `S${serialDigits}`;
-  els.serial.value = token;
-  await loadByScannedValue(token);
+  const cleaned = cleanToken(token);
+  els.lookupSerial.value = cleaned;
+  els.serial.value = cleaned;
+  await loadByScannedValue(cleaned);
 }
 
 els.serial.addEventListener("input", () => {
   els.serial.value = sanitizeSerialField(els.serial.value);
   clearTimeout(scanTimer);
+
   if (!els.serial.value) {
-    setTypeEditable(true);
+    setIdentityEditable(true);
     return;
   }
+
   scanTimer = setTimeout(() => {
     loadByScannedValue(els.serial.value);
-  }, 120);
+  }, 140);
 });
 
 els.serial.addEventListener("keydown", (e) => {
@@ -416,6 +490,18 @@ els.serial.addEventListener("keydown", (e) => {
   }
 });
 
+els.lookupSerial.addEventListener("input", () => {
+  els.lookupSerial.value = sanitizeLookupField(els.lookupSerial.value);
+});
+
+els.lookupSerial.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    loadFromLookup();
+  }
+});
+
+els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
 els.clear.addEventListener("click", () => {
   resetForm();
@@ -424,22 +510,14 @@ els.clear.addEventListener("click", () => {
 });
 els.refreshList.addEventListener("click", loadDevicesList);
 els.listFilter.addEventListener("input", renderDevicesList);
-els.lookupLoad.addEventListener("click", loadFromLookup);
-els.lookupSerial.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    loadFromLookup();
-  }
-});
-els.lookupSerial.addEventListener("input", () => {
-  els.lookupSerial.value = sanitizeLookupField(els.lookupSerial.value);
-});
+
 els.devicesList.addEventListener("click", (e) => {
   const row = e.target.closest(".row[data-serial]");
   if (!row) return;
-  const serial = serialDigitsFromAnyInput(row.getAttribute("data-serial") || "");
-  if (!serial) return;
-  els.lookupSerial.value = `S${serial}`;
+  const token = extractPreferredSerial(row.getAttribute("data-serial") || "");
+  if (!token) return;
+  const cleaned = cleanToken(token);
+  els.lookupSerial.value = cleaned;
   loadFromLookup();
 });
 
@@ -448,4 +526,4 @@ els.serial.focus();
 loadDevicesList();
 setTimeout(loadDevicesList, 1200);
 window.addEventListener("focus", loadDevicesList);
-setInterval(loadDevicesList, 15000);
+setInterval(loadDevicesList, 20000);
