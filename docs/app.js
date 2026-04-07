@@ -54,6 +54,10 @@ const els = {
   diagLastSync: document.getElementById("diagLastSync"),
   diagApi: document.getElementById("diagApi"),
   diagRefresh: document.getElementById("diagRefresh"),
+  scanPopup: document.getElementById("scanPopup"),
+  scanPopupMessage: document.getElementById("scanPopupMessage"),
+  scanPopupRegister: document.getElementById("scanPopupRegister"),
+  scanPopupClose: document.getElementById("scanPopupClose"),
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
   authInfo: document.getElementById("authInfo"),
@@ -70,6 +74,7 @@ let lastSuccessfulSyncAt = "";
 let prefixHintsByKey = { ...FALLBACK_PREFIX_HINTS };
 const loadedRevisionBySerial = new Map();
 let authContext = null;
+let pendingRegisterSerial = "";
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -117,6 +122,37 @@ function setIdentityEditable(enabled) {
   els.type.disabled = !enabled;
   els.make.readOnly = !enabled;
   els.model.readOnly = !enabled;
+}
+
+function hideScanPopup() {
+  if (!els.scanPopup) return;
+  els.scanPopup.classList.add("hidden");
+}
+
+function showScanPopup(message, { allowRegister = false, serial = "" } = {}) {
+  if (!els.scanPopup || !els.scanPopupMessage) return;
+
+  pendingRegisterSerial = String(serial || "").trim();
+  els.scanPopupMessage.textContent = String(message || "");
+  els.scanPopup.classList.remove("hidden");
+
+  if (els.scanPopupRegister) {
+    els.scanPopupRegister.classList.toggle("hidden", !allowRegister);
+  }
+}
+
+function registerPendingDevice() {
+  hideScanPopup();
+  const serial = cleanToken(pendingRegisterSerial || els.serial.value || "");
+  if (serial) {
+    els.serial.value = serial;
+    els.lookupSerial.value = serial;
+  }
+  setIdentityEditable(true);
+  setStatus("Register a new device: confirm Type / Make / Model and save.");
+  if (els.make) {
+    els.make.focus();
+  }
 }
 
 function readStorageText(key) {
@@ -940,8 +976,11 @@ async function loadByScannedValue(rawValue) {
     }
     fillFormFromDevice(device);
     setStatus("Loaded from database", "ok");
+    showScanPopup("Found in database: existing device loaded.");
     return;
   }
+
+  await loadPrefixRules();
 
   for (const variant of serialVariants(cleaned)) {
     loadedRevisionBySerial.delete(variant);
@@ -954,18 +993,27 @@ async function loadByScannedValue(rawValue) {
   const guessed = guessFromCache(cleaned);
   if (guessed) {
     applyGuess(guessed);
-    setStatus("Auto-filled from learned serial prefixes", "ok");
+    setStatus("Not found in database. Auto-filled using database history.", "ok");
+    showScanPopup(
+      "Not found data in database. According to database history, data was automatically filled. Register new device?",
+      { allowRegister: true, serial: cleaned }
+    );
     return;
   }
 
   const hinted = getPrefixHint(cleaned);
   if (hinted) {
     applyGuess(hinted);
-    setStatus("Auto-filled by known prefix", "ok");
+    setStatus("Not found in database. Auto-filled using prefix rules.", "ok");
+    showScanPopup(
+      "Not found data in database. According to database prefix rules, data was automatically filled. Register new device?",
+      { allowRegister: true, serial: cleaned }
+    );
     return;
   }
 
-  setStatus("New device detected. Fill Type/Make/Model and save.");
+  setStatus("Not found in database. Register new device.");
+  showScanPopup("Not found data in database. Register new device?", { allowRegister: true, serial: cleaned });
   saveDraft();
 }
 
@@ -1256,6 +1304,24 @@ if (els.auditSerial) {
     }
   });
 }
+if (els.scanPopupClose) {
+  els.scanPopupClose.addEventListener("click", hideScanPopup);
+}
+if (els.scanPopupRegister) {
+  els.scanPopupRegister.addEventListener("click", registerPendingDevice);
+}
+if (els.scanPopup) {
+  els.scanPopup.addEventListener("click", (e) => {
+    if (e.target === els.scanPopup) {
+      hideScanPopup();
+    }
+  });
+}
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    hideScanPopup();
+  }
+});
 if (els.diagRefresh) {
   els.diagRefresh.addEventListener("click", () => {
     updateDiagnosticsPanel();

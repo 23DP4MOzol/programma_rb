@@ -341,6 +341,45 @@ body {
   grid-column: 1 / -1;
 }
 
+.popup {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 18, 22, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  z-index: 60;
+}
+
+.popup__card {
+  width: min(520px, 96vw);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.popup__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.popup__message {
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.popup__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 560px) {
   .shell {
     padding: 12px;
@@ -395,5 +434,13 @@ body {
 
   .audit-rows .audit-row {
     grid-template-columns: 1fr;
+  }
+
+  .popup__actions {
+    justify-content: stretch;
+  }
+
+  .popup__actions .btn {
+    flex: 1 1 160px;
   }
 }

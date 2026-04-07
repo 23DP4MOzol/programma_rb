@@ -15,6 +15,8 @@ class ReleaseSmokeTests(unittest.TestCase):
             'id="exportCsv"',
             'id="auditCard"',
             'id="authInfo"',
+            'id="scanPopup"',
+            'id="scanPopupRegister"',
         ]
         for marker in required_ids:
             self.assertIn(marker, html)
@@ -29,10 +31,18 @@ class ReleaseSmokeTests(unittest.TestCase):
             "processQueuedSaves",
             "loadAuditLogs",
             "const firstSpace = text.indexOf(\" \")",
+            "showScanPopup",
+            "registerPendingDevice",
         ]
         for marker in required_markers:
             self.assertIn(marker, js)
         self.assertNotIn('split(" ", 2)', js)
+
+        db_lookup_pos = js.find("device = await getDeviceBySerial(cleaned)")
+        learned_guess_pos = js.find("const guessed = guessFromCache(cleaned)")
+        self.assertGreaterEqual(db_lookup_pos, 0)
+        self.assertGreaterEqual(learned_guess_pos, 0)
+        self.assertLess(db_lookup_pos, learned_guess_pos)
 
     def test_desktop_app_has_role_controls(self) -> None:
         py = (ROOT / "desktop_app.py").read_text(encoding="utf-8")
@@ -41,6 +51,8 @@ class ReleaseSmokeTests(unittest.TestCase):
             "def _apply_role_controls(self)",
             "Admin role required for audit viewer",
             "def _schedule_scanner_focus_lock(self)",
+            "def _show_scan_result_popup(self",
+            "Register new device",
         ]
         for marker in required_markers:
             self.assertIn(marker, py)

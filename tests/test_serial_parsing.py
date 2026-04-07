@@ -33,6 +33,11 @@ class SerialParsingTests(unittest.TestCase):
         token = extract_preferred_serial("5CG21582B1", mode="laptop")
         self.assertEqual(token, "5CG21582B1")
 
+    def test_laptop_qr_first_token_with_semicolon_payload(self) -> None:
+        token = extract_preferred_serial("5CG3285C9K;HP EliteBook 840 G10;RIMI001", mode="scanner")
+        self.assertEqual(token, "5CG3285C9K")
+        self.assertEqual(normalize_for_store(token), "5CG3285C9K")
+
 
 if __name__ == "__main__":
     unittest.main()
