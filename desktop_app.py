@@ -711,8 +711,8 @@ class DesktopApp:
             self.serial_var.set(existing.serial)
             self._selected_serial = existing.serial
             self._selected_updated_at = existing.updated_at
-            self._write_result({"ok": True, "info": "Found in database: device loaded."})
-            self._show_scan_result_popup("Found in database. Existing device data has been loaded.")
+            self._write_result({"ok": True, "info": self.tr("desktop_scan_info_loaded")})
+            self._show_scan_result_popup(self.tr("desktop_scan_found_db"))
             return
 
         upper_scan = normalized_serial.upper()
@@ -790,11 +790,11 @@ class DesktopApp:
                         self._write_result(
                             {
                                 "ok": True,
-                                "info": f"Not found in database. Auto-filled according to database history (prefix '{prefix}').",
+                                "info": self.tr("desktop_scan_info_history", prefix=prefix),
                             }
                         )
                         self._show_scan_result_popup(
-                            "Not found data in database. According to database history, data was automatically filled. Register new device?",
+                            self.tr("desktop_scan_not_found_history"),
                             allow_register=True,
                             serial=normalized_serial,
                         )
@@ -814,11 +814,15 @@ class DesktopApp:
                 self._write_result(
                     {
                         "ok": True,
-                        "info": f"Not found in database. Auto-filled according to database prefix rules ({guess_make} {guess_model}, rule '{prefix}').",
+                        "info": self.tr(
+                            "desktop_scan_info_prefix",
+                            model_desc=f"{guess_make} {guess_model}",
+                            prefix=prefix,
+                        ),
                     }
                 )
                 self._show_scan_result_popup(
-                    "Not found data in database. According to database prefix rules, data was automatically filled. Register new device?",
+                    self.tr("desktop_scan_not_found_prefix"),
                     allow_register=True,
                     serial=normalized_serial,
                 )
@@ -828,9 +832,9 @@ class DesktopApp:
         self._selected_serial = normalized_serial
         self._selected_updated_at = None
         self.overwrite_var.set(False)
-        self._write_result({"ok": True, "info": "Not found data in database."})
+        self._write_result({"ok": True, "info": self.tr("desktop_scan_info_not_found")})
         self._show_scan_result_popup(
-            "Not found data in database. Register new device?",
+            self.tr("desktop_scan_not_found"),
             allow_register=True,
             serial=normalized_serial,
         )
@@ -842,6 +846,7 @@ class DesktopApp:
         self._selected_serial = normalized or None
         self._selected_updated_at = None
         self.overwrite_var.set(False)
+        self._write_result({"ok": True, "info": self.tr("desktop_scan_register_status")})
         try:
             self.make_combo.focus_set()
         except Exception:
@@ -852,7 +857,7 @@ class DesktopApp:
 
     def _show_scan_result_popup(self, message: str, *, allow_register: bool = False, serial: str | None = None) -> None:
         win = tk.Toplevel(self.root)
-        win.title("Scan result")
+        win.title(self.tr("desktop_scan_popup_title"))
         win.geometry("520x220")
         win.minsize(460, 190)
         win.transient(self.root)
@@ -862,7 +867,7 @@ class DesktopApp:
         frm.pack(fill=tk.BOTH, expand=True)
         frm.columnconfigure(0, weight=1)
 
-        ttk.Label(frm, text="Scan result", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(frm, text=self.tr("desktop_scan_popup_title"), style="Section.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(frm, text=message, wraplength=470, justify="left").grid(row=1, column=0, sticky="w", pady=(10, 0))
 
         btns = ttk.Frame(frm)
@@ -871,12 +876,12 @@ class DesktopApp:
         if allow_register:
             ttk.Button(
                 btns,
-                text="Register new device",
+                text=self.tr("desktop_register_new_device"),
                 style="Primary.TButton",
                 command=lambda: (self._prepare_manual_registration(serial), win.destroy()),
             ).grid(row=0, column=0, padx=(0, 8))
 
-        ttk.Button(btns, text="Close", style="Secondary.TButton", command=win.destroy).grid(row=0, column=1)
+        ttk.Button(btns, text=self.tr("desktop_close"), style="Secondary.TButton", command=win.destroy).grid(row=0, column=1)
 
     def _fill_action_form(self, device: Device) -> None:
         """Helper to fill the Action section fields nicely from a DB record."""

@@ -114,6 +114,8 @@ python -m unittest tests.test_serial_parsing
 
 Backup un atjaunošanas procedūra: `BACKUP_RECOVERY_RUNBOOK.md`.
 
+Operāciju release kontrolsaraksts: `OPERATIONS_RELEASE_CHECKLIST.md`.
+
 ## English
 
 Unified inventory system with two clients:
@@ -225,3 +227,5 @@ python -m unittest tests.test_serial_parsing
 ```
 
 Backup and recovery procedure: `BACKUP_RECOVERY_RUNBOOK.md`.
+
+Operations release checklist: `OPERATIONS_RELEASE_CHECKLIST.md`.

@@ -17,9 +17,81 @@ const FALLBACK_PREFIX_HINTS = {
 const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
 const AUTH_TOKEN_STORAGE_KEY = "rimi.inventory.auth_jwt";
+const WEB_LANG_STORAGE_KEY = "rimi.inventory.lang";
 const SCAN_DEBOUNCE_MS = 900;
 const SAVE_DEBOUNCE_MS = 1400;
 const WEB_APP_VERSION = "web-2026.04.07";
+
+const WEB_I18N = {
+  en: {
+    scanPopupTitle: "Scan result",
+    scanPopupRegister: "Register new device",
+    scanPopupClose: "Close",
+    scanRegisterStatus: "Register a new device: confirm Type / Make / Model and save.",
+    scanFoundDbStatus: "Loaded from database",
+    scanFoundDbPopup: "Found in database: existing device loaded.",
+    scanNotFoundHistoryStatus: "Not found in database. Auto-filled using database history.",
+    scanNotFoundHistoryPopup:
+      "Not found data in database. According to database history, data was automatically filled. Register new device?",
+    scanNotFoundPrefixStatus: "Not found in database. Auto-filled using prefix rules.",
+    scanNotFoundPrefixPopup:
+      "Not found data in database. According to database prefix rules, data was automatically filled. Register new device?",
+    scanNotFoundStatus: "Not found in database. Register new device.",
+    scanNotFoundPopup: "Not found data in database. Register new device?",
+  },
+  lv: {
+    scanPopupTitle: "Skenēšanas rezultāts",
+    scanPopupRegister: "Reģistrēt jaunu ierīci",
+    scanPopupClose: "Aizvērt",
+    scanRegisterStatus: "Reģistrē jaunu ierīci: pārbaudi Tips / Ražotājs / Modelis un saglabā.",
+    scanFoundDbStatus: "Ielādēts no datubāzes",
+    scanFoundDbPopup: "Atrasts datubāzē: esošā ierīce ielādēta.",
+    scanNotFoundHistoryStatus: "Datubāzē nav atrasts. Automātiski aizpildīts pēc datubāzes vēstures.",
+    scanNotFoundHistoryPopup:
+      "Datubāzē dati nav atrasti. Pēc datubāzes vēstures dati automātiski aizpildīti. Reģistrēt jaunu ierīci?",
+    scanNotFoundPrefixStatus: "Datubāzē nav atrasts. Automātiski aizpildīts pēc prefiksu noteikumiem.",
+    scanNotFoundPrefixPopup:
+      "Datubāzē dati nav atrasti. Pēc prefiksu noteikumiem dati automātiski aizpildīti. Reģistrēt jaunu ierīci?",
+    scanNotFoundStatus: "Datubāzē nav atrasts. Reģistrē jaunu ierīci.",
+    scanNotFoundPopup: "Datubāzē dati nav atrasti. Reģistrēt jaunu ierīci?",
+  },
+};
+
+function resolveWebLanguage() {
+  let candidate = "";
+  try {
+    const q = new URLSearchParams(window.location.search || "").get("lang") || "";
+    candidate = String(q || "").trim().toLowerCase();
+  } catch {
+    candidate = "";
+  }
+
+  if (!candidate) {
+    try {
+      candidate = String(localStorage.getItem(WEB_LANG_STORAGE_KEY) || "").trim().toLowerCase();
+    } catch {
+      candidate = "";
+    }
+  }
+
+  if (!candidate) {
+    candidate = String((navigator.language || "en").slice(0, 2)).toLowerCase();
+  }
+
+  const lang = candidate === "lv" ? "lv" : "en";
+  try {
+    localStorage.setItem(WEB_LANG_STORAGE_KEY, lang);
+  } catch {
+    // ignore storage errors
+  }
+  return lang;
+}
+
+const WEB_LANG = resolveWebLanguage();
+
+function trWeb(key) {
+  return WEB_I18N[WEB_LANG]?.[key] || WEB_I18N.en[key] || key;
+}
 
 const els = {
   serial: document.getElementById("serial"),
@@ -55,6 +127,7 @@ const els = {
   diagApi: document.getElementById("diagApi"),
   diagRefresh: document.getElementById("diagRefresh"),
   scanPopup: document.getElementById("scanPopup"),
+  scanPopupTitle: document.getElementById("scanPopupTitle"),
   scanPopupMessage: document.getElementById("scanPopupMessage"),
   scanPopupRegister: document.getElementById("scanPopupRegister"),
   scanPopupClose: document.getElementById("scanPopupClose"),
@@ -149,9 +222,21 @@ function registerPendingDevice() {
     els.lookupSerial.value = serial;
   }
   setIdentityEditable(true);
-  setStatus("Register a new device: confirm Type / Make / Model and save.");
+  setStatus(trWeb("scanRegisterStatus"));
   if (els.make) {
     els.make.focus();
+  }
+}
+
+function applyWebLanguageLabels() {
+  if (els.scanPopupTitle) {
+    els.scanPopupTitle.textContent = trWeb("scanPopupTitle");
+  }
+  if (els.scanPopupRegister) {
+    els.scanPopupRegister.textContent = trWeb("scanPopupRegister");
+  }
+  if (els.scanPopupClose) {
+    els.scanPopupClose.textContent = trWeb("scanPopupClose");
   }
 }
 
@@ -975,8 +1060,8 @@ async function loadByScannedValue(rawValue) {
       rememberRevisionForToken(device.serial, device.updated_at || "");
     }
     fillFormFromDevice(device);
-    setStatus("Loaded from database", "ok");
-    showScanPopup("Found in database: existing device loaded.");
+    setStatus(trWeb("scanFoundDbStatus"), "ok");
+    showScanPopup(trWeb("scanFoundDbPopup"));
     return;
   }
 
@@ -993,27 +1078,21 @@ async function loadByScannedValue(rawValue) {
   const guessed = guessFromCache(cleaned);
   if (guessed) {
     applyGuess(guessed);
-    setStatus("Not found in database. Auto-filled using database history.", "ok");
-    showScanPopup(
-      "Not found data in database. According to database history, data was automatically filled. Register new device?",
-      { allowRegister: true, serial: cleaned }
-    );
+    setStatus(trWeb("scanNotFoundHistoryStatus"), "ok");
+    showScanPopup(trWeb("scanNotFoundHistoryPopup"), { allowRegister: true, serial: cleaned });
     return;
   }
 
   const hinted = getPrefixHint(cleaned);
   if (hinted) {
     applyGuess(hinted);
-    setStatus("Not found in database. Auto-filled using prefix rules.", "ok");
-    showScanPopup(
-      "Not found data in database. According to database prefix rules, data was automatically filled. Register new device?",
-      { allowRegister: true, serial: cleaned }
-    );
+    setStatus(trWeb("scanNotFoundPrefixStatus"), "ok");
+    showScanPopup(trWeb("scanNotFoundPrefixPopup"), { allowRegister: true, serial: cleaned });
     return;
   }
 
-  setStatus("Not found in database. Register new device.");
-  showScanPopup("Not found data in database. Register new device?", { allowRegister: true, serial: cleaned });
+  setStatus(trWeb("scanNotFoundStatus"));
+  showScanPopup(trWeb("scanNotFoundPopup"), { allowRegister: true, serial: cleaned });
   saveDraft();
 }
 
@@ -1349,6 +1428,7 @@ els.devicesList.addEventListener("click", (e) => {
 });
 
 resetForm();
+applyWebLanguageLabels();
 updateQueueStatus();
 if (els.appVersion) {
   els.appVersion.textContent = `Version: ${WEB_APP_VERSION}`;

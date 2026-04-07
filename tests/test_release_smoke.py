@@ -25,7 +25,9 @@ class ReleaseSmokeTests(unittest.TestCase):
         js = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
         required_markers = [
             "AUTH_TOKEN_STORAGE_KEY",
+            "WEB_LANG_STORAGE_KEY",
             "resolveAuthContext",
+            "resolveWebLanguage",
             "applyAuthUiState",
             "expected_updated_at",
             "processQueuedSaves",
@@ -33,6 +35,7 @@ class ReleaseSmokeTests(unittest.TestCase):
             "const firstSpace = text.indexOf(\" \")",
             "showScanPopup",
             "registerPendingDevice",
+            "applyWebLanguageLabels",
         ]
         for marker in required_markers:
             self.assertIn(marker, js)
@@ -52,7 +55,8 @@ class ReleaseSmokeTests(unittest.TestCase):
             "Admin role required for audit viewer",
             "def _schedule_scanner_focus_lock(self)",
             "def _show_scan_result_popup(self",
-            "Register new device",
+            "desktop_register_new_device",
+            "desktop_scan_popup_title",
         ]
         for marker in required_markers:
             self.assertIn(marker, py)
@@ -69,6 +73,9 @@ class ReleaseSmokeTests(unittest.TestCase):
 
     def test_backup_runbook_exists(self) -> None:
         self.assertTrue((ROOT / "BACKUP_RECOVERY_RUNBOOK.md").exists())
+
+    def test_operations_release_checklist_exists(self) -> None:
+        self.assertTrue((ROOT / "OPERATIONS_RELEASE_CHECKLIST.md").exists())
 
 
 if __name__ == "__main__":
