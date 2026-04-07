@@ -68,7 +68,7 @@ Ja `.bat`/CMD ir bloķēts, vari palaist `programma_rb.pyw`.
 - Orientācija fiksēta uz portrait
 - Ekrāns netiek izslēgts skenēšanas laikā (`KEEP_SCREEN_ON`)
 - Debug build workflow: `.github/workflows/build_webview_apk.yml`
-- Signed workflow (manual inputs): `.github/workflows/build_webview_apk_signed.yml`
+- Production signed workflow (stable/test tracks): `.github/workflows/build_webview_apk_production.yml`
 
 ### Supabase migrācija (obligāti)
 
@@ -182,7 +182,7 @@ If CMD/BAT is blocked by policy, run `programma_rb.pyw`.
 - Orientation locked to portrait
 - Keep-screen-on for uninterrupted scanning
 - Debug build workflow: `.github/workflows/build_webview_apk.yml`
-- Signed workflow (manual inputs): `.github/workflows/build_webview_apk_signed.yml`
+- Production signed workflow (stable/test tracks): `.github/workflows/build_webview_apk_production.yml`
 
 ### Supabase migration (required)
 
