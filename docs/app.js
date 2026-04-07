@@ -14,6 +14,9 @@ const PREFIX_HINTS = {
   "A3:5CG": { device_type: "laptop", make: "HP", model: "EliteBook 840 G10" },
 };
 
+const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
+const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
+
 const els = {
   serial: document.getElementById("serial"),
   statusText: document.getElementById("status"),
@@ -36,6 +39,7 @@ const els = {
 
 let devicesCache = [];
 let scanTimer = null;
+let queueSyncInProgress = false;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -52,6 +56,84 @@ function setIdentityEditable(enabled) {
   els.type.disabled = !enabled;
   els.make.readOnly = !enabled;
   els.model.readOnly = !enabled;
+}
+
+function readStorageJson(key, fallbackValue) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallbackValue;
+    return JSON.parse(raw);
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function writeStorageJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearStorageKey(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function saveDraft() {
+  writeStorageJson(DRAFT_STORAGE_KEY, {
+    serial: els.serial.value || "",
+    type: els.type.value || "scanner",
+    status: els.statusSelect.value || "RECEIVED",
+    make: els.make.value || "",
+    model: els.model.value || "",
+    from_store: els.fromStore.value || "",
+    to_store: els.toStore.value || "",
+    comment: els.comment.value || "",
+  });
+}
+
+function restoreDraft() {
+  const draft = readStorageJson(DRAFT_STORAGE_KEY, null);
+  if (!draft || typeof draft !== "object") return false;
+
+  els.serial.value = String(draft.serial || "");
+  els.type.value = String(draft.type || "scanner");
+  els.statusSelect.value = String(draft.status || "RECEIVED");
+  els.make.value = String(draft.make || "");
+  els.model.value = String(draft.model || "");
+  els.fromStore.value = String(draft.from_store || "");
+  els.toStore.value = String(draft.to_store || "");
+  els.comment.value = String(draft.comment || "");
+  return true;
+}
+
+function clearDraft() {
+  clearStorageKey(DRAFT_STORAGE_KEY);
+}
+
+function getQueuedSaves() {
+  const queue = readStorageJson(QUEUE_STORAGE_KEY, []);
+  return Array.isArray(queue) ? queue : [];
+}
+
+function setQueuedSaves(queue) {
+  writeStorageJson(QUEUE_STORAGE_KEY, Array.isArray(queue) ? queue : []);
+}
+
+function enqueueSaveOperation(operation) {
+  const queue = getQueuedSaves();
+  queue.push({ ...operation, queued_at: new Date().toISOString() });
+  setQueuedSaves(queue);
+}
+
+function isConnectivityError(error) {
+  const text = String((error && error.message) || error || "").toLowerCase();
+  return !navigator.onLine || text.includes("failed to fetch") || text.includes("network") || text.includes("fetch");
 }
 
 function cleanToken(value) {
@@ -160,6 +242,18 @@ function composeModel(make, model) {
   return `${mk} ${md}`;
 }
 
+function buildSaveOperation(cleanedToken) {
+  return {
+    serial: normalizeForStore(cleanedToken),
+    device_type: (els.type.value || "scanner").trim() || "scanner",
+    model: composeModel(els.make.value, els.model.value),
+    from_store: els.fromStore.value.trim(),
+    to_store: els.toStore.value.trim(),
+    status: els.statusSelect.value,
+    comment: els.comment.value.trim(),
+  };
+}
+
 function getPrefixKey(token) {
   const t = cleanToken(token);
   if (isScannerToken(t)) {
@@ -221,6 +315,7 @@ function resetForm() {
   resetIdentityFields();
   resetMutableFields();
   setIdentityEditable(true);
+  saveDraft();
 }
 
 function fillFormFromDevice(device) {
@@ -233,6 +328,7 @@ function fillFormFromDevice(device) {
   els.toStore.value = device.to_store || "";
   els.comment.value = device.comment || "";
   setIdentityEditable(false);
+  saveDraft();
 }
 
 function applyGuess(guess) {
@@ -244,6 +340,7 @@ function applyGuess(guess) {
   if (guess.model) {
     els.model.value = guess.model;
   }
+  saveDraft();
 }
 
 function guessFromCache(token) {
@@ -339,13 +436,76 @@ async function getDeviceBySerial(token) {
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
+async function processQueuedSaves() {
+  if (queueSyncInProgress || !navigator.onLine) return;
+
+  const queue = getQueuedSaves();
+  if (!queue.length) return;
+
+  queueSyncInProgress = true;
+
+  let synced = 0;
+  const remaining = [];
+
+  try {
+    for (let i = 0; i < queue.length; i += 1) {
+      const op = queue[i];
+      try {
+        const existing = await getDeviceBySerial(op.serial || "");
+        const editPayload = {
+          from_store: op.from_store || "",
+          to_store: op.to_store || "",
+          status: op.status || "RECEIVED",
+          comment: op.comment || "",
+        };
+
+        if (existing) {
+          const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
+          await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
+        } else {
+          await restRequest("devices", {
+            method: "POST",
+            body: {
+              serial: op.serial || "",
+              device_type: op.device_type || "scanner",
+              model: op.model || "",
+              ...editPayload,
+            },
+            prefer: "return=minimal",
+          });
+        }
+        synced += 1;
+      } catch (error) {
+        if (isConnectivityError(error)) {
+          remaining.push(op, ...queue.slice(i + 1));
+          break;
+        }
+        remaining.push(op);
+      }
+    }
+  } finally {
+    setQueuedSaves(remaining);
+    queueSyncInProgress = false;
+  }
+
+  if (synced > 0) {
+    setStatus(`Synced ${synced} queued save(s)`, "ok");
+    await loadDevicesList();
+  }
+
+  if (remaining.length && navigator.onLine) {
+    setStatus(`Queue pending: ${remaining.length} save(s)`, "error");
+  }
+}
+
 async function loadByScannedValue(rawValue) {
   const token = extractPreferredSerial(rawValue);
   if (!token) {
     if (String(rawValue || "").trim()) {
       els.serial.value = "";
       setIdentityEditable(true);
-      setStatus("Serial must be S + 14 digits, or first token like laptop QR serial", "error");
+      setStatus("Serial must be S + 13/14 digits, or first token like laptop QR serial", "error");
+      saveDraft();
     }
     return;
   }
@@ -353,6 +513,7 @@ async function loadByScannedValue(rawValue) {
   const cleaned = cleanToken(token);
   els.serial.value = cleaned;
   els.lookupSerial.value = cleaned;
+  saveDraft();
 
   let device = null;
   try {
@@ -387,6 +548,7 @@ async function loadByScannedValue(rawValue) {
   }
 
   setStatus("New device detected. Fill Type/Make/Model and save.");
+  saveDraft();
 }
 
 async function saveDevice() {
@@ -398,11 +560,19 @@ async function saveDevice() {
 
   const cleaned = cleanToken(token);
   els.serial.value = cleaned;
+  saveDraft();
+
+  const queuedOperation = buildSaveOperation(cleaned);
 
   let existing = null;
   try {
     existing = await getDeviceBySerial(cleaned);
   } catch (error) {
+    if (isConnectivityError(error)) {
+      enqueueSaveOperation(queuedOperation);
+      setStatus("Offline: save queued and will sync automatically", "error");
+      return;
+    }
     setStatus(`Lookup failed: ${error.message}`, "error");
     return;
   }
@@ -430,12 +600,18 @@ async function saveDevice() {
       setStatus("Added new device", "ok");
     }
   } catch (error) {
+    if (isConnectivityError(error)) {
+      enqueueSaveOperation(queuedOperation);
+      setStatus("Offline: save queued and will sync automatically", "error");
+      return;
+    }
     setStatus(`Save failed: ${error.message}`, "error");
     return;
   }
 
   await loadDevicesList();
   await loadByScannedValue(cleaned);
+  await processQueuedSaves();
 }
 
 function renderDevicesList() {
@@ -529,12 +705,14 @@ async function loadFromLookup() {
   const cleaned = cleanToken(token);
   els.lookupSerial.value = cleaned;
   els.serial.value = cleaned;
+  saveDraft();
   await loadByScannedValue(cleaned);
 }
 
 els.serial.addEventListener("input", () => {
   els.serial.value = sanitizeSerialField(els.serial.value);
   clearTimeout(scanTimer);
+  saveDraft();
 
   if (!els.serial.value) {
     setIdentityEditable(true);
@@ -564,10 +742,16 @@ els.lookupSerial.addEventListener("keydown", (e) => {
   }
 });
 
+[els.type, els.statusSelect, els.make, els.model, els.fromStore, els.toStore, els.comment].forEach((input) => {
+  input.addEventListener("input", saveDraft);
+  input.addEventListener("change", saveDraft);
+});
+
 els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
 els.clear.addEventListener("click", () => {
   resetForm();
+  clearDraft();
   setStatus("Cleared");
   els.serial.focus();
 });
@@ -585,8 +769,31 @@ els.devicesList.addEventListener("click", (e) => {
 });
 
 resetForm();
+const recoveredDraft = restoreDraft();
+if (recoveredDraft) {
+  setStatus("Recovered unsaved draft");
+  if (els.serial.value) {
+    loadByScannedValue(els.serial.value);
+  }
+}
 els.serial.focus();
 loadDevicesList();
-setTimeout(loadDevicesList, 1200);
-window.addEventListener("focus", loadDevicesList);
-setInterval(loadDevicesList, 20000);
+setTimeout(() => {
+  loadDevicesList();
+  processQueuedSaves();
+}, 1200);
+window.addEventListener("focus", () => {
+  loadDevicesList();
+  processQueuedSaves();
+});
+window.addEventListener("online", () => {
+  setStatus("Back online. Syncing queued saves...");
+  processQueuedSaves();
+});
+window.addEventListener("offline", () => {
+  setStatus("Offline mode: saves will be queued", "error");
+});
+setInterval(() => {
+  loadDevicesList();
+  processQueuedSaves();
+}, 20000);
