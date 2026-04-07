@@ -1,39 +1,101 @@
-# Rimi Baltic Inventory Prototype
+# Rimi Baltic Inventory System
 
 [Latviešu](#latviešu) | [English](#english)
 
 ## Latviešu
 
-Vienkārša lokāla ierīču uzskaites programma (Python + SQLite) ar Desktop UI (Tkinter). Ierīces tiek identificētas pēc `serial` un var mainīt tipu/modeli/veikalu/statusu.
+Vienota inventarizācijas sistēma ar diviem klientiem:
 
-### Prasības
+- PC aplikācija (Tkinter, Python)
+- Web aplikācija (`docs`) + Android WebView APK (TC52 u.c.)
 
-- Python 3.10+ (bez ārējām bibliotekām)
+Abi klienti izmanto vienu Supabase backend un vienotu serial apstrādes loģiku.
 
-### Desktop UI (programma)
+### Arhitektūra
 
-Palaišana (PowerShell no šīs mapes):
+- Backend: Supabase (`devices`, `device_prefix_rules`, `device_audit_log`)
+- Desktop: `desktop_app.py`
+- Web: `docs/index.html` + `docs/app.js`
+- Android wrapper: `android/` (WebView)
+
+### Funkciju matrica (ko vari darīt kurā aplikācijā)
+
+| Funkcija | PC programma | Web / WebView APK | Piezīmes |
+|---|---|---|---|
+| Scanner serial skenēšana | Jā | Jā | Atbalsta `S + 13/14` un plain `13/14` |
+| Laptop QR (1. tokens = serial) | Jā | Jā | Piem.: `5CG...,...,...` |
+| Auto ielāde no DB pēc serial | Jā | Jā | Atrod esošu ierīci un aizpilda formu |
+| Prefix auto-atpazīšana | Jā | Jā | Prioritāte: DB noteikumi -> fallback |
+| Learning no vēsturiskajiem serial | Jā | Jā | Mainīga prefix garuma modelis |
+| Manuāla pievienošana / update | Jā | Jā | Konflikti tiek noķerti ar `updated_at` |
+| Offline queue | Jā | Jā | PC: `pending_ops.json`, Web: localStorage queue |
+| Manuāls Sync now | Jā | Jā | PC poga + Web poga |
+| CSV eksports | Nē | Jā | Eksportē redzamos (filtrētos) ierakstus |
+| Audit logs skatīšana (admin) | Jā | Jā | Pieejams tikai admin tiesībām |
+| Rediģēt identity laukus (serial/type/model) | Ar noteikumiem | Ar noteikumiem | Esošiem ierakstiem tikai `device_admin` |
+
+### PC programmas funkcijas
+
+- Klasiska forma + saraksts
+- Kamera skenēšana (ja pieejams `opencv/pyzbar`)
+- PIN aizsardzība sensitīvām darbībām
+- Admin audit viewer logs
+- Konflikta paziņojums, ja cits klients jau atjaunojis ierakstu
+
+Palaišana (PowerShell):
 
 ```powershell
 python .\main.py
-
-# vai explicit:
+# vai
 python .\main.py ui
 ```
 
-Ja datorā ir aizliegts CMD/BAT (Group Policy), tad dubultklikšķini `programma_rb.pyw` (drošākais “launcheris”).
+Ja `.bat`/CMD ir bloķēts, vari palaist `programma_rb.pyw`.
 
-Ja programma nepalaižas, paskaties `programma_rb_error.log`.
+### Web / WebView APK funkcijas
 
-#### Logo / ikona (opcioniāli)
+- Ātra skenēšana (`serial` input + Enter)
+- Queue badge (`Queued: N`)
+- Sync statuss + versija footerī
+- Draft atjaunošana pēc pārlādes
+- Offline save queue ar automātisku sinhronizāciju
+- Manuāls `Sync now`
+- `Export CSV`
+- Audit karte (admin pieejām)
 
-Lai logs izskatās “oficiālāk”, vari ielikt savu logo failu mapē `assets`:
+### Android WebView APK
 
-- `assets/logo_white.png` (ieteicams) vai `assets/logo.png` — parādīsies augšā galvenē
-- (ja izmanto tikai vienu failu) `assets/logo_red.png` — ieteicamais variants jaunajai baltajai galvenei
-- `assets/icon.ico` — loga ikona
+- Orientācija fiksēta uz portrait
+- Ekrāns netiek izslēgts skenēšanas laikā (`KEEP_SCREEN_ON`)
+- Debug build workflow: `.github/workflows/build_webview_apk.yml`
+- Signed workflow (manual inputs): `.github/workflows/build_webview_apk_signed.yml`
 
-### CLI lietošana
+### Supabase migrācija (obligāti)
+
+Izpildi:
+
+- `supabase/migrations/20260407_hardening_and_audit.sql`
+
+Skripts pievieno:
+
+- `devices` ierobežojumus un indeksus
+- `device_prefix_rules` (vienots prefix avots PC + Web)
+- `device_audit_log` + trigger auditu
+- RLS politikas un `device_admin` sadalījumu
+
+RLS pamatprincips:
+
+- `anon/authenticated` var lasīt/pievienot/atjaunot
+- esošiem ierakstiem `serial/device_type/model` drīkst mainīt tikai `device_admin`
+- dzēšana tikai `device_admin`
+- audit log lasīšana tikai `device_admin`
+
+`device_admin` tiek ņemts no JWT:
+
+- `app_metadata.device_admin=true` vai
+- `device_admin=true`
+
+### CLI (opcioniāli)
 
 ```powershell
 python .\main.py init --lang lv
@@ -44,74 +106,106 @@ python .\main.py get --lang lv --serial SN-001
 python .\main.py delete --lang lv --serial SN-001
 ```
 
-### Web UI (opcioniāli)
+### Testi
 
-Šajā versijā Web UI ir izņemts (programma ir paredzēta kā Desktop aplikācija).
-
-### Statusi
-
-Atļautās vērtības:
-
-- `RECEIVED`, `PREPARING`, `PREPARED`, `SENT`, `IN_USE`, `RETURNED`, `RETIRED`
-
-### Piezīmes
-
-- DB fails pēc noklusējuma ir `inventory.db` (vari mainīt ar `--db c:\path\to\file.db`).
-- LV/EN tekstus vari mainīt failā `i18n.json`.
-
-### Supabase migrācija (ierobežojumi + audita vēsture)
-
-Lai ieslēgtu datu ierobežojumus un automātisku izmaiņu auditu Supabase pusē, izpildi SQL skriptu:
-
-- `supabase/migrations/20260407_hardening_and_audit.sql`
-
-To vari palaist Supabase SQL Editor vai ar CLI. Skripts pievieno:
-
-- unikālu indeksu normalizētam `serial`
-- statusa `CHECK` ierobežojumu
-- `device_audit_log` tabulu
-- triggeri, kas automātiski žurnalē `INSERT/UPDATE/DELETE` izmaiņas
-
-RLS sadalījums:
-
-- parastie lietotāji (`anon` / `authenticated`) var lasīt / pievienot / atjaunot ierakstus
-- esošām ierīcēm laukus `serial`, `device_type`, `model` drīkst mainīt tikai `device_admin`
-- dzēst drīkst tikai `device_admin`
-
-`device_admin` tiek atpazīts no JWT (`app_metadata.device_admin=true` vai `device_admin=true`).
+```powershell
+python -m unittest tests.test_serial_parsing
+```
 
 ## English
 
-Simple local device inventory app (Python + SQLite) with a desktop UI (Tkinter). Devices are identified by `serial` and you can edit type/model/store/status.
+Unified inventory system with two clients:
 
-### Requirements
+- PC app (Tkinter, Python)
+- Web app (`docs`) + Android WebView APK
 
-- Python 3.10+ (no external dependencies)
+Both clients use the same Supabase backend and aligned serial parsing behavior.
 
-### Desktop UI (app)
+### Architecture
 
-Start (PowerShell in this folder):
+- Backend: Supabase (`devices`, `device_prefix_rules`, `device_audit_log`)
+- Desktop: `desktop_app.py`
+- Web: `docs/index.html` + `docs/app.js`
+- Android wrapper: `android/` (WebView)
+
+### Feature matrix (what you can do where)
+
+| Feature | PC app | Web / WebView APK | Notes |
+|---|---|---|---|
+| Scanner serial scanning | Yes | Yes | Supports `S + 13/14` and plain `13/14` |
+| Laptop QR (first token as serial) | Yes | Yes | Example: `5CG...,...,...` |
+| Auto-load device by serial | Yes | Yes | Existing device fields auto-filled |
+| Prefix auto-detection | Yes | Yes | Priority: DB rules -> fallback |
+| Learning from serial history | Yes | Yes | Variable-length prefix learning |
+| Manual add / update | Yes | Yes | Uses conflict-safe `updated_at` checks |
+| Offline queue | Yes | Yes | PC: `pending_ops.json`, Web: localStorage queue |
+| Manual Sync now | Yes | Yes | Dedicated action in both clients |
+| CSV export | No | Yes | Exports currently visible filtered rows |
+| Audit logs viewer (admin) | Yes | Yes | Admin-only visibility |
+| Edit identity fields (serial/type/model) | Restricted | Restricted | Existing rows: admin only |
+
+### PC app features
+
+- Form + list workflow
+- Camera scanning fallback (if `opencv/pyzbar` available)
+- PIN protection for sensitive operations
+- Admin audit viewer dialog
+- Conflict warning when record changed elsewhere
+
+Start (PowerShell):
 
 ```powershell
 python .\main.py
-
-# or explicitly:
+# or
 python .\main.py ui
 ```
 
-If CMD/BAT is blocked by policy, double-click `programma_rb.pyw` (safest launcher).
+If CMD/BAT is blocked by policy, run `programma_rb.pyw`.
 
-If it fails to start, check `programma_rb_error.log`.
+### Web / WebView features
 
-#### Logo / icon (optional)
+- Fast serial scan input flow
+- Queue badge (`Queued: N`)
+- Sync status + version in footer
+- Draft restore after reload
+- Offline save queue with auto-sync
+- Manual `Sync now`
+- `Export CSV`
+- Audit panel (admin permissions)
 
-To make the window look more “official”, put your own branding into `assets`:
+### Android WebView APK
 
-- `assets/logo_white.png` (recommended) or `assets/logo.png` — shown in the header
-- (if you only use one file) `assets/logo_red.png` — recommended for the new white header
-- `assets/icon.ico` — window icon
+- Orientation locked to portrait
+- Keep-screen-on for uninterrupted scanning
+- Debug build workflow: `.github/workflows/build_webview_apk.yml`
+- Signed workflow (manual inputs): `.github/workflows/build_webview_apk_signed.yml`
 
-### CLI usage
+### Supabase migration (required)
+
+Run:
+
+- `supabase/migrations/20260407_hardening_and_audit.sql`
+
+This migration adds:
+
+- `devices` constraints and indexes
+- `device_prefix_rules` (shared rules source for PC + Web)
+- `device_audit_log` + trigger-based auditing
+- RLS policies and `device_admin` role split
+
+RLS baseline:
+
+- `anon/authenticated` can read/insert/update
+- changing `serial/device_type/model` on existing rows requires `device_admin`
+- delete requires `device_admin`
+- audit log read requires `device_admin`
+
+`device_admin` is read from JWT claims:
+
+- `app_metadata.device_admin=true` or
+- `device_admin=true`
+
+### CLI (optional)
 
 ```powershell
 python .\main.py init --lang en
@@ -122,45 +216,7 @@ python .\main.py get --lang en --serial SN-001
 python .\main.py delete --lang en --serial SN-001
 ```
 
-### Web UI (optional)
-
-In this version the Web UI is removed (the program is intended as a Desktop app).
-
-### Statuses
-
-Allowed values:
-
-- `RECEIVED`, `PREPARING`, `PREPARED`, `SENT`, `IN_USE`, `RETURNED`, `RETIRED`
-
-### Notes
-
-- Default DB file is `inventory.db` (override with `--db c:\path\to\file.db`).
-- You can edit LV/EN texts in `i18n.json`.
-
-### Supabase migration (constraints + audit history)
-
-To enable stricter data constraints and automatic audit logging in Supabase, run:
-
-- `supabase/migrations/20260407_hardening_and_audit.sql`
-
-You can run it in Supabase SQL Editor or via CLI. It adds:
-
-- unique index on normalized `serial`
-- `CHECK` constraint for allowed statuses
-- `device_audit_log` table
-- trigger-based logging for `INSERT/UPDATE/DELETE`
-
-RLS split:
-
-- normal users (`anon` / `authenticated`) can read / insert / update records
-- changing `serial`, `device_type`, `model` on existing records is allowed only for `device_admin`
-- delete is allowed only for `device_admin`
-
-`device_admin` is derived from JWT (`app_metadata.device_admin=true` or `device_admin=true`).
-
 ### Tests
-
-Run serial parsing tests with:
 
 ```powershell
 python -m unittest tests.test_serial_parsing

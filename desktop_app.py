@@ -14,7 +14,7 @@ from tkinter import ttk
 
 from i18n import load_translations, t
 from serial_parsing import extract_preferred_serial, normalize_for_store
-from supabase_db import ALLOWED_STATUSES, Device, InventoryDB
+from supabase_db import ALLOWED_STATUSES, Device, InventoryDB, SyncConflictError
 
 
 DEVICE_TYPES: list[str] = ["scanner", "laptop", "tablet", "phone", "other"]
@@ -403,6 +403,7 @@ class DesktopApp:
         self.db.init_db()
 
         self._selected_serial: str | None = None
+        self._selected_updated_at: str | None = None
         self._editors: set[DeviceEditor] = set()
         self.theme: str = "light"  # "light" | "dark"
         self._filter_refresh_job: str | None = None
@@ -532,6 +533,12 @@ class DesktopApp:
 
     def _get_prefix_rules(self) -> dict[str, tuple[str, str, str]]:
         merged = dict(SERIAL_PREFIX_MAP)
+
+        try:
+            merged.update(self.db.list_prefix_rules())
+        except Exception:
+            pass
+
         merged.update(self._custom_prefix_rules or {})
         return merged
 
@@ -669,6 +676,8 @@ class DesktopApp:
         if existing:
             self._fill_action_form(existing)
             self.serial_var.set(existing.serial)
+            self._selected_serial = existing.serial
+            self._selected_updated_at = existing.updated_at
             self._write_result({"ok": True, "info": "Device loaded from database!"})
             return
 
@@ -741,6 +750,8 @@ class DesktopApp:
                     if guessed_device:
                         self._fill_action_form(guessed_device)
                         self.serial_var.set(normalized_serial)
+                        self._selected_serial = normalized_serial
+                        self._selected_updated_at = None
                         self.overwrite_var.set(False)
                         self._write_result(
                             {
@@ -800,6 +811,8 @@ class DesktopApp:
         self.to_store_var.set(device.to_store or "")
         self.status_var.set(self._display_from_code(device.status, "status"))
         self.comment_var.set(device.comment or "")
+        self._selected_serial = device.serial
+        self._selected_updated_at = device.updated_at
         self.overwrite_var.set(True) # Ready for update
 
     def _on_action_type_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
@@ -1056,6 +1069,9 @@ class DesktopApp:
 
         self.camera_btn = ttk.Button(btns, command=self._camera_scan, style="Secondary.TButton")
         self.camera_btn.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+
+        self.audit_btn = ttk.Button(btns, command=self._open_audit_viewer, style="Secondary.TButton")
+        self.audit_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
 
         self.result_lbl = ttk.Label(self.form_card, text="", style="Muted.TLabel")
@@ -2149,6 +2165,7 @@ class DesktopApp:
                     return
             self.db.add_device(device, overwrite=overwrite)
             self._selected_serial = device.serial
+            self._selected_updated_at = device.updated_at
             self._write_result({"ok": True, "action": "add", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
             self._after_save()
@@ -2178,14 +2195,23 @@ class DesktopApp:
                 to_store=device.to_store,
                 status=device.status,
                 comment=device.comment,
+                expected_updated_at=self._selected_updated_at,
             )
             if not changed:
                 raise ValueError(self.tr("not_found_or_no_fields"))
 
             self._selected_serial = device.serial
+            refreshed = self.db.get_device(device.serial)
+            self._selected_updated_at = refreshed.updated_at if refreshed else None
             self._write_result({"ok": True, "action": "update", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
             self._after_save()
+        except SyncConflictError as exc:
+            messagebox.showwarning(self.tr("desktop_error_title"), str(exc))
+            self._write_result({"ok": False, "error": str(exc)}, ok=False)
+            if device and device.serial:
+                self.refresh_list(select_serial=device.serial)
+            return
         except Exception as exc:  # noqa: BLE001
             if self._is_offline_error(exc) and device and device.serial:
                 self._enqueue_op(
@@ -2287,6 +2313,7 @@ class DesktopApp:
 
     def clear_form(self) -> None:
         self._selected_serial = None
+        self._selected_updated_at = None
         self.serial_var.set("")
         self.type_var.set(self._display_value("scanner", kind="type"))
         self.make_var.set("")
@@ -2411,6 +2438,131 @@ class DesktopApp:
 
         serial = str(values[0])
         self._selected_serial = serial
+        try:
+            device = self.db.get_device(serial)
+            self._selected_updated_at = device.updated_at if device else None
+        except Exception:
+            self._selected_updated_at = None
+
+    def _open_audit_viewer(self) -> None:
+        if not self._require_pin():
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("Audit Viewer (Admin)")
+        win.geometry("980x520")
+        win.transient(self.root)
+
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(2, weight=1)
+
+        top = ttk.Frame(frame)
+        top.grid(row=0, column=0, sticky="ew")
+        top.columnconfigure(1, weight=1)
+
+        ttk.Label(top, text="Serial filter").grid(row=0, column=0, sticky="w")
+        serial_var = tk.StringVar(value=self._selected_serial or "")
+        serial_entry = ttk.Entry(top, textvariable=serial_var)
+        serial_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+
+        limit_var = tk.StringVar(value="120")
+        ttk.Entry(top, textvariable=limit_var, width=8).grid(row=0, column=2, sticky="e")
+
+        tree = ttk.Treeview(
+            frame,
+            columns=("time", "op", "serial", "actor", "source"),
+            show="headings",
+            selectmode="browse",
+        )
+        tree.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+        tree.heading("time", text="Event time")
+        tree.heading("op", text="Operation")
+        tree.heading("serial", text="Serial")
+        tree.heading("actor", text="Actor")
+        tree.heading("source", text="Source")
+        tree.column("time", width=190, anchor="w")
+        tree.column("op", width=90, anchor="w")
+        tree.column("serial", width=180, anchor="w")
+        tree.column("actor", width=230, anchor="w")
+        tree.column("source", width=120, anchor="w")
+
+        details = tk.Text(frame, height=9, wrap="word", relief="solid", borderwidth=1)
+        details.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+
+        status_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=status_var).grid(row=1, column=0, sticky="w", pady=(6, 0))
+
+        logs_cache: list[dict] = []
+
+        def _render_details(_event: tk.Event | None = None) -> None:
+            sel = tree.selection()
+            if not sel:
+                return
+            iid = sel[0]
+            try:
+                idx = int(iid)
+            except Exception:
+                return
+            if idx < 0 or idx >= len(logs_cache):
+                return
+
+            row = logs_cache[idx]
+            details.configure(state="normal")
+            details.delete("1.0", tk.END)
+            payload = {
+                "before_data": row.get("before_data"),
+                "after_data": row.get("after_data"),
+                "txid": row.get("txid"),
+            }
+            details.insert("1.0", json.dumps(payload, indent=2, ensure_ascii=False))
+            details.configure(state="disabled")
+
+        def _load() -> None:
+            tree.delete(*tree.get_children())
+            details.configure(state="normal")
+            details.delete("1.0", tk.END)
+            details.configure(state="disabled")
+
+            serial = serial_var.get().strip() or None
+            try:
+                limit = int(limit_var.get().strip() or "120")
+            except Exception:
+                limit = 120
+
+            try:
+                rows = self.db.list_audit_logs(serial=serial, limit=limit)
+            except Exception as exc:
+                status_var.set(f"Audit load failed: {exc}")
+                return
+
+            logs_cache.clear()
+            logs_cache.extend(rows)
+            for idx, row in enumerate(rows):
+                iid = str(idx)
+                tree.insert(
+                    "",
+                    tk.END,
+                    iid=iid,
+                    values=(
+                        str(row.get("event_time") or "").replace("T", " "),
+                        row.get("operation") or "",
+                        row.get("serial") or "",
+                        row.get("actor") or "",
+                        row.get("source") or "",
+                    ),
+                )
+            status_var.set(f"Loaded {len(rows)} audit row(s)")
+
+        btns = ttk.Frame(frame)
+        btns.grid(row=0, column=0, sticky="e")
+        ttk.Button(btns, text="Load", command=_load).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=1)
+
+        tree.bind("<<TreeviewSelect>>", _render_details)
+        serial_entry.bind("<Return>", lambda _e: _load())
+        _load()
 
     def _on_row_double_click(self) -> None:
         if not self._selected_serial:

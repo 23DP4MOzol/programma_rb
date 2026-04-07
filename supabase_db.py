@@ -29,6 +29,10 @@ ALLOWED_STATUSES: set[str] = {
 }
 
 
+class SyncConflictError(RuntimeError):
+    """Raised when optimistic concurrency check fails for an update."""
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -102,6 +106,7 @@ class InventoryDB:
         to_store: str | None = None,
         status: str | None = None,
         comment: str | None = None,
+        expected_updated_at: str | None = None,
     ) -> bool:
         self._validate_serial(serial)
         
@@ -120,8 +125,20 @@ class InventoryDB:
         if comment is not None:
             updates["comment"] = comment
 
-        res = self.supabase.table("devices").update(updates).eq("serial", serial).execute()
-        return len(res.data) > 0
+        query = self.supabase.table("devices").update(updates).eq("serial", serial)
+        if expected_updated_at:
+            query = query.eq("updated_at", expected_updated_at)
+
+        res = query.execute()
+        if len(res.data) > 0:
+            return True
+
+        if expected_updated_at:
+            exists = self.supabase.table("devices").select("serial").eq("serial", serial).limit(1).execute()
+            if exists.data:
+                raise SyncConflictError("Conflict: device was updated by another client. Reload and try again.")
+
+        return False
 
     def change_status(
         self,
@@ -258,6 +275,47 @@ class InventoryDB:
             models.add(m)
             
         return sorted(list(models), key=lambda x: x.casefold())
+
+    def list_prefix_rules(self) -> dict[str, tuple[str, str, str]]:
+        """Return DB-managed prefix rules as {prefix: (device_type, make, full_model)}."""
+        res = (
+            self.supabase.table("device_prefix_rules")
+            .select("prefix_key,device_type,make,model,active,priority")
+            .eq("active", True)
+            .order("priority")
+            .execute()
+        )
+
+        rules: dict[str, tuple[str, str, str]] = {}
+        for row in res.data or []:
+            key = str(row.get("prefix_key") or "").strip().upper()
+            if not key:
+                continue
+
+            prefix = key.split(":", 1)[1] if ":" in key else key
+            prefix = prefix.strip().upper()
+            if not prefix:
+                continue
+
+            device_type = str(row.get("device_type") or "scanner").strip().lower() or "scanner"
+            make = str(row.get("make") or "").strip()
+            model = str(row.get("model") or "").strip()
+            full_model = f"{make} {model}".strip() or model or make
+            rules[prefix] = (device_type, make, full_model)
+
+        return rules
+
+    def list_audit_logs(self, *, serial: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        query = (
+            self.supabase.table("device_audit_log")
+            .select("id,event_time,operation,serial,actor,source,before_data,after_data,txid")
+            .order("event_time", desc=True)
+            .limit(max(1, min(int(limit), 500)))
+        )
+        if serial:
+            query = query.ilike("serial", f"%{serial}%")
+        res = query.execute()
+        return list(res.data or [])
 
     def _row_to_device(self, row: dict[str, Any]) -> Device:
         return Device(

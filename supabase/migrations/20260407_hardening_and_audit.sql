@@ -41,6 +41,88 @@ BEGIN
 END
 $$;
 
+-- 6) Shared prefix-rules source for web + desktop
+CREATE TABLE IF NOT EXISTS public.device_prefix_rules (
+  id bigserial PRIMARY KEY,
+  prefix_key text NOT NULL UNIQUE,
+  device_type text NOT NULL,
+  make text,
+  model text,
+  priority integer NOT NULL DEFAULT 100,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
+  updated_at timestamptz NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS ix_device_prefix_rules_priority
+  ON public.device_prefix_rules (priority ASC);
+
+CREATE OR REPLACE FUNCTION public.set_device_prefix_rule_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = timezone('utc', now());
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_set_device_prefix_rule_updated_at ON public.device_prefix_rules;
+CREATE TRIGGER trg_set_device_prefix_rule_updated_at
+BEFORE UPDATE ON public.device_prefix_rules
+FOR EACH ROW EXECUTE FUNCTION public.set_device_prefix_rule_updated_at();
+
+INSERT INTO public.device_prefix_rules (prefix_key, device_type, make, model, priority, active)
+VALUES
+  ('D2:18', 'scanner', 'Zebra', 'TC51', 10, true),
+  ('D2:19', 'scanner', 'Zebra', 'TC52', 10, true),
+  ('D2:20', 'scanner', 'Zebra', 'TC52', 10, true),
+  ('D2:21', 'scanner', 'Zebra', 'TC52', 10, true),
+  ('D2:24', 'scanner', 'Zebra', 'TC52', 10, true),
+  ('A3:5CG', 'laptop', 'HP', 'EliteBook 840 G10', 20, true)
+ON CONFLICT (prefix_key) DO UPDATE SET
+  device_type = EXCLUDED.device_type,
+  make = EXCLUDED.make,
+  model = EXCLUDED.model,
+  priority = EXCLUDED.priority,
+  active = EXCLUDED.active,
+  updated_at = timezone('utc', now());
+
+ALTER TABLE public.device_prefix_rules ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'device_prefix_rules'
+      AND policyname = 'device_prefix_rules_select_all'
+  ) THEN
+    CREATE POLICY device_prefix_rules_select_all
+      ON public.device_prefix_rules
+      FOR SELECT
+      TO anon, authenticated
+      USING (true);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'device_prefix_rules'
+      AND policyname = 'device_prefix_rules_write_admin'
+  ) THEN
+    CREATE POLICY device_prefix_rules_write_admin
+      ON public.device_prefix_rules
+      FOR ALL
+      TO authenticated
+      USING (public.is_device_admin())
+      WITH CHECK (public.is_device_admin());
+  END IF;
+END
+$$;
+
 -- 5) Devices RLS split (normal operator vs admin)
 ALTER TABLE public.devices ENABLE ROW LEVEL SECURITY;
 
@@ -196,18 +278,28 @@ ALTER TABLE public.device_audit_log ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1
     FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'device_audit_log'
       AND policyname = 'device_audit_log_read_authenticated'
   ) THEN
-    CREATE POLICY device_audit_log_read_authenticated
+    DROP POLICY device_audit_log_read_authenticated ON public.device_audit_log;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'device_audit_log'
+      AND policyname = 'device_audit_log_read_admin'
+  ) THEN
+    CREATE POLICY device_audit_log_read_admin
       ON public.device_audit_log
       FOR SELECT
-      TO authenticated
-      USING (true);
+      TO anon, authenticated
+      USING (public.is_device_admin());
   END IF;
 END
 $$;

@@ -120,6 +120,31 @@
         </div>
       </section>
 
+      <section class="card" id="auditCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Audit (Admin)</div>
+            <div class="card__subtitle">Change history from database (admin access required)</div>
+          </div>
+          <div class="card__status" id="auditStatus"></div>
+        </div>
+        <div class="list-tools">
+          <div class="lookup-row">
+            <input id="auditSerial" class="input" type="text" maxlength="20" placeholder="Optional serial filter" />
+            <button id="auditLoad" class="btn btn--small">Load audit</button>
+          </div>
+        </div>
+        <div class="table">
+          <div class="audit-row audit-row--head">
+            <span>Time</span>
+            <span>Operation</span>
+            <span>Serial</span>
+            <span>Actor</span>
+          </div>
+          <div id="auditList" class="audit-rows"></div>
+        </div>
+      </section>
+
       <footer class="footer">
         <div>Hosted on GitHub Pages</div>
         <div class="footer__meta">

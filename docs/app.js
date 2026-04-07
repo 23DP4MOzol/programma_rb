@@ -5,7 +5,7 @@ const SCANNER_SERIAL_RE = /^S\d{13,14}$/i;
 const PLAIN_SCANNER_RE = /^\d{13,14}$/;
 const GENERIC_SERIAL_RE = /^[A-Z0-9]{8,20}$/;
 
-const PREFIX_HINTS = {
+const FALLBACK_PREFIX_HINTS = {
   "D2:18": { device_type: "scanner", make: "Zebra", model: "TC51" },
   "D2:19": { device_type: "scanner", make: "Zebra", model: "TC52" },
   "D2:20": { device_type: "scanner", make: "Zebra", model: "TC52" },
@@ -41,6 +41,10 @@ const els = {
   refreshList: document.getElementById("refreshList"),
   syncNow: document.getElementById("syncNow"),
   exportCsv: document.getElementById("exportCsv"),
+  auditSerial: document.getElementById("auditSerial"),
+  auditLoad: document.getElementById("auditLoad"),
+  auditStatus: document.getElementById("auditStatus"),
+  auditList: document.getElementById("auditList"),
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
 };
@@ -53,6 +57,8 @@ let lastLoadedAt = 0;
 let lastSavedSerial = "";
 let lastSavedAt = 0;
 let lastSuccessfulSyncAt = "";
+let prefixHintsByKey = { ...FALLBACK_PREFIX_HINTS };
+const loadedRevisionBySerial = new Map();
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -306,6 +312,7 @@ function composeModel(make, model) {
 }
 
 function buildSaveOperation(cleanedToken) {
+  const expected = getKnownRevisionForToken(cleanedToken);
   return {
     serial: normalizeForStore(cleanedToken),
     device_type: (els.type.value || "scanner").trim() || "scanner",
@@ -314,7 +321,56 @@ function buildSaveOperation(cleanedToken) {
     to_store: els.toStore.value.trim(),
     status: els.statusSelect.value,
     comment: els.comment.value.trim(),
+    expected_updated_at: expected || null,
   };
+}
+
+function getKnownRevisionForToken(token) {
+  for (const variant of serialVariants(token)) {
+    const rev = loadedRevisionBySerial.get(variant);
+    if (rev) return rev;
+  }
+  return "";
+}
+
+function rememberRevisionForToken(token, updatedAt) {
+  if (!updatedAt) return;
+  for (const variant of serialVariants(token)) {
+    loadedRevisionBySerial.set(variant, updatedAt);
+  }
+}
+
+function buildPrefixHintsMap(rows) {
+  const map = { ...FALLBACK_PREFIX_HINTS };
+  if (!Array.isArray(rows)) return map;
+
+  const sorted = [...rows].sort((a, b) => Number(a?.priority ?? 100) - Number(b?.priority ?? 100));
+  for (const row of sorted) {
+    if (!row || row.active === false) continue;
+    const key = String(row.prefix_key || "").trim().toUpperCase();
+    if (!key) continue;
+    map[key] = {
+      device_type: String(row.device_type || "scanner").trim().toLowerCase() || "scanner",
+      make: String(row.make || "").trim(),
+      model: String(row.model || "").trim(),
+    };
+  }
+  return map;
+}
+
+async function loadPrefixRules() {
+  try {
+    const rows = await restRequest(
+      "device_prefix_rules?select=prefix_key,device_type,make,model,priority,active&order=priority.asc"
+    );
+    prefixHintsByKey = buildPrefixHintsMap(rows);
+  } catch {
+    prefixHintsByKey = { ...FALLBACK_PREFIX_HINTS };
+  }
+}
+
+function getPrefixHint(token) {
+  return prefixHintsByKey[getPrefixKey(token)] || null;
 }
 
 function getFilteredRows() {
@@ -594,10 +650,22 @@ async function processQueuedSaves() {
         };
 
         if (existing) {
-          const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
-          await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
+          const expected = String(op.expected_updated_at || "").trim();
+          const path = expected
+            ? `devices?id=eq.${encodeURIComponent(existing.id)}&updated_at=eq.${encodeURIComponent(expected)}`
+            : `devices?id=eq.${encodeURIComponent(existing.id)}`;
+          const rows = await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=representation" });
+
+          if (expected && Array.isArray(rows) && rows.length === 0) {
+            remaining.push({ ...op, conflict: true });
+            continue;
+          }
+
+          if (Array.isArray(rows) && rows[0]?.updated_at) {
+            rememberRevisionForToken(op.serial || "", rows[0].updated_at);
+          }
         } else {
-          await restRequest("devices", {
+          const rows = await restRequest("devices", {
             method: "POST",
             body: {
               serial: op.serial || "",
@@ -605,8 +673,11 @@ async function processQueuedSaves() {
               model: op.model || "",
               ...editPayload,
             },
-            prefer: "return=minimal",
+            prefer: "return=representation",
           });
+          if (Array.isArray(rows) && rows[0]?.updated_at) {
+            rememberRevisionForToken(op.serial || "", rows[0].updated_at);
+          }
         }
         synced += 1;
       } catch (error) {
@@ -630,8 +701,14 @@ async function processQueuedSaves() {
   }
 
   if (remaining.length && navigator.onLine) {
-    setStatus(`Queue pending: ${remaining.length} save(s)`, "error");
-    setSyncInfo(`queued pending ${remaining.length}`, "error");
+    const conflicts = remaining.filter((x) => x && x.conflict).length;
+    if (conflicts > 0) {
+      setStatus(`Queue pending: ${remaining.length} save(s), ${conflicts} conflict(s)`, "error");
+      setSyncInfo(`queued pending ${remaining.length} with conflicts`, "error");
+    } else {
+      setStatus(`Queue pending: ${remaining.length} save(s)`, "error");
+      setSyncInfo(`queued pending ${remaining.length}`, "error");
+    }
   } else if (!remaining.length && navigator.onLine) {
     setSyncInfo("up to date", "ok");
   }
@@ -667,9 +744,17 @@ async function loadByScannedValue(rawValue) {
   }
 
   if (device) {
+    rememberRevisionForToken(cleaned, device.updated_at || "");
+    if (device.serial) {
+      rememberRevisionForToken(device.serial, device.updated_at || "");
+    }
     fillFormFromDevice(device);
     setStatus("Loaded from database", "ok");
     return;
+  }
+
+  for (const variant of serialVariants(cleaned)) {
+    loadedRevisionBySerial.delete(variant);
   }
 
   resetIdentityFields();
@@ -683,7 +768,7 @@ async function loadByScannedValue(rawValue) {
     return;
   }
 
-  const hinted = PREFIX_HINTS[getPrefixKey(cleaned)] || null;
+  const hinted = getPrefixHint(cleaned);
   if (hinted) {
     applyGuess(hinted);
     setStatus("Auto-filled by known prefix", "ok");
@@ -735,8 +820,19 @@ async function saveDevice() {
 
   try {
     if (existing) {
-      const path = `devices?id=eq.${encodeURIComponent(existing.id)}`;
-      await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=minimal" });
+      const expected = queuedOperation.expected_updated_at || getKnownRevisionForToken(cleaned);
+      const path = expected
+        ? `devices?id=eq.${encodeURIComponent(existing.id)}&updated_at=eq.${encodeURIComponent(expected)}`
+        : `devices?id=eq.${encodeURIComponent(existing.id)}`;
+      const rows = await restRequest(path, { method: "PATCH", body: editPayload, prefer: "return=representation" });
+      if (expected && Array.isArray(rows) && rows.length === 0) {
+        setStatus("Conflict: device changed elsewhere. Reload and try again.", "error");
+        await loadByScannedValue(cleaned);
+        return;
+      }
+      if (Array.isArray(rows) && rows[0]?.updated_at) {
+        rememberRevisionForToken(cleaned, rows[0].updated_at);
+      }
       setStatus("Updated existing device", "ok");
       markSave(cleaned);
     } else {
@@ -746,7 +842,10 @@ async function saveDevice() {
         model: composeModel(els.make.value, els.model.value),
         ...editPayload,
       };
-      await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=minimal" });
+      const rows = await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=representation" });
+      if (Array.isArray(rows) && rows[0]?.updated_at) {
+        rememberRevisionForToken(cleaned, rows[0].updated_at);
+      }
       setStatus("Added new device", "ok");
       markSave(cleaned);
     }
@@ -768,11 +867,12 @@ async function saveDevice() {
 
 function renderDevicesList() {
   const rows = getFilteredRows();
+  const hasFilter = String(els.listFilter.value || "").trim().length > 0;
 
   els.listStatus.textContent = `Showing ${rows.length}`;
 
   if (!rows.length) {
-    const helper = filter ? "No rows match this filter" : "No devices visible. Check Supabase SELECT policy.";
+    const helper = hasFilter ? "No rows match this filter" : "No devices visible. Check Supabase SELECT policy.";
     els.devicesList.innerHTML = `
       <div class="row">
         <span>No devices visible</span>
@@ -845,6 +945,55 @@ async function loadDevicesList() {
   }
 }
 
+function renderAuditRows(rows) {
+  if (!els.auditList) return;
+  if (!Array.isArray(rows) || !rows.length) {
+    els.auditList.innerHTML = `
+      <div class="audit-row">
+        <span>No audit rows</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
+      </div>
+    `;
+    return;
+  }
+
+  els.auditList.innerHTML = rows
+    .map(
+      (row) => `
+      <div class="audit-row">
+        <span>${String(row.event_time || "").replace("T", " ")}</span>
+        <span>${row.operation || ""}</span>
+        <span>${row.serial || ""}</span>
+        <span>${row.actor || ""}</span>
+      </div>
+    `
+    )
+    .join("");
+}
+
+async function loadAuditLogs() {
+  if (!els.auditList || !els.auditStatus) return;
+
+  const serialFilter = cleanToken(els.auditSerial?.value || "");
+  let path = "device_audit_log?select=id,event_time,operation,serial,actor,source,txid&order=event_time.desc&limit=120";
+  if (serialFilter) {
+    path += `&serial=ilike.${encodeURIComponent(`%${serialFilter}%`)}`;
+  }
+
+  els.auditStatus.textContent = "Loading...";
+  try {
+    const rows = await restRequest(path);
+    renderAuditRows(Array.isArray(rows) ? rows : []);
+    els.auditStatus.textContent = `Rows: ${Array.isArray(rows) ? rows.length : 0}`;
+  } catch (error) {
+    renderAuditRows([]);
+    els.auditStatus.textContent = "Admin access required";
+    setStatus(`Audit unavailable: ${error.message}`, "error");
+  }
+}
+
 async function loadFromLookup() {
   const token = extractPreferredSerial(els.lookupSerial.value);
   if (!token) {
@@ -900,6 +1049,17 @@ els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
 els.syncNow.addEventListener("click", syncNow);
 els.exportCsv.addEventListener("click", exportVisibleDevicesCsv);
+if (els.auditLoad) {
+  els.auditLoad.addEventListener("click", loadAuditLogs);
+}
+if (els.auditSerial) {
+  els.auditSerial.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadAuditLogs();
+    }
+  });
+}
 els.clear.addEventListener("click", () => {
   resetForm();
   clearDraft();
@@ -932,13 +1092,16 @@ if (recoveredDraft) {
     loadByScannedValue(els.serial.value);
   }
 }
+loadPrefixRules();
 els.serial.focus();
 loadDevicesList();
 setTimeout(() => {
+  loadPrefixRules();
   loadDevicesList();
   processQueuedSaves();
 }, 1200);
 window.addEventListener("focus", () => {
+  loadPrefixRules();
   loadDevicesList();
   processQueuedSaves();
 });
@@ -952,6 +1115,7 @@ window.addEventListener("offline", () => {
   setSyncInfo("offline", "error");
 });
 setInterval(() => {
+  loadPrefixRules();
   loadDevicesList();
   processQueuedSaves();
 }, 20000);
