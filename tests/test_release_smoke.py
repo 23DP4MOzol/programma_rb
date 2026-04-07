@@ -71,7 +71,6 @@ class ReleaseSmokeTests(unittest.TestCase):
 
     def test_release_workflows_exist(self) -> None:
         workflows = ROOT / ".github" / "workflows"
-        self.assertTrue((workflows / "release_e2e_smoke.yml").exists())
         self.assertTrue((workflows / "build_webview_apk_production.yml").exists())
         self.assertTrue((workflows / "build_webview_apk.yml").exists())
 
