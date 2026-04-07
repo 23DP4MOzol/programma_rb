@@ -1,0 +1,88 @@
+name: "Build WebView APK Signed"
+
+'on':
+  workflow_dispatch:
+    inputs:
+      keystore_base64:
+        description: Base64-encoded Android release keystore
+        required: true
+      keystore_password:
+        description: Keystore password
+        required: true
+      key_alias:
+        description: Key alias name
+        required: true
+      key_password:
+        description: Key password
+        required: true
+
+jobs:
+  build-signed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install Gradle
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+
+      - name: Validate signing inputs
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ github.event.inputs.keystore_base64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ github.event.inputs.keystore_password }}
+          ANDROID_KEY_ALIAS: ${{ github.event.inputs.key_alias }}
+          ANDROID_KEY_PASSWORD: ${{ github.event.inputs.key_password }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Missing one or more required signing inputs."
+            echo "Required: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD"
+            exit 1
+          fi
+
+          echo "::add-mask::$ANDROID_KEYSTORE_BASE64"
+          echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
+          echo "::add-mask::$ANDROID_KEY_ALIAS"
+          echo "::add-mask::$ANDROID_KEY_PASSWORD"
+
+      - name: Build signed release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ github.event.inputs.keystore_base64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ github.event.inputs.keystore_password }}
+          ANDROID_KEY_ALIAS: ${{ github.event.inputs.key_alias }}
+          ANDROID_KEY_PASSWORD: ${{ github.event.inputs.key_password }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
+
+          ../gradle-8.7/bin/gradle :app:assembleRelease \
+            --no-daemon \
+            -PVERSION_CODE=${{ github.run_number }} \
+            -PVERSION_NAME=1.0.${{ github.run_number }} \
+            -PMYAPP_UPLOAD_STORE_FILE=release.keystore \
+            -PMYAPP_UPLOAD_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD \
+            -PMYAPP_UPLOAD_KEY_ALIAS=$ANDROID_KEY_ALIAS \
+            -PMYAPP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimiInventory-WebView-APK-release-signed
+          path: android/app/build/outputs/apk/release/app-release.apk
