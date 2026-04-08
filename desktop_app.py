@@ -302,6 +302,8 @@ class DeviceEditor(tk.Toplevel):
 
         self.delete_btn = ttk.Button(btns, command=self._on_delete, style="Danger.TButton")
         self.delete_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        if not self.app._admin_login_active:
+            self.delete_btn.configure(state="disabled")
 
         self.close_btn = ttk.Button(btns, command=self.destroy, style="Secondary.TButton")
         self.close_btn.grid(row=0, column=2, sticky="ew", padx=(8, 0))
@@ -380,6 +382,8 @@ class DeviceEditor(tk.Toplevel):
 
     def _on_delete(self) -> None:
         try:
+            if not self.app._require_admin_delete():
+                return
             if not self.app._require_pin():
                 return
             msg = self.app.tr("web_confirm_delete", serial=self.serial)
@@ -1386,7 +1390,11 @@ class DesktopApp:
 
         self.menu.add_cascade(label=self.tr("web_status_inline"), menu=self.status_menu)
         self.menu.add_separator()
-        self.menu.add_command(label=self.tr("web_delete_short"), command=self.delete_selected)
+        self.menu.add_command(
+            label=self.tr("web_delete_short"),
+            command=self.delete_selected,
+            state="normal" if self._admin_login_active else "disabled",
+        )
 
         self.tree.bind("<Button-3>", self._on_right_click)
 
@@ -2319,6 +2327,12 @@ class DesktopApp:
         messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_admin_required"), parent=self.root)
         return False
 
+    def _require_admin_delete(self) -> bool:
+        if self._admin_login_active:
+            return True
+        messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_admin_required"), parent=self.root)
+        return False
+
     def _is_offline_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
         return any(
@@ -3188,6 +3202,8 @@ class DesktopApp:
     def delete_selected(self) -> None:
         serial = ""
         try:
+            if not self._require_admin_delete():
+                return
             serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
                 raise ValueError("serial is required")
