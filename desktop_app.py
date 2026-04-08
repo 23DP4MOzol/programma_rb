@@ -33,7 +33,9 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     "40": ("scanner", "Zebra", "Zebra MC3300"),
     "PF": ("laptop",  "Lenovo", "Lenovo ThinkPad"), # Lenovo laptops usually start with PF, PC, MJ
     "PC": ("laptop",  "Lenovo", "Lenovo ThinkPad"),
-    "5CG": ("laptop", "HP", "HP EliteBook 840 G10"),
+    "5CG21": ("laptop", "HP", "HP EliteBook 830 G8"),
+    "5CG32": ("laptop", "HP", "HP EliteBook 840 G10"),
+    "5CG": ("laptop", "HP", "HP EliteBook"),
 }
 
 DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
@@ -413,13 +415,26 @@ class DesktopApp:
             "supabase_url": "https://qvlduxpdcwgmokjdsdfp.supabase.co",
             "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
             "lang": self.lang,
-            "pin": "",
             "prefix_rules": "",
+            "admin_email": "",
+            "admin_access_token": "",
+            "admin_refresh_token": "",
+            "admin_remember_device": False,
         }
         self.config = self._load_config()
         self.lang = (self.config.get("lang") or self.lang).lower()
-        self._pin_code = self.config.get("pin") or ""
         self._custom_prefix_rules = self._load_prefix_rules()
+
+        self._admin_email = ""
+        self._auth_access_token = ""
+        self._auth_refresh_token = ""
+        self._remember_admin_device = _claim_to_bool(self.config.get("admin_remember_device"))
+        if self._remember_admin_device:
+            self._admin_email = str(self.config.get("admin_email") or "").strip()
+            self._auth_access_token = str(self.config.get("admin_access_token") or "").strip()
+            self._auth_refresh_token = str(self.config.get("admin_refresh_token") or "").strip()
+        self._admin_login_active = bool(self._auth_access_token)
+
         self._auth_role = "anon"
         self._is_device_admin = False
         self._refresh_auth_claims()
@@ -432,6 +447,7 @@ class DesktopApp:
             key=self.config.get("supabase_key"),
         )
         self.db.init_db()
+        self._restore_admin_session_from_config()
 
         self._selected_serial: str | None = None
         self._selected_updated_at: str | None = None
@@ -805,7 +821,12 @@ class DesktopApp:
             pass
 
         # 3. Prefix rules fallback
-        for prefix, (guess_type, guess_make, guess_model) in self._get_prefix_rules().items():
+        # Longest prefix wins so specific rules (e.g. 5CG21) beat generic ones (e.g. 5CG).
+        for prefix, (guess_type, guess_make, guess_model) in sorted(
+            self._get_prefix_rules().items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
             if upper_scan.startswith(prefix.upper()):
                 self.type_var.set(self._display_from_code(guess_type, "type"))
                 self._on_action_type_changed()
@@ -1051,6 +1072,9 @@ class DesktopApp:
 
         self.theme_btn = ttk.Button(right, command=self.toggle_theme, style="Top.TButton")
         self.theme_btn.pack(side=tk.RIGHT, padx=(0, 10))
+
+        self.admin_btn = ttk.Button(right, command=self._toggle_admin_session, style="Top.TButton")
+        self.admin_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
         self.settings_btn = ttk.Button(right, command=self._open_settings_dialog, style="Top.TButton")
         self.settings_btn.pack(side=tk.RIGHT, padx=(0, 10))
@@ -1765,6 +1789,10 @@ class DesktopApp:
         self.theme_btn.config(
             text=self.tr("desktop_theme_dark") if (self.theme or "light") == "light" else self.tr("desktop_theme_bright")
         )
+        if self._admin_login_active:
+            self.admin_btn.config(text=self.tr("desktop_admin_logout", email=self._admin_email or "admin"))
+        else:
+            self.admin_btn.config(text=self.tr("desktop_admin_login"))
         self.settings_btn.config(text=self.tr("desktop_settings"))
 
         self.actions_title.config(text=self.tr("web_action"))
@@ -2089,7 +2117,8 @@ class DesktopApp:
                 pass
 
     def _refresh_auth_claims(self) -> None:
-        claims = _decode_jwt_claims(self.config.get("supabase_key") or "")
+        token_for_claims = self._auth_access_token or (self.config.get("supabase_key") or "")
+        claims = _decode_jwt_claims(token_for_claims)
         role = str(claims.get("role") or "anon").strip() or "anon"
 
         app_metadata = claims.get("app_metadata")
@@ -2102,28 +2131,188 @@ class DesktopApp:
             or _claim_to_bool(app_metadata_dict.get("device_admin"))
         )
 
-    def _apply_role_controls(self) -> None:
-        # Keep tools clickable and handle authorization when opening each panel.
-        state = "normal"
+    def _apply_admin_session_to_client(self) -> None:
+        if not self._auth_access_token:
+            return
         try:
-            self.audit_btn.configure(state=state)
+            if self._auth_refresh_token and hasattr(self.db.supabase.auth, "set_session"):
+                self.db.supabase.auth.set_session(self._auth_access_token, self._auth_refresh_token)
         except Exception:
             pass
+
+    def _restore_admin_session_from_config(self) -> None:
+        if not self._remember_admin_device:
+            return
+        if not self._auth_access_token:
+            return
+
+        self._apply_admin_session_to_client()
+        self._refresh_auth_claims()
+        self._admin_login_active = bool(self._auth_access_token)
+
+    def _extract_auth_session_data(self, response: object) -> tuple[str, str, str]:
+        session = None
+        user = None
+
+        if isinstance(response, dict):
+            session = response.get("session")
+            user = response.get("user")
+        else:
+            session = getattr(response, "session", None)
+            user = getattr(response, "user", None)
+
+        access_token = ""
+        refresh_token = ""
+        email = ""
+
+        if isinstance(session, dict):
+            access_token = str(session.get("access_token") or "").strip()
+            refresh_token = str(session.get("refresh_token") or "").strip()
+        elif session is not None:
+            access_token = str(getattr(session, "access_token", "") or "").strip()
+            refresh_token = str(getattr(session, "refresh_token", "") or "").strip()
+
+        if isinstance(user, dict):
+            email = str(user.get("email") or "").strip()
+        elif user is not None:
+            email = str(getattr(user, "email", "") or "").strip()
+
+        if (not email) and access_token:
+            claims = _decode_jwt_claims(access_token)
+            email = str(claims.get("email") or "").strip()
+
+        return access_token, refresh_token, email
+
+    def _clear_saved_admin_session(self, *, refresh_ui: bool = True) -> None:
+        self._admin_email = ""
+        self._auth_access_token = ""
+        self._auth_refresh_token = ""
+        self._remember_admin_device = False
+        self._admin_login_active = False
+
+        self.config["admin_email"] = ""
+        self.config["admin_access_token"] = ""
+        self.config["admin_refresh_token"] = ""
+        self.config["admin_remember_device"] = False
+        self._save_config()
+
+        self._refresh_auth_claims()
+        if refresh_ui and hasattr(self, "admin_btn"):
+            self._apply_role_controls()
+            self._apply_i18n()
+
+    def _toggle_admin_session(self) -> None:
+        if self._admin_login_active:
+            if messagebox.askyesno(self.tr("desktop_confirm_title"), self.tr("desktop_admin_logout_confirm"), parent=self.root):
+                self._logout_admin()
+            return
+        self._open_admin_login_dialog()
+
+    def _logout_admin(self) -> None:
         try:
-            self.prefix_btn.configure(state=state)
+            self.db.supabase.auth.sign_out()
+        except Exception:
+            pass
+        self._clear_saved_admin_session()
+
+    def _open_admin_login_dialog(self) -> None:
+        win = tk.Toplevel(self.root)
+        win.title(self.tr("desktop_admin_login_title"))
+        win.geometry("420x250")
+        win.minsize(380, 230)
+        win.transient(self.root)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=14)
+        frm.pack(fill=tk.BOTH, expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        email_var = tk.StringVar(value=self._admin_email)
+        password_var = tk.StringVar(value="")
+        remember_var = tk.BooleanVar(value=self._remember_admin_device)
+        status_var = tk.StringVar(value="")
+
+        ttk.Label(frm, text=self.tr("desktop_admin_email")).grid(row=0, column=0, sticky="w")
+        email_entry = ttk.Entry(frm, textvariable=email_var)
+        email_entry.grid(row=0, column=1, sticky="ew")
+
+        ttk.Label(frm, text=self.tr("desktop_admin_password")).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        password_entry = ttk.Entry(frm, textvariable=password_var, show="*")
+        password_entry.grid(row=1, column=1, sticky="ew", pady=(8, 0))
+
+        ttk.Checkbutton(frm, text=self.tr("desktop_admin_remember_device"), variable=remember_var).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(10, 0)
+        )
+
+        ttk.Label(frm, textvariable=status_var, style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        def _submit() -> None:
+            email = email_var.get().strip()
+            password = password_var.get().strip()
+            if not email or not password:
+                status_var.set(self.tr("desktop_admin_login_failed"))
+                return
+
+            try:
+                response = self.db.supabase.auth.sign_in_with_password({"email": email, "password": password})
+                access_token, refresh_token, resolved_email = self._extract_auth_session_data(response)
+                if not access_token:
+                    raise ValueError(self.tr("desktop_admin_login_failed"))
+
+                self._auth_access_token = access_token
+                self._auth_refresh_token = refresh_token
+                self._admin_email = resolved_email or email
+                self._remember_admin_device = bool(remember_var.get())
+                self._admin_login_active = True
+
+                self._refresh_auth_claims()
+
+                if self._remember_admin_device:
+                    self.config["admin_email"] = self._admin_email
+                    self.config["admin_access_token"] = self._auth_access_token
+                    self.config["admin_refresh_token"] = self._auth_refresh_token
+                    self.config["admin_remember_device"] = True
+                else:
+                    self.config["admin_email"] = ""
+                    self.config["admin_access_token"] = ""
+                    self.config["admin_refresh_token"] = ""
+                    self.config["admin_remember_device"] = False
+                self._save_config()
+
+                self._apply_role_controls()
+                self._apply_i18n()
+                win.destroy()
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror(self.tr("desktop_error_title"), f"{self.tr('desktop_admin_login_failed')}: {exc}", parent=win)
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        ttk.Button(btns, text=self.tr("desktop_admin_login"), command=_submit).grid(row=0, column=0, sticky="ew")
+        ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        email_entry.focus_set()
+        password_entry.bind("<Return>", lambda _e: _submit())
+
+    def _apply_role_controls(self) -> None:
+        try:
+            if self._admin_login_active:
+                self.audit_btn.grid()
+                self.diag_btn.grid()
+                self.prefix_btn.grid()
+            else:
+                self.audit_btn.grid_remove()
+                self.diag_btn.grid_remove()
+                self.prefix_btn.grid_remove()
         except Exception:
             pass
 
     def _authorize_admin_panel(self) -> bool:
-        if self._is_device_admin:
-            return self._require_pin()
-
-        # Local desktop fallback: if PIN is configured, allow admin panels with PIN.
-        if self._pin_code:
-            return self._require_pin()
-
-        # No PIN and no admin JWT claim: allow opening panel in read-attempt mode.
-        return True
+        if self._admin_login_active:
+            return True
+        messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_admin_required"), parent=self.root)
+        return False
 
     def _is_offline_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -2159,13 +2348,7 @@ class DesktopApp:
         return len(self._load_pending_ops())
 
     def _require_pin(self) -> bool:
-        if not self._pin_code:
-            return True
-        pin = simpledialog.askstring(self.tr("desktop_pin_prompt"), self.tr("desktop_pin_prompt"), show="*")
-        if pin == self._pin_code:
-            return True
-        messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_pin_invalid"))
-        return False
+        return True
 
     def _after_save(self) -> None:
         if self.bulk_scan_var.get():
@@ -2211,6 +2394,9 @@ class DesktopApp:
         self.refresh_list()
 
     def _open_diagnostics_panel(self) -> None:
+        if not self._authorize_admin_panel():
+            return
+
         win = tk.Toplevel(self.root)
         win.title(self.tr("desktop_diagnostics_title"))
         win.geometry("700x450")
@@ -2339,7 +2525,7 @@ class DesktopApp:
         def _refresh() -> None:
             queue_count = self._pending_ops_count()
             queue_var.set(str(queue_count))
-            role_var.set(f"{self._auth_role} ({'admin' if self._is_device_admin else 'operator'})")
+            role_var.set(f"{self._auth_role} ({'admin' if self._admin_login_active else 'operator'})")
             sync_var.set(self._last_sync_at or self.tr("desktop_diag_na"))
 
             api_ok = False
@@ -2415,7 +2601,7 @@ class DesktopApp:
         model_var = tk.StringVar(value="")
         priority_var = tk.StringVar(value="100")
         active_var = tk.BooleanVar(value=True)
-        status_var = tk.StringVar(value=self.tr("desktop_admin_fallback_mode") if not self._is_device_admin else "")
+        status_var = tk.StringVar(value="")
         counts_var = tk.StringVar(value="")
 
         ttk.Label(form, text=self.tr("desktop_prefix_key")).grid(row=0, column=0, sticky="w")
@@ -2652,7 +2838,6 @@ class DesktopApp:
         url_var = tk.StringVar(value=self.config.get("supabase_url", ""))
         key_var = tk.StringVar(value=self.config.get("supabase_key", ""))
         lang_var = tk.StringVar(value=self.lang)
-        pin_var = tk.StringVar(value=self._pin_code)
 
         ttk.Label(frm, text=self.tr("desktop_config_supabase_url")).grid(row=0, column=0, sticky="w")
         ttk.Entry(frm, textvariable=url_var).grid(row=0, column=1, sticky="ew")
@@ -2663,39 +2848,35 @@ class DesktopApp:
         ttk.Label(frm, text=self.tr("web_language")).grid(row=2, column=0, sticky="w", pady=(8, 0))
         ttk.Combobox(frm, textvariable=lang_var, values=["lv", "en"], state="readonly").grid(row=2, column=1, sticky="ew", pady=(8, 0))
 
-        ttk.Label(frm, text=self.tr("desktop_config_pin")).grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(frm, textvariable=pin_var, show="*").grid(row=3, column=1, sticky="ew", pady=(8, 0))
-
-        ttk.Label(frm, text=self.tr("desktop_config_prefix_rules")).grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frm, text=self.tr("desktop_config_prefix_rules")).grid(row=3, column=0, sticky="w", pady=(8, 0))
         prefix_txt = tk.Text(frm, height=8, wrap="word")
-        prefix_txt.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(4, 0))
-        frm.rowconfigure(5, weight=1)
+        prefix_txt.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(4, 0))
+        frm.rowconfigure(4, weight=1)
         prefix_txt.insert("1.0", self.config.get("prefix_rules", ""))
 
         def _save() -> None:
             self.config["supabase_url"] = url_var.get().strip()
             self.config["supabase_key"] = key_var.get().strip()
             self.config["lang"] = lang_var.get().strip() or "lv"
-            self.config["pin"] = pin_var.get().strip()
             self.config["prefix_rules"] = prefix_txt.get("1.0", tk.END).strip()
             self._save_config()
 
             self.lang = self.config["lang"]
-            self._pin_code = self.config["pin"]
             self._custom_prefix_rules = self._load_prefix_rules()
-            self._refresh_auth_claims()
             self.db = InventoryDB(
                 self.db_path,
                 url=self.config.get("supabase_url"),
                 key=self.config.get("supabase_key"),
             )
+            self._apply_admin_session_to_client()
+            self._refresh_auth_claims()
             self._apply_i18n()
             self._apply_role_controls()
             self.refresh_list()
             messagebox.showinfo(self.tr("desktop_config_title"), self.tr("desktop_config_saved"))
             win.destroy()
 
-        ttk.Button(frm, text=self.tr("desktop_config_save"), command=_save).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(frm, text=self.tr("desktop_config_save"), command=_save).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
     # ---------- Data actions ----------
 
@@ -3140,8 +3321,7 @@ class DesktopApp:
 
         status_var = tk.StringVar(value="")
         ttk.Label(frame, textvariable=status_var).grid(row=1, column=0, sticky="w", pady=(6, 0))
-        if not self._is_device_admin:
-            status_var.set(self.tr("desktop_admin_fallback_mode"))
+        status_var.set("")
 
         logs_cache: list[dict] = []
 
