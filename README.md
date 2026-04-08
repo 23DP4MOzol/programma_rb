@@ -32,6 +32,8 @@ Abi klienti izmanto vienu Supabase backend un vienotu serial apstrādes loģiku.
 | Manuāls Sync now | Jā | Jā | PC poga + Web poga |
 | CSV eksports | Nē | Jā | Eksportē redzamos (filtrētos) ierakstus |
 | Audit logs skatīšana (admin) | Jā | Jā | Pieejams tikai admin tiesībām |
+| Prefix noteikumu pārvaldība (admin) | Jā | Jā | CRUD panelis prefiksu noteikumiem |
+| Diagnostikas panelis | Jā | Jā | Rāda lomu, queue, API veselību, pēdējo sync |
 | Rediģēt identity laukus (serial/type/model) | Ar noteikumiem | Ar noteikumiem | Esošiem ierakstiem tikai `device_admin` |
 
 ### PC programmas funkcijas
@@ -40,6 +42,8 @@ Abi klienti izmanto vienu Supabase backend un vienotu serial apstrādes loģiku.
 - Kamera skenēšana (ja pieejams `opencv/pyzbar`)
 - PIN aizsardzība sensitīvām darbībām
 - Admin audit viewer logs
+- Admin prefiksu noteikumu panelis (CRUD)
+- Diagnostikas panelis (queue, API, loma, pēdējā sync)
 - Konflikta paziņojums, ja cits klients jau atjaunojis ierakstu
 
 Palaišana (PowerShell):
@@ -146,6 +150,8 @@ Both clients use the same Supabase backend and aligned serial parsing behavior.
 | Manual Sync now | Yes | Yes | Dedicated action in both clients |
 | CSV export | No | Yes | Exports currently visible filtered rows |
 | Audit logs viewer (admin) | Yes | Yes | Admin-only visibility |
+| Prefix rules management (admin) | Yes | Yes | CRUD panel for prefix rules |
+| Diagnostics panel | Yes | Yes | Shows role, queue, API health, last sync |
 | Edit identity fields (serial/type/model) | Restricted | Restricted | Existing rows: admin only |
 
 ### PC app features
@@ -154,6 +160,8 @@ Both clients use the same Supabase backend and aligned serial parsing behavior.
 - Camera scanning fallback (if `opencv/pyzbar` available)
 - PIN protection for sensitive operations
 - Admin audit viewer dialog
+- Admin prefix rules panel (CRUD)
+- Diagnostics panel (queue, API, role, last sync)
 - Conflict warning when record changed elsewhere
 
 Start (PowerShell):

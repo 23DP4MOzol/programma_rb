@@ -5,6 +5,7 @@ import json
 import os
 import traceback
 import tkinter as tk
+from datetime import datetime, timezone
 from tkinter import font as tkfont
 from tkinter import simpledialog
 import re
@@ -440,6 +441,7 @@ class DesktopApp:
         self._sort_col: str | None = None
         self._sort_desc: bool = False
         self._focus_lock_job: str | None = None
+        self._last_sync_at: str | None = None
 
         self._build_ui()
         self._schedule_scanner_focus_lock()
@@ -1182,7 +1184,13 @@ class DesktopApp:
         self.camera_btn.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
 
         self.audit_btn = ttk.Button(btns, command=self._open_audit_viewer, style="Secondary.TButton")
-        self.audit_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.audit_btn.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
+        self.diag_btn = ttk.Button(btns, command=self._open_diagnostics_panel, style="Secondary.TButton")
+        self.diag_btn.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+
+        self.prefix_btn = ttk.Button(btns, command=self._open_prefix_rules_admin, style="Secondary.TButton")
+        self.prefix_btn.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
 
         self.result_lbl = ttk.Label(self.form_card, text="", style="Muted.TLabel")
@@ -1779,6 +1787,9 @@ class DesktopApp:
         self.clear_form_btn.config(text=self.tr("desktop_clear_form"))
         self.sync_btn.config(text=self.tr("desktop_sync"))
         self.camera_btn.config(text=self.tr("desktop_camera_scan"))
+        self.audit_btn.config(text=self.tr("desktop_audit_viewer"))
+        self.diag_btn.config(text=self.tr("desktop_diagnostics"))
+        self.prefix_btn.config(text=self.tr("desktop_prefix_admin"))
         # Update / Status / Delete buttons removed from Action section (use editor/context menu)
 
         self.result_lbl.config(text=self.tr("web_result"))
@@ -2097,6 +2108,10 @@ class DesktopApp:
             self.audit_btn.configure(state=state)
         except Exception:
             pass
+        try:
+            self.prefix_btn.configure(state=state)
+        except Exception:
+            pass
 
     def _is_offline_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -2114,6 +2129,22 @@ class DesktopApp:
                 "ssl",
             )
         )
+
+    def _normalize_prefix_key(self, value: str | None) -> str:
+        raw = (value or "").upper().strip()
+        if not raw:
+            return ""
+        cleaned = re.sub(r"[^A-Z0-9:]", "", raw)
+        if ":" in cleaned:
+            left, right = cleaned.split(":", 1)
+            return f"{left}:{right}"
+        return cleaned
+
+    def _mark_sync_success(self) -> None:
+        self._last_sync_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+    def _pending_ops_count(self) -> int:
+        return len(self._load_pending_ops())
 
     def _require_pin(self) -> bool:
         if not self._pin_code:
@@ -2163,8 +2194,283 @@ class DesktopApp:
 
     def _sync_now(self) -> None:
         synced, remaining = self._flush_pending_ops()
+        self._mark_sync_success()
         self._write_result({"ok": True, "sync": synced, "pending": remaining})
         self.refresh_list()
+
+    def _open_diagnostics_panel(self) -> None:
+        win = tk.Toplevel(self.root)
+        win.title(self.tr("desktop_diagnostics_title"))
+        win.geometry("560x340")
+        win.minsize(520, 300)
+        win.transient(self.root)
+
+        frame = ttk.Frame(win, padding=14)
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        ttk.Label(frame, text=self.tr("desktop_diagnostics_title"), style="Section.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w"
+        )
+
+        health_var = tk.StringVar(value="")
+        api_var = tk.StringVar(value="")
+        queue_var = tk.StringVar(value="")
+        role_var = tk.StringVar(value="")
+        sync_var = tk.StringVar(value="")
+        url_var = tk.StringVar(value=self.config.get("supabase_url", ""))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_health")).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(frame, textvariable=health_var).grid(row=1, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_api")).grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=api_var).grid(row=2, column=1, sticky="w", pady=(8, 0))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_queue")).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=queue_var).grid(row=3, column=1, sticky="w", pady=(8, 0))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_role")).grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=role_var).grid(row=4, column=1, sticky="w", pady=(8, 0))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_last_sync")).grid(row=5, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=sync_var).grid(row=5, column=1, sticky="w", pady=(8, 0))
+
+        ttk.Label(frame, text=self.tr("desktop_diag_url")).grid(row=6, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=url_var, wraplength=360, justify="left").grid(row=6, column=1, sticky="w", pady=(8, 0))
+
+        status_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=status_var, style="Muted.TLabel").grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+        def _refresh() -> None:
+            queue_count = self._pending_ops_count()
+            queue_var.set(str(queue_count))
+            role_var.set(f"{self._auth_role} ({'admin' if self._is_device_admin else 'operator'})")
+            sync_var.set(self._last_sync_at or self.tr("desktop_diag_na"))
+
+            api_ok = False
+            api_error = ""
+            try:
+                self.db.list_devices(limit=1)
+                api_ok = True
+            except Exception as exc:
+                api_error = str(exc)
+
+            api_var.set(self.tr("desktop_diag_api_ok") if api_ok else self.tr("desktop_diag_api_error"))
+
+            if not api_ok:
+                health_var.set(self.tr("desktop_diag_health_offline"))
+                status_var.set(api_error)
+            elif queue_count > 0:
+                health_var.set(self.tr("desktop_diag_health_queue"))
+                status_var.set(self.tr("desktop_diag_queue_pending", n=queue_count))
+            else:
+                health_var.set(self.tr("desktop_diag_health_ok"))
+                status_var.set(self.tr("desktop_diag_ready"))
+
+        btns = ttk.Frame(frame)
+        btns.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        btns.columnconfigure(2, weight=1)
+
+        ttk.Button(btns, text=self.tr("desktop_sync"), command=lambda: (self._sync_now(), _refresh())).grid(
+            row=0, column=0, sticky="ew"
+        )
+        ttk.Button(btns, text=self.tr("web_refresh"), command=_refresh).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        _refresh()
+
+    def _open_prefix_rules_admin(self) -> None:
+        if not self._is_device_admin:
+            messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_admin_required"))
+            return
+        if not self._require_pin():
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(self.tr("desktop_prefix_admin_title"))
+        win.geometry("980x580")
+        win.minsize(900, 520)
+        win.transient(self.root)
+
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(2, weight=1)
+
+        form = ttk.Frame(frame)
+        form.grid(row=0, column=0, sticky="ew")
+        for i in range(6):
+            form.columnconfigure(i, weight=1)
+
+        rule_id_var = tk.StringVar(value="")
+        key_var = tk.StringVar(value="")
+        type_var = tk.StringVar(value="scanner")
+        make_var = tk.StringVar(value="")
+        model_var = tk.StringVar(value="")
+        priority_var = tk.StringVar(value="100")
+        active_var = tk.BooleanVar(value=True)
+        status_var = tk.StringVar(value="")
+
+        ttk.Label(form, text=self.tr("desktop_prefix_key")).grid(row=0, column=0, sticky="w")
+        ttk.Entry(form, textvariable=key_var).grid(row=1, column=0, sticky="ew", padx=(0, 8))
+
+        ttk.Label(form, text=self.tr("web_type")).grid(row=0, column=1, sticky="w")
+        ttk.Combobox(form, textvariable=type_var, values=DEVICE_TYPES, state="readonly").grid(
+            row=1, column=1, sticky="ew", padx=(0, 8)
+        )
+
+        ttk.Label(form, text=self.tr("web_make")).grid(row=0, column=2, sticky="w")
+        ttk.Entry(form, textvariable=make_var).grid(row=1, column=2, sticky="ew", padx=(0, 8))
+
+        ttk.Label(form, text=self.tr("web_model")).grid(row=0, column=3, sticky="w")
+        ttk.Entry(form, textvariable=model_var).grid(row=1, column=3, sticky="ew", padx=(0, 8))
+
+        ttk.Label(form, text=self.tr("desktop_prefix_priority")).grid(row=0, column=4, sticky="w")
+        ttk.Entry(form, textvariable=priority_var).grid(row=1, column=4, sticky="ew", padx=(0, 8))
+
+        ttk.Checkbutton(form, text=self.tr("desktop_prefix_active"), variable=active_var).grid(row=1, column=5, sticky="w")
+
+        tree = ttk.Treeview(
+            frame,
+            columns=("key", "type", "make", "model", "priority", "active", "updated", "id"),
+            show="headings",
+            selectmode="browse",
+        )
+        tree.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+
+        tree.heading("key", text=self.tr("desktop_prefix_key"))
+        tree.heading("type", text=self.tr("web_type"))
+        tree.heading("make", text=self.tr("web_make"))
+        tree.heading("model", text=self.tr("web_model"))
+        tree.heading("priority", text=self.tr("desktop_prefix_priority"))
+        tree.heading("active", text=self.tr("desktop_prefix_active"))
+        tree.heading("updated", text=self.tr("web_updated"))
+        tree.heading("id", text="id")
+
+        tree.column("key", width=130, anchor="w")
+        tree.column("type", width=100, anchor="w")
+        tree.column("make", width=130, anchor="w")
+        tree.column("model", width=180, anchor="w")
+        tree.column("priority", width=80, anchor="w")
+        tree.column("active", width=70, anchor="w")
+        tree.column("updated", width=180, anchor="w")
+        tree.column("id", width=190, anchor="w")
+
+        def _clear_form() -> None:
+            rule_id_var.set("")
+            key_var.set("")
+            type_var.set("scanner")
+            make_var.set("")
+            model_var.set("")
+            priority_var.set("100")
+            active_var.set(True)
+
+        def _load_rules() -> None:
+            tree.delete(*tree.get_children())
+            try:
+                rows = self.db.list_prefix_rules_admin(include_inactive=True)
+            except Exception as exc:
+                status_var.set(f"{self.tr('desktop_prefix_load_failed')}: {exc}")
+                return
+
+            for row in rows:
+                updated = str(row.get("updated_at") or "").replace("T", " ")
+                tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        row.get("prefix_key") or "",
+                        row.get("device_type") or "",
+                        row.get("make") or "",
+                        row.get("model") or "",
+                        row.get("priority") if row.get("priority") is not None else "",
+                        "yes" if row.get("active", True) else "no",
+                        updated,
+                        row.get("id") or "",
+                    ),
+                )
+            status_var.set(self.tr("desktop_prefix_loaded", n=len(rows)))
+
+        def _on_select(_event: tk.Event | None = None) -> None:
+            sel = tree.selection()
+            if not sel:
+                return
+            vals = tree.item(sel[0], "values")
+            if not vals:
+                return
+
+            key_var.set(str(vals[0] or ""))
+            type_var.set(str(vals[1] or "scanner"))
+            make_var.set(str(vals[2] or ""))
+            model_var.set(str(vals[3] or ""))
+            priority_var.set(str(vals[4] or "100"))
+            active_var.set(str(vals[5] or "").lower() == "yes")
+            rule_id_var.set(str(vals[7] or ""))
+
+        def _save_rule() -> None:
+            key = self._normalize_prefix_key(key_var.get())
+            if not key:
+                status_var.set(self.tr("desktop_prefix_key_required"))
+                return
+
+            try:
+                priority = int(priority_var.get().strip() or "100")
+            except Exception:
+                priority = 100
+
+            try:
+                self.db.save_prefix_rule(
+                    rule_id=rule_id_var.get().strip() or None,
+                    prefix_key=key,
+                    device_type=(type_var.get().strip() or "scanner").lower(),
+                    make=make_var.get().strip(),
+                    model=model_var.get().strip(),
+                    priority=priority,
+                    active=bool(active_var.get()),
+                )
+                status_var.set(self.tr("desktop_prefix_saved"))
+                _load_rules()
+                _clear_form()
+            except Exception as exc:
+                status_var.set(f"{self.tr('desktop_prefix_save_failed')}: {exc}")
+
+        def _delete_rule() -> None:
+            rid = rule_id_var.get().strip()
+            if not rid:
+                status_var.set(self.tr("desktop_prefix_select_delete"))
+                return
+
+            if not messagebox.askyesno(self.tr("desktop_confirm_title"), self.tr("desktop_prefix_confirm_delete"), parent=win):
+                return
+
+            try:
+                self.db.delete_prefix_rule(rule_id=rid)
+                status_var.set(self.tr("desktop_prefix_deleted"))
+                _load_rules()
+                _clear_form()
+            except Exception as exc:
+                status_var.set(f"{self.tr('desktop_prefix_delete_failed')}: {exc}")
+
+        btns = ttk.Frame(frame)
+        btns.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        btns.columnconfigure(2, weight=1)
+        btns.columnconfigure(3, weight=1)
+        btns.columnconfigure(4, weight=1)
+
+        ttk.Button(btns, text=self.tr("web_refresh"), command=_load_rules).grid(row=0, column=0, sticky="ew")
+        ttk.Button(btns, text=self.tr("desktop_save"), command=_save_rule).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("web_delete"), command=_delete_rule).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("desktop_clear_form"), command=_clear_form).grid(row=0, column=3, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=4, sticky="ew", padx=(8, 0))
+
+        ttk.Label(frame, textvariable=status_var, style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(8, 0))
+
+        tree.bind("<<TreeviewSelect>>", _on_select)
+        _load_rules()
 
     def _camera_scan(self) -> None:
         try:

@@ -305,6 +305,91 @@ class InventoryDB:
 
         return rules
 
+    def list_prefix_rules_admin(self, *, include_inactive: bool = True, limit: int = 500) -> list[dict[str, Any]]:
+        query = (
+            self.supabase.table("device_prefix_rules")
+            .select("id,prefix_key,device_type,make,model,priority,active,updated_at")
+            .order("priority")
+            .limit(max(1, min(int(limit), 1000)))
+        )
+        if not include_inactive:
+            query = query.eq("active", True)
+        res = query.execute()
+        return list(res.data or [])
+
+    def save_prefix_rule(
+        self,
+        *,
+        prefix_key: str,
+        device_type: str,
+        make: str,
+        model: str,
+        priority: int = 100,
+        active: bool = True,
+        rule_id: str | None = None,
+    ) -> dict[str, Any]:
+        key = str(prefix_key or "").strip().upper()
+        if not key:
+            raise ValueError("prefix_key is required")
+
+        payload = {
+            "prefix_key": key,
+            "device_type": str(device_type or "scanner").strip().lower() or "scanner",
+            "make": str(make or "").strip(),
+            "model": str(model or "").strip(),
+            "priority": int(priority),
+            "active": bool(active),
+        }
+
+        if rule_id:
+            res = (
+                self.supabase.table("device_prefix_rules")
+                .update(payload)
+                .eq("id", str(rule_id).strip())
+                .execute()
+            )
+            if res.data:
+                return dict(res.data[0])
+            raise ValueError("Prefix rule not found")
+
+        existing = (
+            self.supabase.table("device_prefix_rules")
+            .select("id")
+            .eq("prefix_key", key)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            existing_id = str(existing.data[0].get("id") or "").strip()
+            if not existing_id:
+                raise ValueError("Failed to resolve existing prefix rule id")
+            res = (
+                self.supabase.table("device_prefix_rules")
+                .update(payload)
+                .eq("id", existing_id)
+                .execute()
+            )
+            if res.data:
+                return dict(res.data[0])
+            raise ValueError("Prefix rule update failed")
+
+        res = self.supabase.table("device_prefix_rules").insert(payload).execute()
+        if res.data:
+            return dict(res.data[0])
+        return payload
+
+    def delete_prefix_rule(self, *, rule_id: str | None = None, prefix_key: str | None = None) -> bool:
+        query = self.supabase.table("device_prefix_rules").delete()
+        if rule_id:
+            query = query.eq("id", str(rule_id).strip())
+        elif prefix_key:
+            query = query.eq("prefix_key", str(prefix_key).strip().upper())
+        else:
+            raise ValueError("rule_id or prefix_key is required")
+
+        res = query.execute()
+        return bool(res.data)
+
     def list_audit_logs(self, *, serial: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         query = (
             self.supabase.table("device_audit_log")
