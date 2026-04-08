@@ -2508,8 +2508,17 @@ class DesktopApp:
             try:
                 active_db_rules = self.db.list_prefix_rules()
                 effective_rules = self._get_prefix_rules()
+
+                device_count_text = ""
+                try:
+                    # This is inventory row count (devices), not prefix rule count.
+                    devices = self.db.list_devices(limit=5000)
+                    device_count_text = f" | Inventory devices: {len(devices)}"
+                except Exception:
+                    device_count_text = ""
+
                 counts_var.set(
-                    f"DB rows: {len(rows)} | Active DB prefixes: {len(active_db_rules)} | Effective scanner prefixes: {len(effective_rules)}"
+                    f"Prefix rules -> DB rows: {len(rows)} | Active DB prefixes: {len(active_db_rules)} | Effective scanner prefixes: {len(effective_rules)}{device_count_text}"
                 )
             except Exception:
                 counts_var.set(f"DB rows: {len(rows)}")
