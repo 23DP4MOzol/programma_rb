@@ -71,21 +71,24 @@ jobs:
         if: always()
         run: |
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "signed_exists=true" >> "$GITHUB_OUTPUT"
+            echo "unsigned_exists=false" >> "$GITHUB_OUTPUT"
             echo "path=android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
             echo "name=app-release.apk" >> "$GITHUB_OUTPUT"
           elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "signed_exists=false" >> "$GITHUB_OUTPUT"
+            echo "unsigned_exists=true" >> "$GITHUB_OUTPUT"
             echo "path=android/app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_OUTPUT"
             echo "name=app-release-unsigned.apk" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "signed_exists=false" >> "$GITHUB_OUTPUT"
+            echo "unsigned_exists=false" >> "$GITHUB_OUTPUT"
             echo "path=" >> "$GITHUB_OUTPUT"
             echo "name=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prepare release artifact package
-        if: always() && steps.release_apk_check.outputs.exists == 'true'
+        if: always() && steps.release_apk_check.outputs.signed_exists == 'true'
         run: |
           mkdir -p artifacts/release
           cp "${{ steps.release_apk_check.outputs.path }}" "artifacts/release/${{ steps.release_apk_check.outputs.name }}"
@@ -101,6 +104,13 @@ jobs:
           }
           EOF
 
+      - name: Warn when only unsigned release exists
+        if: always() && steps.release_apk_check.outputs.unsigned_exists == 'true'
+        run: |
+          echo "Unsigned release APK detected (app-release-unsigned.apk)."
+          echo "This artifact is NOT installable on devices."
+          echo "Use the production workflow (build_webview_apk_production.yml) to produce a signed APK."
+
       - name: Upload Debug APK
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,7 +122,7 @@ jobs:
             artifacts/debug/manifest.json
 
       - name: Upload Release APK
-        if: always() && steps.release_apk_check.outputs.exists == 'true'
+        if: always() && steps.release_apk_check.outputs.signed_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: RimiInventory-WebView-APK-release

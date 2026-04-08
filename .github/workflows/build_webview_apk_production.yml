@@ -6,6 +6,11 @@ on:
       rollout_track:
         description: "Rollout track (stable or test)"
         required: true
+        type: choice
+        options:
+          - stable
+          - test
+        default: test
       version_name:
         description: "Release version name (example: 1.2.3)"
         required: true
@@ -98,6 +103,11 @@ jobs:
       - name: Verify signed release artifact
         run: |
           test -f android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify APK signature and integrity
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          "$APKSIGNER" verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
 
       - name: Prepare production artifact package
         env:
