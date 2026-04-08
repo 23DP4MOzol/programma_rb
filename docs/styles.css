@@ -53,7 +53,7 @@ body {
   flex-wrap: wrap;
 }
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .table {

@@ -260,9 +260,19 @@ function setIdentityEditable(enabled) {
   els.model.readOnly = !enabled;
 }
 
+function setPopupVisibility(popupEl, visible) {
+  if (!popupEl) return;
+  if (visible) {
+    popupEl.classList.remove("hidden");
+    popupEl.style.display = "grid";
+  } else {
+    popupEl.classList.add("hidden");
+    popupEl.style.display = "none";
+  }
+}
+
 function hideScanPopup() {
-  if (!els.scanPopup) return;
-  els.scanPopup.classList.add("hidden");
+  setPopupVisibility(els.scanPopup, false);
 }
 
 function showScanPopup(message, { allowRegister = false, serial = "" } = {}) {
@@ -270,7 +280,7 @@ function showScanPopup(message, { allowRegister = false, serial = "" } = {}) {
 
   pendingRegisterSerial = String(serial || "").trim();
   els.scanPopupMessage.textContent = String(message || "");
-  els.scanPopup.classList.remove("hidden");
+  setPopupVisibility(els.scanPopup, true);
 
   if (els.scanPopupRegister) {
     els.scanPopupRegister.classList.toggle("hidden", !allowRegister);
@@ -484,14 +494,12 @@ function askConflictResolution() {
   }
   return new Promise((resolve) => {
     conflictResolve = resolve;
-    els.conflictPopup.classList.remove("hidden");
+    setPopupVisibility(els.conflictPopup, true);
   });
 }
 
 function resolveConflictPopup(choice) {
-  if (els.conflictPopup) {
-    els.conflictPopup.classList.add("hidden");
-  }
+  setPopupVisibility(els.conflictPopup, false);
   const done = conflictResolve;
   conflictResolve = null;
   if (done) done(choice);
