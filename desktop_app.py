@@ -2103,7 +2103,8 @@ class DesktopApp:
         )
 
     def _apply_role_controls(self) -> None:
-        state = "normal" if self._is_device_admin else "disabled"
+        # Keep tools clickable and handle authorization when opening each panel.
+        state = "normal"
         try:
             self.audit_btn.configure(state=state)
         except Exception:
@@ -2112,6 +2113,17 @@ class DesktopApp:
             self.prefix_btn.configure(state=state)
         except Exception:
             pass
+
+    def _authorize_admin_panel(self) -> bool:
+        if self._is_device_admin:
+            return self._require_pin()
+
+        # Local desktop fallback: if PIN is configured, allow admin panels with PIN.
+        if self._pin_code:
+            return self._require_pin()
+
+        # No PIN and no admin JWT claim: allow opening panel in read-attempt mode.
+        return True
 
     def _is_offline_error(self, exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -2201,45 +2213,128 @@ class DesktopApp:
     def _open_diagnostics_panel(self) -> None:
         win = tk.Toplevel(self.root)
         win.title(self.tr("desktop_diagnostics_title"))
-        win.geometry("560x340")
-        win.minsize(520, 300)
+        win.geometry("700x450")
+        win.minsize(640, 420)
         win.transient(self.root)
 
-        frame = ttk.Frame(win, padding=14)
-        frame.pack(fill=tk.BOTH, expand=True)
-        frame.columnconfigure(1, weight=1)
+        theme = (self.theme or "light").lower()
+        if theme == "dark":
+            panel_bg = "#0f1216"
+            card_bg = "#171b21"
+            card_border = "#2a2f39"
+            text = "#e8eaed"
+            muted = "#a5aab3"
+        else:
+            panel_bg = "#f4f6f8"
+            card_bg = "#ffffff"
+            card_border = "#d8dee6"
+            text = "#111111"
+            muted = "#5f6775"
 
-        ttk.Label(frame, text=self.tr("desktop_diagnostics_title"), style="Section.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w"
+        outer = tk.Frame(win, bg=panel_bg, padx=16, pady=14)
+        outer.pack(fill=tk.BOTH, expand=True)
+        outer.columnconfigure(0, weight=1)
+
+        title_row = tk.Frame(outer, bg=panel_bg)
+        title_row.grid(row=0, column=0, sticky="ew")
+        title_row.columnconfigure(1, weight=1)
+
+        tk.Label(
+            title_row,
+            text=self.tr("desktop_diagnostics_title"),
+            bg=panel_bg,
+            fg=text,
+            font=("Segoe UI", 13, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+
+        health_badge = tk.Label(
+            title_row,
+            text="",
+            bg="#5f6775",
+            fg="#ffffff",
+            padx=12,
+            pady=5,
+            font=("Segoe UI", 9, "bold"),
         )
+        health_badge.grid(row=0, column=1, sticky="e")
 
-        health_var = tk.StringVar(value="")
+        tk.Label(
+            outer,
+            text=self.tr("desktop_diag_subtitle"),
+            bg=panel_bg,
+            fg=muted,
+            font=("Segoe UI", 9),
+        ).grid(row=1, column=0, sticky="w", pady=(4, 10))
+
+        cards = tk.Frame(outer, bg=panel_bg)
+        cards.grid(row=2, column=0, sticky="ew")
+        cards.columnconfigure(0, weight=1)
+        cards.columnconfigure(1, weight=1)
+        cards.columnconfigure(2, weight=1)
+
         api_var = tk.StringVar(value="")
         queue_var = tk.StringVar(value="")
         role_var = tk.StringVar(value="")
         sync_var = tk.StringVar(value="")
         url_var = tk.StringVar(value=self.config.get("supabase_url", ""))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_health")).grid(row=1, column=0, sticky="w", pady=(10, 0))
-        ttk.Label(frame, textvariable=health_var).grid(row=1, column=1, sticky="w", pady=(10, 0))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_api")).grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(frame, textvariable=api_var).grid(row=2, column=1, sticky="w", pady=(8, 0))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_queue")).grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(frame, textvariable=queue_var).grid(row=3, column=1, sticky="w", pady=(8, 0))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_role")).grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(frame, textvariable=role_var).grid(row=4, column=1, sticky="w", pady=(8, 0))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_last_sync")).grid(row=5, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(frame, textvariable=sync_var).grid(row=5, column=1, sticky="w", pady=(8, 0))
-
-        ttk.Label(frame, text=self.tr("desktop_diag_url")).grid(row=6, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(frame, textvariable=url_var, wraplength=360, justify="left").grid(row=6, column=1, sticky="w", pady=(8, 0))
-
         status_var = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=status_var, style="Muted.TLabel").grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+        def _metric_card(parent: tk.Frame, col: int, title: str, value_var: tk.StringVar) -> tk.Label:
+            card = tk.Frame(parent, bg=card_bg, highlightbackground=card_border, highlightthickness=1, bd=0)
+            pad_left = 0 if col == 0 else 8
+            pad_right = 0 if col == 2 else 8
+            card.grid(row=0, column=col, sticky="nsew", padx=(pad_left, pad_right))
+            tk.Label(card, text=title, bg=card_bg, fg=muted, font=("Segoe UI", 9)).pack(anchor="w", padx=12, pady=(10, 2))
+            value_lbl = tk.Label(card, textvariable=value_var, bg=card_bg, fg=text, font=("Segoe UI", 12, "bold"))
+            value_lbl.pack(anchor="w", padx=12, pady=(0, 10))
+            return value_lbl
+
+        api_value_lbl = _metric_card(cards, 0, self.tr("desktop_diag_api"), api_var)
+        queue_value_lbl = _metric_card(cards, 1, self.tr("desktop_diag_queue"), queue_var)
+        _metric_card(cards, 2, self.tr("desktop_diag_role"), role_var)
+
+        details_card = tk.Frame(outer, bg=card_bg, highlightbackground=card_border, highlightthickness=1, bd=0)
+        details_card.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
+        details_card.columnconfigure(1, weight=1)
+
+        tk.Label(details_card, text=self.tr("desktop_diag_last_sync"), bg=card_bg, fg=muted, font=("Segoe UI", 9)).grid(
+            row=0, column=0, sticky="w", padx=12, pady=(10, 4)
+        )
+        tk.Label(details_card, textvariable=sync_var, bg=card_bg, fg=text, font=("Segoe UI", 10, "bold")).grid(
+            row=0, column=1, sticky="w", padx=(0, 12), pady=(10, 4)
+        )
+
+        tk.Label(details_card, text=self.tr("desktop_diag_url"), bg=card_bg, fg=muted, font=("Segoe UI", 9)).grid(
+            row=1, column=0, sticky="nw", padx=12, pady=(0, 10)
+        )
+        tk.Label(
+            details_card,
+            textvariable=url_var,
+            bg=card_bg,
+            fg=text,
+            font=("Segoe UI", 9),
+            justify="left",
+            wraplength=440,
+        ).grid(row=1, column=1, sticky="w", padx=(0, 12), pady=(0, 10))
+
+        status_lbl = tk.Label(
+            outer,
+            textvariable=status_var,
+            bg=panel_bg,
+            fg=muted,
+            font=("Segoe UI", 9),
+            justify="left",
+            wraplength=640,
+        )
+        status_lbl.grid(row=4, column=0, sticky="w", pady=(10, 0))
+
+        def _copy_url() -> None:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(url_var.get())
+                status_var.set(self.tr("desktop_diag_url_copied"))
+            except Exception:
+                pass
 
         def _refresh() -> None:
             queue_count = self._pending_ops_count()
@@ -2256,42 +2351,51 @@ class DesktopApp:
                 api_error = str(exc)
 
             api_var.set(self.tr("desktop_diag_api_ok") if api_ok else self.tr("desktop_diag_api_error"))
+            api_value_lbl.configure(fg="#0a7a2f" if api_ok else "#b00020")
+            queue_value_lbl.configure(fg="#ad6a00" if queue_count > 0 else "#0a7a2f")
 
             if not api_ok:
-                health_var.set(self.tr("desktop_diag_health_offline"))
+                health_text = self.tr("desktop_diag_health_offline")
+                badge_bg = "#b00020"
+                status_lbl.configure(fg="#b00020")
                 status_var.set(api_error)
             elif queue_count > 0:
-                health_var.set(self.tr("desktop_diag_health_queue"))
+                health_text = self.tr("desktop_diag_health_queue")
+                badge_bg = "#ad6a00"
+                status_lbl.configure(fg="#ad6a00")
                 status_var.set(self.tr("desktop_diag_queue_pending", n=queue_count))
             else:
-                health_var.set(self.tr("desktop_diag_health_ok"))
+                health_text = self.tr("desktop_diag_health_ok")
+                badge_bg = "#0a7a2f"
+                status_lbl.configure(fg="#0a7a2f")
                 status_var.set(self.tr("desktop_diag_ready"))
 
-        btns = ttk.Frame(frame)
-        btns.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+            health_badge.configure(text=f"{self.tr('desktop_diag_health')}: {health_text}", bg=badge_bg)
+
+        btns = ttk.Frame(outer)
+        btns.grid(row=5, column=0, sticky="ew", pady=(14, 0))
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
         btns.columnconfigure(2, weight=1)
+        btns.columnconfigure(3, weight=1)
 
         ttk.Button(btns, text=self.tr("desktop_sync"), command=lambda: (self._sync_now(), _refresh())).grid(
             row=0, column=0, sticky="ew"
         )
         ttk.Button(btns, text=self.tr("web_refresh"), command=_refresh).grid(row=0, column=1, sticky="ew", padx=(8, 0))
-        ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("desktop_diag_copy_url"), command=_copy_url).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+        ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=3, sticky="ew", padx=(8, 0))
 
         _refresh()
 
     def _open_prefix_rules_admin(self) -> None:
-        if not self._is_device_admin:
-            messagebox.showerror(self.tr("desktop_error_title"), self.tr("desktop_admin_required"))
-            return
-        if not self._require_pin():
+        if not self._authorize_admin_panel():
             return
 
         win = tk.Toplevel(self.root)
         win.title(self.tr("desktop_prefix_admin_title"))
-        win.geometry("980x580")
-        win.minsize(900, 520)
+        win.geometry("1120x620")
+        win.minsize(980, 560)
         win.transient(self.root)
 
         frame = ttk.Frame(win, padding=12)
@@ -2311,7 +2415,8 @@ class DesktopApp:
         model_var = tk.StringVar(value="")
         priority_var = tk.StringVar(value="100")
         active_var = tk.BooleanVar(value=True)
-        status_var = tk.StringVar(value="")
+        status_var = tk.StringVar(value=self.tr("desktop_admin_fallback_mode") if not self._is_device_admin else "")
+        counts_var = tk.StringVar(value="")
 
         ttk.Label(form, text=self.tr("desktop_prefix_key")).grid(row=0, column=0, sticky="w")
         ttk.Entry(form, textvariable=key_var).grid(row=1, column=0, sticky="ew", padx=(0, 8))
@@ -2358,6 +2463,12 @@ class DesktopApp:
         tree.column("updated", width=180, anchor="w")
         tree.column("id", width=190, anchor="w")
 
+        vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        vsb.grid(row=2, column=1, sticky="ns", pady=(10, 0))
+        hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        hsb.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
         def _clear_form() -> None:
             rule_id_var.set("")
             key_var.set("")
@@ -2373,6 +2484,7 @@ class DesktopApp:
                 rows = self.db.list_prefix_rules_admin(include_inactive=True)
             except Exception as exc:
                 status_var.set(f"{self.tr('desktop_prefix_load_failed')}: {exc}")
+                counts_var.set("")
                 return
 
             for row in rows:
@@ -2392,6 +2504,15 @@ class DesktopApp:
                     ),
                 )
             status_var.set(self.tr("desktop_prefix_loaded", n=len(rows)))
+
+            try:
+                active_db_rules = self.db.list_prefix_rules()
+                effective_rules = self._get_prefix_rules()
+                counts_var.set(
+                    f"DB rows: {len(rows)} | Active DB prefixes: {len(active_db_rules)} | Effective scanner prefixes: {len(effective_rules)}"
+                )
+            except Exception:
+                counts_var.set(f"DB rows: {len(rows)}")
 
         def _on_select(_event: tk.Event | None = None) -> None:
             sel = tree.selection()
@@ -2454,7 +2575,7 @@ class DesktopApp:
                 status_var.set(f"{self.tr('desktop_prefix_delete_failed')}: {exc}")
 
         btns = ttk.Frame(frame)
-        btns.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        btns.grid(row=4, column=0, sticky="ew", pady=(10, 0))
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
         btns.columnconfigure(2, weight=1)
@@ -2467,7 +2588,8 @@ class DesktopApp:
         ttk.Button(btns, text=self.tr("desktop_clear_form"), command=_clear_form).grid(row=0, column=3, sticky="ew", padx=(8, 0))
         ttk.Button(btns, text=self.tr("desktop_close"), command=win.destroy).grid(row=0, column=4, sticky="ew", padx=(8, 0))
 
-        ttk.Label(frame, textvariable=status_var, style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=counts_var, style="Muted.TLabel").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, textvariable=status_var, style="Muted.TLabel").grid(row=6, column=0, sticky="w", pady=(2, 0))
 
         tree.bind("<<TreeviewSelect>>", _on_select)
         _load_rules()
@@ -2961,11 +3083,7 @@ class DesktopApp:
             self._selected_updated_at = None
 
     def _open_audit_viewer(self) -> None:
-        if not self._is_device_admin:
-            messagebox.showerror(self.tr("desktop_error_title"), "Admin role required for audit viewer")
-            return
-
-        if not self._require_pin():
+        if not self._authorize_admin_panel():
             return
 
         win = tk.Toplevel(self.root)
@@ -3013,6 +3131,8 @@ class DesktopApp:
 
         status_var = tk.StringVar(value="")
         ttk.Label(frame, textvariable=status_var).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        if not self._is_device_admin:
+            status_var.set(self.tr("desktop_admin_fallback_mode"))
 
         logs_cache: list[dict] = []
 

@@ -58,7 +58,8 @@ class ReleaseSmokeTests(unittest.TestCase):
         required_markers = [
             "def _refresh_auth_claims(self)",
             "def _apply_role_controls(self)",
-            "Admin role required for audit viewer",
+            "def _authorize_admin_panel(self)",
+            "desktop_admin_fallback_mode",
             "def _schedule_scanner_focus_lock(self)",
             "def _show_scan_result_popup(self",
             "desktop_register_new_device",
