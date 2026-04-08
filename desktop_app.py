@@ -406,11 +406,14 @@ class DeviceEditor(tk.Toplevel):
 class DesktopApp:
     def __init__(self, root: tk.Tk, *, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:
         self.root = root
-        self.db_path = str(db_path)
+        raw_db_path = Path(db_path)
+        if not raw_db_path.is_absolute():
+            raw_db_path = (Path(__file__).resolve().parent / raw_db_path).resolve()
+        self.db_path = str(raw_db_path)
         self.lang = lang
 
-        self._config_path = Path(self.db_path).with_name("app_config.json")
-        self._pending_ops_path = Path(self.db_path).with_name("pending_ops.json")
+        self._config_path = raw_db_path.with_name("app_config.json")
+        self._pending_ops_path = raw_db_path.with_name("pending_ops.json")
         self._config_defaults = {
             "supabase_url": "https://qvlduxpdcwgmokjdsdfp.supabase.co",
             "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
@@ -563,6 +566,7 @@ class DesktopApp:
 
     def _save_config(self) -> None:
         try:
+            self._config_path.parent.mkdir(parents=True, exist_ok=True)
             self._config_path.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
         except Exception:
             pass
@@ -607,6 +611,7 @@ class DesktopApp:
 
     def _save_pending_ops(self, ops: list[dict]) -> None:
         try:
+            self._pending_ops_path.parent.mkdir(parents=True, exist_ok=True)
             self._pending_ops_path.write_text(json.dumps(ops, indent=2), encoding="utf-8")
         except Exception:
             pass
@@ -2625,7 +2630,7 @@ class DesktopApp:
 
         tree = ttk.Treeview(
             frame,
-            columns=("key", "type", "make", "model", "priority", "active", "updated", "id"),
+            columns=("key", "type", "make", "model", "priority", "active", "source", "updated", "id"),
             show="headings",
             selectmode="browse",
         )
@@ -2637,6 +2642,7 @@ class DesktopApp:
         tree.heading("model", text=self.tr("web_model"))
         tree.heading("priority", text=self.tr("desktop_prefix_priority"))
         tree.heading("active", text=self.tr("desktop_prefix_active"))
+        tree.heading("source", text="source")
         tree.heading("updated", text=self.tr("web_updated"))
         tree.heading("id", text="id")
 
@@ -2646,6 +2652,7 @@ class DesktopApp:
         tree.column("model", width=180, anchor="w")
         tree.column("priority", width=80, anchor="w")
         tree.column("active", width=70, anchor="w")
+        tree.column("source", width=120, anchor="w")
         tree.column("updated", width=180, anchor="w")
         tree.column("id", width=190, anchor="w")
 
@@ -2667,29 +2674,90 @@ class DesktopApp:
         def _load_rules() -> None:
             tree.delete(*tree.get_children())
             try:
-                rows = self.db.list_prefix_rules_admin(include_inactive=True)
+                db_rows = self.db.list_prefix_rules_admin(include_inactive=True)
             except Exception as exc:
                 status_var.set(f"{self.tr('desktop_prefix_load_failed')}: {exc}")
                 counts_var.set("")
                 return
 
-            for row in rows:
+            normalized_db_keys: set[str] = set()
+
+            for row in db_rows:
+                raw_key = str(row.get("prefix_key") or "").strip()
+                normalized = raw_key.split(":", 1)[1] if ":" in raw_key else raw_key
+                if normalized:
+                    normalized_db_keys.add(normalized.upper())
+
                 updated = str(row.get("updated_at") or "").replace("T", " ")
                 tree.insert(
                     "",
                     tk.END,
                     values=(
-                        row.get("prefix_key") or "",
+                        normalized or raw_key,
                         row.get("device_type") or "",
                         row.get("make") or "",
                         row.get("model") or "",
                         row.get("priority") if row.get("priority") is not None else "",
                         "yes" if row.get("active", True) else "no",
+                        "db",
                         updated,
                         row.get("id") or "",
                     ),
                 )
-            status_var.set(self.tr("desktop_prefix_loaded", n=len(rows)))
+
+            # Show built-in defaults that are not overridden by DB keys.
+            for prefix_key, (device_type, make, full_model) in sorted(SERIAL_PREFIX_MAP.items(), key=lambda item: item[0]):
+                key_u = str(prefix_key).upper()
+                if key_u in normalized_db_keys:
+                    continue
+
+                model_value = str(full_model or "").strip()
+                if make and model_value.upper().startswith(f"{make} ".upper()):
+                    model_value = model_value[len(make) + 1 :]
+
+                tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        prefix_key,
+                        device_type,
+                        make,
+                        model_value,
+                        "base",
+                        "yes",
+                        "built-in",
+                        "",
+                        f"builtin:{prefix_key}",
+                    ),
+                )
+
+            # Show local config rules that are not overridden by DB keys.
+            for prefix_key, (device_type, make, full_model) in sorted((self._custom_prefix_rules or {}).items(), key=lambda item: item[0]):
+                key_u = str(prefix_key).upper()
+                if key_u in normalized_db_keys:
+                    continue
+
+                model_value = str(full_model or "").strip()
+                if make and model_value.upper().startswith(f"{make} ".upper()):
+                    model_value = model_value[len(make) + 1 :]
+
+                tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        prefix_key,
+                        device_type,
+                        make,
+                        model_value,
+                        "local",
+                        "yes",
+                        "config",
+                        "",
+                        f"config:{prefix_key}",
+                    ),
+                )
+
+            status_var.set(self.tr("desktop_prefix_loaded", n=len(db_rows)))
 
             try:
                 active_db_rules = self.db.list_prefix_rules()
@@ -2704,10 +2772,10 @@ class DesktopApp:
                     device_count_text = ""
 
                 counts_var.set(
-                    f"Prefix rules -> DB rows: {len(rows)} | Active DB prefixes: {len(active_db_rules)} | Effective scanner prefixes: {len(effective_rules)}{device_count_text}"
+                    f"Prefix rules -> DB rows: {len(db_rows)} | Active DB prefixes: {len(active_db_rules)} | Effective scanner prefixes: {len(effective_rules)}{device_count_text}"
                 )
             except Exception:
-                counts_var.set(f"DB rows: {len(rows)}")
+                counts_var.set(f"DB rows: {len(db_rows)}")
 
         def _on_select(_event: tk.Event | None = None) -> None:
             sel = tree.selection()
@@ -2721,9 +2789,16 @@ class DesktopApp:
             type_var.set(str(vals[1] or "scanner"))
             make_var.set(str(vals[2] or ""))
             model_var.set(str(vals[3] or ""))
+            source = str(vals[6] or "")
             priority_var.set(str(vals[4] or "100"))
             active_var.set(str(vals[5] or "").lower() == "yes")
-            rule_id_var.set(str(vals[7] or ""))
+            selected_id = str(vals[8] or "")
+            if source != "db" or selected_id.startswith("builtin:") or selected_id.startswith("config:"):
+                rule_id_var.set("")
+                status_var.set("Read-only source rule selected. Save to create/override DB rule.")
+            else:
+                rule_id_var.set(selected_id)
+                status_var.set("")
 
         def _save_rule() -> None:
             key = self._normalize_prefix_key(key_var.get())
