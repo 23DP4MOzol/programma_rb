@@ -218,6 +218,9 @@ const els = {
   comment: document.getElementById("comment"),
   save: document.getElementById("save"),
   clear: document.getElementById("clear"),
+  printerConnect: document.getElementById("printerConnect"),
+  printSticker: document.getElementById("printSticker"),
+  printerStatus: document.getElementById("printerStatus"),
   devicesList: document.getElementById("devicesList"),
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
@@ -291,6 +294,167 @@ function setStatus(message, tone = "info") {
     els.statusText.style.color = "#0a7a2f";
   } else {
     els.statusText.style.color = "#6b6b6b";
+  }
+}
+
+function setPrinterStatus(message, tone = "info") {
+  if (!els.printerStatus) return;
+  els.printerStatus.textContent = String(message || "");
+  if (tone === "error") {
+    els.printerStatus.style.color = "#b00020";
+  } else if (tone === "ok") {
+    els.printerStatus.style.color = "#0a7a2f";
+  } else {
+    els.printerStatus.style.color = "#6b6b6b";
+  }
+}
+
+function parsePrinterBridgeResponse(raw) {
+  if (raw && typeof raw === "object") {
+    return raw;
+  }
+  try {
+    const parsed = JSON.parse(String(raw || ""));
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { ok: false, message: String(raw || "Unknown printer bridge response") };
+}
+
+function hasPrinterBridge() {
+  return Boolean(window.AndroidPrinter && typeof window.AndroidPrinter === "object");
+}
+
+function callPrinterBridge(method, ...args) {
+  if (!hasPrinterBridge()) {
+    return { ok: false, message: "Printer bridge unavailable in this build" };
+  }
+  try {
+    const fn = window.AndroidPrinter[method];
+    if (typeof fn !== "function") {
+      return { ok: false, message: `Printer method not available: ${method}` };
+    }
+    const res = fn.apply(window.AndroidPrinter, args);
+    return parsePrinterBridgeResponse(res);
+  } catch (error) {
+    return { ok: false, message: String(error && error.message ? error.message : error || "Printer bridge error") };
+  }
+}
+
+function zplSafe(value, maxLen = 40) {
+  const normalized = String(value || "")
+    .replace(/[\^~]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.slice(0, maxLen) || "-";
+}
+
+function buildAssetStickerZpl(device) {
+  const serial = zplSafe(device?.serial || "-", 28);
+  const dbNo = zplSafe(String(device?.id || serial), 20);
+  const [makeFromModel, modelFromModel] = splitModel(device?.model || "");
+  const make = zplSafe(makeFromModel || "-", 24);
+  const model = zplSafe(modelFromModel || device?.model || "-", 26);
+  const name = zplSafe(device?.name || `${make} ${model}`, 26);
+  const typeName = zplSafe(String(device?.device_type || "device").toUpperCase(), 20);
+
+  return [
+    "^XA",
+    "^PW576",
+    "^LL360",
+    "^LH0,0",
+    "^CI28",
+    "^FO20,20^A0N,36,36^FDASSET STICKER^FS",
+    `^FO20,70^A0N,26,26^FDName: ${name}^FS`,
+    `^FO20,105^A0N,26,26^FDMake: ${make}^FS`,
+    `^FO20,140^A0N,26,26^FDModel: ${model}^FS`,
+    `^FO20,175^A0N,26,26^FDType: ${typeName}^FS`,
+    `^FO20,210^A0N,26,26^FDDB No: ${dbNo}^FS`,
+    `^FO20,245^A0N,26,26^FDSerial: ${serial}^FS`,
+    `^FO340,70^BQN,2,5^FDLA,${serial}^FS`,
+    "^XZ",
+  ].join("\n");
+}
+
+function findDeviceInCacheByToken(token) {
+  const variants = serialVariants(token).map((x) => cleanToken(x));
+  return (
+    (devicesCache || []).find((row) => {
+      const rowSerial = cleanToken(row?.serial || "");
+      return variants.includes(rowSerial);
+    }) || null
+  );
+}
+
+async function connectZq620Printer() {
+  const result = callPrinterBridge("connectZq620");
+  if (result.ok) {
+    const printerName = String(result.printer || "ZQ620");
+    setPrinterStatus(`Printer connected: ${printerName}`, "ok");
+    setStatus(`Printer connected: ${printerName}`, "ok");
+  } else {
+    setPrinterStatus(`Printer error: ${result.message || "connect failed"}`, "error");
+    setStatus(`Printer connect failed: ${result.message || "unknown error"}`, "error");
+  }
+}
+
+function refreshPrinterStatus() {
+  if (!hasPrinterBridge()) {
+    setPrinterStatus("Printer bridge unavailable", "error");
+    return;
+  }
+  const status = callPrinterBridge("getPrinterStatus");
+  if (status.ok) {
+    const printerName = String(status.printer || "ZQ620");
+    setPrinterStatus(`Printer connected: ${printerName}`, "ok");
+  } else {
+    setPrinterStatus(`Printer: ${status.message || "not connected"}`, "info");
+  }
+}
+
+async function printAssetSticker() {
+  if (!hasPrinterBridge()) {
+    setStatus("Printer integration is available only inside Android WebView APK", "error");
+    setPrinterStatus("Printer bridge unavailable", "error");
+    return;
+  }
+
+  const token = extractPreferredSerial(els.serial.value || els.lookupSerial.value || "");
+  if (!token) {
+    setStatus("Scan or load a device first", "error");
+    return;
+  }
+
+  const cleaned = cleanToken(token);
+  let device = null;
+
+  try {
+    device = await getDeviceBySerial(cleaned);
+  } catch {
+    device = null;
+  }
+
+  if (!device) {
+    device = findDeviceInCacheByToken(cleaned);
+  }
+
+  if (!device) {
+    setStatus("Device not found in database. Load existing device first.", "error");
+    return;
+  }
+
+  const zpl = buildAssetStickerZpl(device);
+  const result = callPrinterBridge("printZpl", zpl);
+  if (result.ok) {
+    const serial = String(device.serial || cleaned);
+    setStatus(`Sticker printed for ${serial}`, "ok");
+    setPrinterStatus(`Printed: ${serial}`, "ok");
+  } else {
+    setStatus(`Print failed: ${result.message || "unknown error"}`, "error");
+    setPrinterStatus(`Printer error: ${result.message || "print failed"}`, "error");
   }
 }
 
@@ -1959,6 +2123,12 @@ els.model.addEventListener("keydown", (e) => {
 
 els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
+if (els.printerConnect) {
+  els.printerConnect.addEventListener("click", connectZq620Printer);
+}
+if (els.printSticker) {
+  els.printSticker.addEventListener("click", printAssetSticker);
+}
 els.syncNow.addEventListener("click", syncNow);
 els.exportCsv.addEventListener("click", exportVisibleDevicesCsv);
 if (els.auditLoad) {
@@ -2069,6 +2239,7 @@ if (els.appVersion) {
 }
 authContext = resolveAuthContext();
 applyAuthUiState();
+refreshPrinterStatus();
 setSyncInfo(navigator.onLine ? "starting" : "offline", navigator.onLine ? "info" : "error");
 updateDiagnosticsPanel();
 const recoveredDraft = restoreDraft();
@@ -2091,6 +2262,7 @@ setTimeout(() => {
 window.addEventListener("focus", () => {
   authContext = resolveAuthContext();
   applyAuthUiState();
+  refreshPrinterStatus();
   loadPrefixRules();
   loadPrefixRulesAdmin();
   loadDevicesList();
