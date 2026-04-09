@@ -98,22 +98,37 @@ public class MainActivity extends AppCompatActivity {
                 .replace("\r", " ");
     }
 
+    private boolean hasPermission(String permission) {
+        return ActivityCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private boolean hasBluetoothConnectPermission() {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
             return true;
         }
-        return ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+        return hasPermission(Manifest.permission.BLUETOOTH_CONNECT);
+    }
+
+    private boolean hasBluetoothScanPermission() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+            return true;
+        }
+        return hasPermission(Manifest.permission.BLUETOOTH_SCAN);
     }
 
     private boolean ensureBluetoothPermission() {
-        if (hasBluetoothConnectPermission()) {
+        if (hasBluetoothConnectPermission() && hasBluetoothScanPermission()) {
             return true;
         }
-        ActivityCompat.requestPermissions(
-                this,
-                new String[]{Manifest.permission.BLUETOOTH_CONNECT},
+
+        runOnUiThread(() -> ActivityCompat.requestPermissions(
+                MainActivity.this,
+                new String[]{
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN
+                },
                 REQ_BT_PERMISSION
-        );
+        ));
         return false;
     }
 
@@ -270,14 +285,14 @@ public class MainActivity extends AppCompatActivity {
             return new PrinterResult(false, "Enable Bluetooth first", "");
         }
         if (!ensureBluetoothPermission()) {
-            return new PrinterResult(false, "Bluetooth permission requested. Tap connect again.", "");
+            return new PrinterResult(false, "Bluetooth permission requested. Allow Nearby devices, then tap connect again.", "");
         }
 
         BluetoothDevice target;
         try {
             target = findBondedZq620();
         } catch (SecurityException se) {
-            return new PrinterResult(false, "Bluetooth permission missing", "");
+            return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
         }
 
         if (target == null) {
@@ -295,7 +310,7 @@ public class MainActivity extends AppCompatActivity {
                 return new PrinterResult(true, "Connected", printerName);
             } catch (SecurityException se) {
                 closeSocketLocked();
-                return new PrinterResult(false, "Bluetooth permission missing", "");
+                return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
             } catch (IOException io) {
                 closeSocketLocked();
                 return new PrinterResult(false, "Could not connect to printer", "");
@@ -320,9 +335,9 @@ public class MainActivity extends AppCompatActivity {
             return new PrinterResult(false, "Empty print payload", "");
         }
 
-        if (!hasBluetoothConnectPermission()) {
+        if (!hasBluetoothConnectPermission() || !hasBluetoothScanPermission()) {
             if (!ensureBluetoothPermission()) {
-                return new PrinterResult(false, "Bluetooth permission requested. Try print again.", "");
+                return new PrinterResult(false, "Bluetooth permission requested. Allow Nearby devices, then try print again.", "");
             }
         }
 
@@ -346,7 +361,7 @@ public class MainActivity extends AppCompatActivity {
                 closeSocketLocked();
                 return new PrinterResult(false, "Print failed. Reconnect printer.", "");
             } catch (SecurityException se) {
-                return new PrinterResult(false, "Bluetooth permission missing", "");
+                return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
             }
         }
     }
