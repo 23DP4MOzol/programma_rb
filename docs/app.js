@@ -979,7 +979,43 @@ function csvEscape(value) {
   return text;
 }
 
-function exportVisibleDevicesCsv() {
+function isAndroidWebView() {
+  const ua = String(navigator.userAgent || "");
+  return /Android/i.test(ua) && (/\bwv\b/i.test(ua) || /; wv\)/i.test(ua));
+}
+
+async function copyTextToClipboard(text) {
+  const payload = String(text || "");
+  if (!payload) return false;
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    }
+  } catch {
+    // continue with legacy fallback
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = payload;
+    ta.setAttribute("readonly", "readonly");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.left = "-1000px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return Boolean(copied);
+  } catch {
+    return false;
+  }
+}
+
+async function exportVisibleDevicesCsv() {
   const rows = getFilteredRows();
   if (!rows.length) {
     setStatus("No rows to export", "error");
@@ -1004,18 +1040,45 @@ function exportVisibleDevicesCsv() {
   }
 
   const csv = lines.join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  a.href = url;
-  a.download = `devices_${stamp}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const filename = `devices_${stamp}.csv`;
 
-  setStatus(`Exported ${rows.length} row(s) to CSV`, "ok");
+  let downloaded = false;
+  try {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    downloaded = true;
+  } catch {
+    downloaded = false;
+  }
+
+  if (downloaded && !isAndroidWebView()) {
+    setStatus(`Exported ${rows.length} row(s) to CSV`, "ok");
+    return;
+  }
+
+  const copied = await copyTextToClipboard(csv);
+  if (copied) {
+    setStatus(`CSV copied (${rows.length} row(s)). Paste into a file named ${filename}.`, "ok");
+    return;
+  }
+
+  try {
+    const dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+    window.open(dataUrl, "_blank");
+    setStatus(`CSV opened in browser view. Save as ${filename}.`, "ok");
+    return;
+  } catch {
+    setStatus("CSV export is not supported on this device WebView. Use desktop browser for export.", "error");
+  }
 }
 
 async function syncNow() {
