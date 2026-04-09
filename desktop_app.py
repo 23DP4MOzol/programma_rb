@@ -2118,6 +2118,16 @@ class DesktopApp:
         self._editors.add(editor)
         editor.bind("<Destroy>", lambda _e: self._editors.discard(editor))
 
+    def _get_open_editor(self) -> DeviceEditor | None:
+        for ed in list(self._editors):
+            try:
+                if ed.winfo_exists():
+                    return ed
+            except Exception:
+                pass
+            self._editors.discard(ed)
+        return None
+
     def _refresh_open_editors_i18n(self) -> None:
         for ed in list(self._editors):
             try:
@@ -3488,6 +3498,22 @@ class DesktopApp:
         if not self._selected_serial:
             self._on_row_selected()
         if not self._selected_serial:
+            return
+
+        open_editor = self._get_open_editor()
+        if open_editor is not None:
+            try:
+                open_editor.deiconify()
+                open_editor.lift()
+                open_editor.focus_force()
+            except Exception:
+                pass
+
+            if getattr(open_editor, "serial", None) != self._selected_serial:
+                self._write_result(
+                    {"ok": False, "info": "Close current editor window before opening a different listing."},
+                    ok=False,
+                )
             return
 
         try:
