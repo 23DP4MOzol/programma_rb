@@ -14,6 +14,29 @@ const FALLBACK_PREFIX_HINTS = {
   "A3:5CG": { device_type: "laptop", make: "HP", model: "EliteBook 840 G10" },
 };
 
+const WEB_DEVICE_CATALOG = {
+  scanner: {
+    Zebra: ["DS2208", "DS8178", "TC52", "TC57", "MC3300", "TC21", "TC26"],
+    Honeywell: ["1900", "1902", "CT40", "EDA51"],
+    Datalogic: ["Gryphon", "Memor", "Magellan", "Skorpio"],
+  },
+  laptop: {
+    Lenovo: ["ThinkPad", "ThinkBook", "Yoga", "T14", "L14"],
+    Dell: ["Latitude", "XPS", "Precision"],
+    HP: ["EliteBook", "ProBook"],
+    Apple: ["MacBook Air", "MacBook Pro"],
+  },
+  tablet: {
+    Samsung: ["Galaxy Tab A", "Galaxy Tab S7", "Galaxy Tab S8", "Galaxy Tab Active3", "Galaxy Tab Active4 Pro"],
+    Apple: ["iPad", "iPad Pro", "iPad Air", "iPad Mini"],
+    Lenovo: ["Tab M10", "Tab P11"],
+  },
+  phone: {
+    Samsung: ["Galaxy S22", "Galaxy S23", "Galaxy XCover 5", "Galaxy XCover 6 Pro", "Galaxy XCover 7"],
+    Apple: ["iPhone 12", "iPhone 13", "iPhone 14", "iPhone 15", "iPhone SE"],
+  },
+};
+
 const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
 const AUTH_TOKEN_STORAGE_KEY = "rimi.inventory.auth_jwt";
@@ -143,7 +166,9 @@ const els = {
   type: document.getElementById("type"),
   statusSelect: document.getElementById("statusSelect"),
   make: document.getElementById("make"),
+  makeHint: document.getElementById("makeHint"),
   model: document.getElementById("model"),
+  modelHint: document.getElementById("modelHint"),
   fromStore: document.getElementById("fromStore"),
   toStore: document.getElementById("toStore"),
   comment: document.getElementById("comment"),
@@ -211,6 +236,8 @@ let pendingRegisterSerial = "";
 let prefixRulesCache = [];
 let selectedPrefixRuleId = "";
 let conflictResolve = null;
+let currentMakeSuggestion = "";
+let currentModelSuggestion = "";
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -258,6 +285,133 @@ function setIdentityEditable(enabled) {
   els.type.disabled = !enabled;
   els.make.readOnly = !enabled;
   els.model.readOnly = !enabled;
+  refreshInlineSuggestions();
+}
+
+function uniqueSorted(values) {
+  const map = new Map();
+  for (const value of values || []) {
+    const text = String(value || "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, text);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+function findInlineSuggestion(typedValue, options) {
+  const typed = String(typedValue || "").trim();
+  if (!typed) return "";
+  const lowerTyped = typed.toLowerCase();
+
+  for (const option of options || []) {
+    const text = String(option || "").trim();
+    if (!text) continue;
+    if (text.toLowerCase().startsWith(lowerTyped) && text.length > typed.length) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function makeCatalogForType(deviceType) {
+  const type = String(deviceType || "scanner").toLowerCase();
+  const catalog = WEB_DEVICE_CATALOG[type] || {};
+  return catalog;
+}
+
+function buildMakeSuggestions() {
+  const type = String(els.type?.value || "scanner").toLowerCase();
+  const catalog = makeCatalogForType(type);
+  const out = [];
+
+  out.push(...Object.keys(catalog));
+
+  for (const row of devicesCache || []) {
+    if (String(row?.device_type || "scanner").toLowerCase() !== type) continue;
+    const [make] = splitModel(row?.model || "");
+    if (make) out.push(make);
+  }
+
+  for (const hint of Object.values(prefixHintsByKey || {})) {
+    if (!hint) continue;
+    if (String(hint.device_type || "scanner").toLowerCase() !== type) continue;
+    if (hint.make) out.push(String(hint.make));
+  }
+
+  return uniqueSorted(out);
+}
+
+function buildModelSuggestions() {
+  const type = String(els.type?.value || "scanner").toLowerCase();
+  const makeTyped = String(els.make?.value || "").trim();
+  const makeLower = makeTyped.toLowerCase();
+  const catalog = makeCatalogForType(type);
+  const out = [];
+
+  if (makeTyped) {
+    for (const [catalogMake, models] of Object.entries(catalog)) {
+      if (catalogMake.toLowerCase() === makeLower) {
+        out.push(...(models || []));
+      }
+    }
+  } else {
+    for (const models of Object.values(catalog)) {
+      out.push(...(models || []));
+    }
+  }
+
+  for (const row of devicesCache || []) {
+    if (String(row?.device_type || "scanner").toLowerCase() !== type) continue;
+    const [rowMake, rowModel] = splitModel(row?.model || "");
+    if (makeTyped && rowMake.toLowerCase() !== makeLower) continue;
+    if (rowModel) out.push(rowModel);
+  }
+
+  for (const hint of Object.values(prefixHintsByKey || {})) {
+    if (!hint) continue;
+    if (String(hint.device_type || "scanner").toLowerCase() !== type) continue;
+    const hintMake = String(hint.make || "").trim();
+    if (makeTyped && hintMake.toLowerCase() !== makeLower) continue;
+    if (hint.model) out.push(String(hint.model));
+  }
+
+  return uniqueSorted(out);
+}
+
+function updateMakeInlineSuggestion() {
+  currentMakeSuggestion = "";
+  if (!els.makeHint) return;
+
+  if (els.make?.readOnly) {
+    els.makeHint.textContent = "";
+    return;
+  }
+
+  const typed = String(els.make?.value || "");
+  currentMakeSuggestion = findInlineSuggestion(typed, buildMakeSuggestions());
+  els.makeHint.textContent = currentMakeSuggestion || "";
+}
+
+function updateModelInlineSuggestion() {
+  currentModelSuggestion = "";
+  if (!els.modelHint) return;
+
+  if (els.model?.readOnly) {
+    els.modelHint.textContent = "";
+    return;
+  }
+
+  const typed = String(els.model?.value || "");
+  currentModelSuggestion = findInlineSuggestion(typed, buildModelSuggestions());
+  els.modelHint.textContent = currentModelSuggestion || "";
+}
+
+function refreshInlineSuggestions() {
+  updateMakeInlineSuggestion();
+  updateModelInlineSuggestion();
 }
 
 function setPopupVisibility(popupEl, visible) {
@@ -1147,6 +1301,7 @@ function resetIdentityFields() {
   els.type.value = "scanner";
   els.make.value = "";
   els.model.value = "";
+  refreshInlineSuggestions();
 }
 
 function resetForm() {
@@ -1167,6 +1322,7 @@ function fillFormFromDevice(device) {
   els.toStore.value = device.to_store || "";
   els.comment.value = device.comment || "";
   setIdentityEditable(false);
+  refreshInlineSuggestions();
   saveDraft();
 }
 
@@ -1179,6 +1335,7 @@ function applyGuess(guess) {
   if (guess.model) {
     els.model.value = guess.model;
   }
+  refreshInlineSuggestions();
   saveDraft();
 }
 
@@ -1599,6 +1756,7 @@ async function loadDevicesList() {
     );
     devicesCache = Array.isArray(data) ? data : [];
     renderDevicesList();
+    refreshInlineSuggestions();
     lastSuccessfulSyncAt = new Date().toISOString();
     setSyncInfo("up to date", "ok");
   } catch (error) {
@@ -1725,6 +1883,36 @@ els.lookupSerial.addEventListener("keydown", (e) => {
   input.addEventListener("change", saveDraft);
 });
 
+els.type.addEventListener("change", () => {
+  refreshInlineSuggestions();
+});
+
+els.make.addEventListener("input", () => {
+  updateMakeInlineSuggestion();
+  updateModelInlineSuggestion();
+});
+
+els.model.addEventListener("input", () => {
+  updateModelInlineSuggestion();
+});
+
+els.make.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  if (!currentMakeSuggestion) return;
+  els.make.value = currentMakeSuggestion;
+  saveDraft();
+  updateMakeInlineSuggestion();
+  updateModelInlineSuggestion();
+});
+
+els.model.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  if (!currentModelSuggestion) return;
+  els.model.value = currentModelSuggestion;
+  saveDraft();
+  updateModelInlineSuggestion();
+});
+
 els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
 els.syncNow.addEventListener("click", syncNow);
@@ -1830,6 +2018,7 @@ els.devicesList.addEventListener("click", (e) => {
 
 resetForm();
 applyWebLanguageLabels();
+refreshInlineSuggestions();
 updateQueueStatus();
 if (els.appVersion) {
   els.appVersion.textContent = `Version: ${WEB_APP_VERSION}`;

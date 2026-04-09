@@ -252,6 +252,30 @@ body {
   box-sizing: border-box;
 }
 
+.input-suggest-wrap {
+  position: relative;
+}
+
+.input-suggest-hint {
+  position: absolute;
+  inset: 0;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #b5bcc7;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
+  line-height: 1.35;
+}
+
+.input-suggest-wrap .input {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+}
+
 .input--large {
   font-size: 16px;
   padding: 12px 14px;
