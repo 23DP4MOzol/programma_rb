@@ -19,7 +19,7 @@ from serial_parsing import extract_preferred_serial, normalize_for_store
 from supabase_db import ALLOWED_STATUSES, Device, InventoryDB, SyncConflictError
 
 
-DEVICE_TYPES: list[str] = ["scanner", "laptop", "tablet", "phone", "other"]
+DEVICE_TYPES: list[str] = ["scanner", "laptop", "tablet", "phone", "printer", "other"]
 
 SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     # Prefix: ("device_type", "Make", "Make Model")
@@ -40,24 +40,68 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
 
 DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
     "scanner": {
-        "Zebra": ["Zebra DS2208", "Zebra DS8178", "Zebra TC52", "Zebra TC57", "Zebra MC3300", "Zebra TC21", "Zebra TC26"],
-        "Honeywell": ["Honeywell 1900", "Honeywell 1902", "Honeywell CT40", "Honeywell EDA51"],
-        "Datalogic": ["Datalogic Gryphon", "Datalogic Memor", "Datalogic Magellan", "Datalogic Skorpio"],
+        "Zebra": ["DS2208", "DS2278", "DS3608", "DS3678", "DS4608", "DS4678", "DS8108", "DS8178", "DS9308", "LI2208", "LS2208", "RS5100", "RS6100", "SE4710", "TC20", "TC21", "TC22", "TC25", "TC26", "TC51", "TC52", "TC53", "TC53-HC", "TC56", "TC57", "TC58", "TC58-HC", "TC70", "TC70x", "TC72", "TC75", "TC75x", "TC77", "MC40", "MC55", "MC67", "MC92N0", "MC93", "MC2200", "MC2700", "MC3300", "MC3300x", "MC3390x", "WS50"],
+        "Honeywell": ["Granit 1280i", "Granit 1910i", "Granit 1980i", "Hyperion 1300g", "Voyager 1200g", "Voyager 1250g", "Voyager 1450g", "Voyager 1470g", "Xenon 1900", "Xenon 1950g", "Xenon XP 1952g", "CT30 XP", "CT40", "CT45", "CT47", "CT60", "CT60 XP", "EDA51", "EDA52", "EDA61K", "ScanPal EDA10A", "Dolphin CK65"],
+        "Datalogic": ["Gryphon GD4500", "Gryphon GBT4500", "Gryphon GM4500", "QuickScan QD2430", "QuickScan QD2500", "PowerScan PD9630", "PowerScan PM9600", "PowerScan PBT9600", "Memor 10", "Memor 11", "Skorpio X4", "Skorpio X5", "Falcon X4", "Joya Touch"],
+        "Unitech": ["HT330", "HT730", "EA520", "EA630", "EA660", "PA760", "MS852B", "MS926"],
+        "Urovo": ["DT40", "DT50", "DT66", "RT40", "RT40S", "K319", "i6200S"],
+        "Newland": ["MT90", "MT93", "MT95", "NLS-HR52", "NLS-HR3280", "NLS-FM430", "NLS-MT67"],
+        "CipherLab": ["RS35", "RS36", "RK25", "RK95", "9700", "2500", "2504"],
+        "Bluebird": ["EF401", "EF501", "S20", "RFR901", "BIP-1300"],
+        "Chainway": ["C61", "C66", "C72", "C75", "R3", "R5"],
+        "Panasonic": ["TOUGHBOOK N1", "TOUGHBOOK L1", "TOUGHBOOK A3"],
     },
     "laptop": {
-        "Lenovo": ["Lenovo ThinkPad", "Lenovo ThinkBook", "Lenovo Yoga", "Lenovo T14", "Lenovo L14"],
-        "Dell": ["Dell Latitude", "Dell XPS", "Dell Precision"],
-        "HP": ["HP EliteBook", "HP ProBook"],
-        "Apple": ["Apple MacBook Air", "Apple MacBook Pro"],
+        "Lenovo": ["ThinkPad T14", "ThinkPad T14s", "ThinkPad T15", "ThinkPad X1 Carbon", "ThinkPad X1 Yoga", "ThinkPad L14", "ThinkPad L15", "ThinkPad E14", "ThinkPad E15", "ThinkBook 14", "ThinkBook 15", "Yoga 7", "Yoga 9", "V15"],
+        "Dell": ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15"],
+        "HP": ["EliteBook 830 G8", "EliteBook 830 G9", "EliteBook 840 G8", "EliteBook 840 G9", "EliteBook 840 G10", "EliteBook 850 G8", "ProBook 440 G8", "ProBook 450 G8", "ProBook 440 G9", "ProBook 450 G9", "ZBook Firefly 14", "ZBook Power 15"],
+        "Apple": ["MacBook Air 13 M1", "MacBook Air 13 M2", "MacBook Air 15 M2", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16"],
+        "Acer": ["TravelMate P2", "TravelMate P4", "Aspire 5", "Swift 3", "Swift Go"],
+        "ASUS": ["ExpertBook B1", "ExpertBook B5", "ZenBook 14", "VivoBook 15", "ROG Zephyrus G14"],
+        "Microsoft": ["Surface Laptop 4", "Surface Laptop 5", "Surface Laptop 6", "Surface Pro 8", "Surface Pro 9"],
+        "Fujitsu": ["LIFEBOOK U7411", "LIFEBOOK U7511", "LIFEBOOK U9311", "LIFEBOOK E5511"],
     },
     "tablet": {
-        "Samsung": ["Samsung Galaxy Tab A", "Samsung Galaxy Tab S7", "Samsung Galaxy Tab S8", "Samsung Galaxy Tab Active3", "Samsung Galaxy Tab Active4 Pro"],
-        "Apple": ["Apple iPad", "Apple iPad Pro", "Apple iPad Air", "Apple iPad Mini"],
-        "Lenovo": ["Lenovo Tab M10", "Lenovo Tab P11"],
+        "Samsung": ["Galaxy Tab A7", "Galaxy Tab A8", "Galaxy Tab S6 Lite", "Galaxy Tab S7", "Galaxy Tab S8", "Galaxy Tab S9", "Galaxy Tab Active3", "Galaxy Tab Active4 Pro", "Galaxy Tab Active5"],
+        "Apple": ["iPad 9th Gen", "iPad 10th Gen", "iPad Air 5", "iPad Mini 6", "iPad Pro 11", "iPad Pro 12.9"],
+        "Lenovo": ["Tab M10", "Tab M11", "Tab P11", "Tab P12", "ThinkPad X12 Detachable"],
+        "Zebra": ["ET40", "ET45", "L10", "XSLATE L10"],
+        "Honeywell": ["RT10A", "RT10W"],
+        "Microsoft": ["Surface Go 3", "Surface Go 4", "Surface Pro 9"],
+        "Panasonic": ["TOUGHBOOK G2", "TOUGHBOOK A3", "TOUGHBOOK FZ-G1"],
+        "Getac": ["UX10", "K120", "F110"],
     },
     "phone": {
-        "Samsung": ["Samsung Galaxy S22", "Samsung Galaxy S23", "Samsung Galaxy XCover 5", "Samsung Galaxy XCover 6 Pro", "Samsung Galaxy XCover 7"],
-        "Apple": ["Apple iPhone 12", "Apple iPhone 13", "Apple iPhone 14", "Apple iPhone 15", "Apple iPhone SE"],
+        "Samsung": ["Galaxy S21", "Galaxy S22", "Galaxy S23", "Galaxy S24", "Galaxy A54", "Galaxy A55", "Galaxy XCover 5", "Galaxy XCover 6 Pro", "Galaxy XCover 7"],
+        "Apple": ["iPhone 11", "iPhone 12", "iPhone 13", "iPhone 14", "iPhone 15", "iPhone 16", "iPhone SE"],
+        "Google": ["Pixel 6", "Pixel 7", "Pixel 8", "Pixel 8a", "Pixel Fold"],
+        "Nokia": ["XR20", "XR21", "G42"],
+        "Motorola": ["Moto G54", "Moto G84", "ThinkPhone", "Defy 2"],
+        "Xiaomi": ["Redmi Note 12", "Redmi Note 13", "Xiaomi 13T", "Xiaomi 14"],
+    },
+    "printer": {
+        "Zebra": ["ZD220", "ZD230", "ZD421", "ZD621", "ZT111", "ZT231", "ZT411", "ZT421", "GK420d", "GX430t", "QLn220", "QLn320", "ZQ310", "ZQ320", "ZQ511", "ZQ521", "ZR138"],
+        "Honeywell": ["PC42t", "PC43d", "PD45", "PM45", "PX940", "RP2", "RP4", "MPD31D"],
+        "TSC": ["TE200", "TE210", "DA210", "MH241", "ML240P", "Alpha-30L"],
+        "SATO": ["WS2", "CL4NX Plus", "CT4-LX", "PW2NX", "PW4NX"],
+        "Brother": ["QL-820NWB", "QL-1110NWB", "RJ-2030", "RJ-2050", "TD-4420DN"],
+        "Epson": ["TM-T20III", "TM-T88VI", "TM-L90", "ColorWorks C4000", "ColorWorks C6000"],
+        "Bixolon": ["XD3-40d", "XT5-40", "XM7-40", "SPP-R310", "SRP-350III"],
+        "Toshiba Tec": ["BV420D", "B-FV4", "BA420T", "B-EX4T1"],
+        "Citizen": ["CL-E321", "CL-E720", "CMP-30II", "CT-S801III"],
+        "Godex": ["GE300", "RT700i", "ZX420i", "MX30i"],
+    },
+    "other": {
+        "Elo": ["I-Series 4", "I-Series 5", "EloPOS Z20", "Elo Backpack"],
+        "NCR": ["RealPOS XR7", "RealPOS XR8", "NCR SelfServ 80"],
+        "Toshiba": ["TCx810", "TCx820", "SurePOS 700"],
+        "HP": ["Engage One", "Engage Flex Pro", "RP9"],
+        "Epson": ["DM-D30", "TM-m30", "TM-U220"],
+        "Ingenico": ["Move 5000", "Desk 3500", "Lane 3000"],
+        "Verifone": ["V200c", "P400", "M400", "e285"],
+        "Datalogic": ["Magellan 1500i", "Magellan 3410VSi", "Joya Touch A6"],
+        "Zebra": ["CC600", "CC6000", "DS9308 Scale", "MP7000"],
+        "Other": ["POS Terminal", "Cash Drawer", "Customer Display", "Label Applicator", "Scale", "Kiosk", "RFID Reader", "Access Point", "Docking Station", "Charging Cradle"],
     },
 }
 

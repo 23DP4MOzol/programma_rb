@@ -131,6 +131,7 @@
     "type_laptop": "Portatīvais",
     "type_tablet": "Planšete",
     "type_phone": "Telefons",
+    "type_printer": "Printeris",
     "type_other": "Cits"
   },
   "en": {
@@ -265,6 +266,7 @@
     "type_laptop": "Laptop",
     "type_tablet": "Tablet",
     "type_phone": "Phone",
+    "type_printer": "Printer",
     "type_other": "Other"
   }
 }
