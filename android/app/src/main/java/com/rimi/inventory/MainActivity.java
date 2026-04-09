@@ -3,6 +3,7 @@ package com.rimi.inventory;
 import android.annotation.SuppressLint;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.pm.ActivityInfo;
@@ -20,6 +21,8 @@ import androidx.core.app.ActivityCompat;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -124,18 +127,101 @@ public class MainActivity extends AppCompatActivity {
             return null;
         }
 
-        BluetoothDevice fallback = null;
+        BluetoothDevice zebraLike = null;
+        BluetoothDevice imagingLike = null;
+        BluetoothDevice namedFallback = null;
+        List<BluetoothDevice> any = new ArrayList<>();
+
         for (BluetoothDevice device : bonded) {
+            any.add(device);
             String name = device.getName() == null ? "" : device.getName();
             String upper = name.toUpperCase();
+
             if (upper.contains("ZQ620")) {
                 return device;
             }
-            if (fallback == null && (upper.contains("ZQ6") || upper.contains("ZEBRA"))) {
-                fallback = device;
+
+            // Some Zebra mobile printers expose a serial-like BT name (e.g. XXZKJ222903269).
+            if (upper.matches("XX[A-Z0-9]{8,}")) {
+                return device;
+            }
+
+            if (
+                    zebraLike == null &&
+                    (
+                            upper.contains("ZQ6") ||
+                            upper.contains("ZEBRA") ||
+                            upper.contains("ZD") ||
+                            upper.contains("ZT") ||
+                            upper.contains("GK") ||
+                            upper.contains("QL") ||
+                            upper.contains("RW")
+                    )
+            ) {
+                zebraLike = device;
+            }
+
+            BluetoothClass klass = device.getBluetoothClass();
+            if (
+                    imagingLike == null &&
+                    klass != null &&
+                    klass.getMajorDeviceClass() == BluetoothClass.Device.Major.IMAGING
+            ) {
+                imagingLike = device;
+            }
+
+            if (namedFallback == null && !name.trim().isEmpty()) {
+                namedFallback = device;
             }
         }
-        return fallback;
+
+        if (zebraLike != null) {
+            return zebraLike;
+        }
+        if (imagingLike != null) {
+            return imagingLike;
+        }
+        if (any.size() == 1) {
+            return any.get(0);
+        }
+        if (namedFallback != null) {
+            return namedFallback;
+        }
+        return any.get(0);
+    }
+
+    @SuppressLint("MissingPermission")
+    private String describeBondedDevices() {
+        if (bluetoothAdapter == null) {
+            return "Bluetooth unavailable";
+        }
+        Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+        if (bonded == null || bonded.isEmpty()) {
+            return "none";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        for (BluetoothDevice device : bonded) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            String name = device.getName();
+            String address = device.getAddress();
+            if (name == null || name.trim().isEmpty()) {
+                name = "(unnamed)";
+            }
+            sb.append(name);
+            if (address != null && !address.trim().isEmpty()) {
+                sb.append(" [").append(address).append("]");
+            }
+            i++;
+            if (i >= 6) {
+                sb.append(" ...");
+                break;
+            }
+        }
+        return sb.toString();
     }
 
     @SuppressLint("MissingPermission")
@@ -195,7 +281,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (target == null) {
-            return new PrinterResult(false, "No bonded ZQ620 printer found", "");
+            return new PrinterResult(false, "No suitable bonded printer found. Bonded devices: " + describeBondedDevices(), "");
         }
 
         synchronized (printerLock) {
