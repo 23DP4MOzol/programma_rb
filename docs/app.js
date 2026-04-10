@@ -647,7 +647,7 @@ function setPrinterHealthField(element, text, tone = "info") {
   } else if (tone === "ok") {
     element.style.color = "#0a7a2f";
   } else {
-    element.style.color = "#1a1a1a";
+    element.style.color = "var(--ink)";
   }
 }
 

@@ -289,7 +289,20 @@ body.theme-dark {
   padding: 10px 12px;
   font-size: 14px;
   background: var(--surface);
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
   box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--hint);
+  opacity: 1;
+}
+
+.input option {
+  color: var(--ink);
+  background: var(--surface);
 }
 
 .input-suggest-wrap {
