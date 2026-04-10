@@ -624,7 +624,7 @@ function buildAssetStickerZpl(device) {
     `^FO20,28^A0N,38,38^FB536,1,0,C^FD${topLine}^FS`,
     `^FO188,98^BQN,2,6^FDLA,${serial}^FS`,
     ...(commentLine ? [`^FO20,296^A0N,24,24^FB536,1,0,C^FD${commentLine}^FS`] : []),
-    `^FO20,326^A0N,34,34^FB536,1,0,C^FD${serial}^FS`,
+    `^FO20,318^A0N,34,34^FB536,1,0,C^FD${serial}^FS`,
     "^XZ",
   ].join("\n");
 }
