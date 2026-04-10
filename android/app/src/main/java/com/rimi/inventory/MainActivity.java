@@ -11,6 +11,9 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -29,11 +32,14 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
     private static final int REQ_BT_PERMISSION = 7001;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final String LOCAL_WEB_URL = "file:///android_asset/web/index.html";
 
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSocket printerSocket;
     private BluetoothDevice connectedPrinter;
     private final Object printerLock = new Object();
+    private WebView appWebView;
+    private boolean localWebFallbackLoaded = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -45,20 +51,62 @@ public class MainActivity extends AppCompatActivity {
 
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
-        WebView webView = findViewById(R.id.webview);
-        WebSettings settings = webView.getSettings();
+        appWebView = findViewById(R.id.webview);
+        WebSettings settings = appWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
 
-        webView.setWebViewClient(new WebViewClient());
-        webView.addJavascriptInterface(new AndroidPrinterBridge(), "AndroidPrinter");
-        webView.clearCache(true);
-        webView.clearHistory();
+        appWebView.setWebViewClient(new InventoryWebViewClient());
+        appWebView.addJavascriptInterface(new AndroidPrinterBridge(), "AndroidPrinter");
+        appWebView.clearCache(true);
+        appWebView.clearHistory();
+        loadRemoteWebApp();
+    }
+
+    private void loadRemoteWebApp() {
+        if (appWebView == null) {
+            return;
+        }
         String cacheBust = String.valueOf(System.currentTimeMillis());
-        webView.loadUrl(getString(R.string.web_app_url) + "?v=" + cacheBust);
+        appWebView.loadUrl(getString(R.string.web_app_url) + "?v=" + cacheBust);
+    }
+
+    private void loadLocalWebFallback() {
+        if (appWebView == null || localWebFallbackLoaded) {
+            return;
+        }
+        localWebFallbackLoaded = true;
+        String cacheBust = String.valueOf(System.currentTimeMillis());
+        appWebView.loadUrl(LOCAL_WEB_URL + "?v=" + cacheBust);
+    }
+
+    private final class InventoryWebViewClient extends WebViewClient {
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            super.onReceivedError(view, request, error);
+            if (request != null && request.isForMainFrame()) {
+                loadLocalWebFallback();
+            }
+        }
+
+        @Override
+        public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+            super.onReceivedError(view, errorCode, description, failingUrl);
+            loadLocalWebFallback();
+        }
+
+        @Override
+        public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+            super.onReceivedHttpError(view, request, errorResponse);
+            if (request != null && request.isForMainFrame() && errorResponse != null && errorResponse.getStatusCode() >= 400) {
+                loadLocalWebFallback();
+            }
+        }
     }
 
     @Override

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rimi Inventory Scanner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="brand">
+          <img class="logo" src="logo_red.png" alt="RIMI logo" />
+          <div>
+            <div class="brand__name">Rimi Baltic</div>
+            <div class="brand__title">Inventory</div>
+          </div>
+        </div>
+        <div class="brand__subtitle">Device tracking</div>
+      </header>
+
+      <section class="card card--action">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Action</div>
+            <div class="card__subtitle">Scan scanner serial (S + 13/14 digits) or laptop QR first token (e.g. 5CG3285C9K,...)</div>
+          </div>
+          <div class="card__status-wrap">
+            <div class="card__status" id="status"></div>
+            <div class="card__queue" id="queueStatus"></div>
+          </div>
+        </div>
+
+        <label class="label" for="serial">Serial (scan here)</label>
+        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" maxlength="20" placeholder="S12345678901234 or 5CG3285C9K" />
+
+        <div class="grid">
+          <div>
+            <label class="label" for="type">Type</label>
+            <select id="type" class="input">
+              <option value="scanner">Scanner</option>
+              <option value="laptop">Laptop</option>
+              <option value="tablet">Tablet</option>
+              <option value="phone">Phone</option>
+              <option value="printer">Printer</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="statusSelect">Status</label>
+            <select id="statusSelect" class="input">
+              <option value="RECEIVED">Received</option>
+              <option value="PREPARING">Preparing</option>
+              <option value="PREPARED">Prepared</option>
+              <option value="SENT">Sent</option>
+              <option value="IN_USE">In use</option>
+              <option value="RETURNED">Returned</option>
+              <option value="RETIRED">Retired</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="make">Make</label>
+            <div class="input-suggest-wrap">
+              <span id="makeHint" class="input-suggest-hint" aria-hidden="true"></span>
+              <input id="make" class="input" type="text" autocomplete="off" />
+            </div>
+          </div>
+          <div>
+            <label class="label" for="model">Model</label>
+            <div class="input-suggest-wrap">
+              <span id="modelHint" class="input-suggest-hint" aria-hidden="true"></span>
+              <input id="model" class="input" type="text" autocomplete="off" />
+            </div>
+          </div>
+          <div>
+            <label class="label" for="fromStore">From store</label>
+            <input id="fromStore" class="input" type="text" />
+          </div>
+          <div>
+            <label class="label" for="toStore">To store</label>
+            <input id="toStore" class="input" type="text" />
+          </div>
+        </div>
+
+        <label class="label" for="comment">Comment</label>
+        <input id="comment" class="input" type="text" />
+
+        <div class="actions">
+          <div class="actions__buttons">
+            <button id="save" class="btn primary">Save / Update</button>
+            <button id="clear" class="btn">Clear</button>
+          </div>
+          <div class="actions__buttons">
+            <button id="printerConnect" class="btn btn--small">Connect ZQ620</button>
+            <button id="printSticker" class="btn btn--small">Print asset sticker</button>
+          </div>
+          <div id="printerStatus" class="status">Printer: not connected</div>
+        </div>
+      </section>
+
+      <section class="card" id="devicesCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Devices</div>
+            <div class="card__subtitle">Read-only list from database</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="listStatus"></div>
+            <button id="syncNow" class="btn btn--small">Sync now</button>
+            <button id="refreshList" class="btn btn--small">Refresh</button>
+            <button id="exportCsv" class="btn btn--small">Export CSV</button>
+          </div>
+        </div>
+        <div class="list-tools">
+          <div class="lookup-row">
+            <input id="lookupSerial" class="input" type="text" maxlength="20" placeholder="Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)" />
+            <button id="lookupLoad" class="btn btn--small">Load</button>
+          </div>
+          <input id="listFilter" class="input" type="text" placeholder="Filter by serial/model/status" />
+        </div>
+        <div class="table">
+          <div class="row row--head">
+            <span>Serial</span>
+            <span>Type</span>
+            <span>Model</span>
+            <span>Status</span>
+            <span>From</span>
+            <span>To</span>
+            <span>Comment</span>
+          </div>
+          <div id="devicesList" class="rows"></div>
+        </div>
+      </section>
+
+      <section class="card" id="diagnosticsCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Diagnostics</div>
+            <div class="card__subtitle">Current connectivity and sync health</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="diagStatus">Waiting...</div>
+            <button id="diagRefresh" class="btn btn--small">Refresh diagnostics</button>
+          </div>
+        </div>
+        <div class="diag-grid">
+          <div class="diag-item"><span>Online</span><strong id="diagOnline">-</strong></div>
+          <div class="diag-item"><span>Queue</span><strong id="diagQueue">-</strong></div>
+          <div class="diag-item"><span>Role</span><strong id="diagRole">-</strong></div>
+          <div class="diag-item"><span>Last sync</span><strong id="diagLastSync">-</strong></div>
+          <div class="diag-item diag-item--wide"><span>API</span><strong id="diagApi">-</strong></div>
+        </div>
+      </section>
+
+      <section class="card" id="auditCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Audit (Admin)</div>
+            <div class="card__subtitle">Change history from database (admin access required)</div>
+          </div>
+          <div class="card__status" id="auditStatus"></div>
+        </div>
+        <div class="list-tools">
+          <div class="lookup-row">
+            <input id="auditSerial" class="input" type="text" maxlength="20" placeholder="Optional serial filter" />
+            <button id="auditLoad" class="btn btn--small">Load audit</button>
+          </div>
+        </div>
+        <div class="table">
+          <div class="audit-row audit-row--head">
+            <span>Time</span>
+            <span>Operation</span>
+            <span>Serial</span>
+            <span>Actor</span>
+          </div>
+          <div id="auditList" class="audit-rows"></div>
+        </div>
+      </section>
+
+      <section class="card" id="prefixRulesCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Prefix Rules (Admin)</div>
+            <div class="card__subtitle">Manage DB prefix->device model mapping</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="prefixRulesStatus"></div>
+            <button id="prefixRulesRefresh" class="btn btn--small">Refresh rules</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label class="label" for="prefixKey">Prefix key</label>
+            <input id="prefixKey" class="input" type="text" maxlength="24" placeholder="A3:5CG or D2:24" />
+          </div>
+          <div>
+            <label class="label" for="prefixType">Type</label>
+            <select id="prefixType" class="input">
+              <option value="scanner">Scanner</option>
+              <option value="laptop">Laptop</option>
+              <option value="tablet">Tablet</option>
+              <option value="phone">Phone</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="prefixMake">Make</label>
+            <input id="prefixMake" class="input" type="text" maxlength="40" />
+          </div>
+          <div>
+            <label class="label" for="prefixModel">Model</label>
+            <input id="prefixModel" class="input" type="text" maxlength="80" />
+          </div>
+          <div>
+            <label class="label" for="prefixPriority">Priority</label>
+            <input id="prefixPriority" class="input" type="number" min="1" max="9999" value="100" />
+          </div>
+          <div class="check">
+            <input id="prefixActive" type="checkbox" checked />
+            <label for="prefixActive">Active</label>
+          </div>
+        </div>
+
+        <div class="actions__buttons">
+          <button id="prefixSave" class="btn primary">Save rule</button>
+          <button id="prefixDelete" class="btn">Delete rule</button>
+          <button id="prefixClear" class="btn">Clear form</button>
+        </div>
+
+        <div class="table">
+          <div class="prefix-row prefix-row--head">
+            <span>Key</span>
+            <span>Type</span>
+            <span>Make</span>
+            <span>Model</span>
+            <span>Priority</span>
+            <span>Active</span>
+          </div>
+          <div id="prefixRulesList" class="prefix-rows"></div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>Hosted on GitHub Pages</div>
+        <div class="footer__meta">
+          <span id="authInfo">Role: anon (operator, anon)</span>
+          <span id="appVersion">Version: web-2026.04.07</span>
+          <span id="syncInfo">Sync: waiting</span>
+        </div>
+      </footer>
+    </main>
+
+    <div id="scanPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="scanPopupTitle">
+      <div class="popup__card">
+        <div class="popup__title" id="scanPopupTitle">Scan result</div>
+        <div class="popup__message" id="scanPopupMessage"></div>
+        <div class="popup__actions">
+          <button id="scanPopupRegister" class="btn primary">Register new device</button>
+          <button id="scanPopupClose" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="conflictPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="conflictPopupTitle">
+      <div class="popup__card">
+        <div class="popup__title" id="conflictPopupTitle">Conflict detected</div>
+        <div class="popup__message" id="conflictPopupMessage">
+          This device was updated elsewhere. Choose how to continue.
+        </div>
+        <div class="popup__actions">
+          <button id="conflictReload" class="btn">Reload latest</button>
+          <button id="conflictOverwrite" class="btn primary">Overwrite with my values</button>
+          <button id="conflictCancel" class="btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
