@@ -48,6 +48,45 @@ public class MainActivity extends AppCompatActivity {
     private final Object printerLock = new Object();
     private WebView appWebView;
     private boolean localWebFallbackLoaded = false;
+    private boolean printerAclReceiverRegistered = false;
+
+    private final BroadcastReceiver printerAclReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent != null ? intent.getAction() : null;
+            if (!BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)
+                    && !BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED.equals(action)) {
+                return;
+            }
+
+            BluetoothDevice eventDevice = null;
+            try {
+                eventDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+            } catch (Exception ignored) {
+                // Ignore malformed intent extras.
+            }
+            if (eventDevice == null) {
+                return;
+            }
+
+            synchronized (printerLock) {
+                if (connectedPrinter == null) {
+                    return;
+                }
+                try {
+                    String connectedAddress = connectedPrinter.getAddress();
+                    String eventAddress = eventDevice.getAddress();
+                    if (connectedAddress != null
+                            && eventAddress != null
+                            && connectedAddress.equalsIgnoreCase(eventAddress)) {
+                        closeSocketLocked();
+                    }
+                } catch (SecurityException ignored) {
+                    // Permission races should not crash the app.
+                }
+            }
+        }
+    };
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -73,6 +112,7 @@ public class MainActivity extends AppCompatActivity {
         appWebView.addJavascriptInterface(new AndroidPrinterBridge(), "AndroidPrinter");
         appWebView.clearCache(true);
         appWebView.clearHistory();
+        registerPrinterAclReceiver();
         loadRemoteWebApp();
     }
 
@@ -119,10 +159,84 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        unregisterPrinterAclReceiver();
         super.onDestroy();
         synchronized (printerLock) {
             closeSocketLocked();
         }
+    }
+
+    private void registerPrinterAclReceiver() {
+        if (printerAclReceiverRegistered) {
+            return;
+        }
+        try {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+            filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
+            registerReceiver(printerAclReceiver, filter);
+            printerAclReceiverRegistered = true;
+        } catch (Exception ignored) {
+            // Best effort only.
+        }
+    }
+
+    private void unregisterPrinterAclReceiver() {
+        if (!printerAclReceiverRegistered) {
+            return;
+        }
+        try {
+            unregisterReceiver(printerAclReceiver);
+        } catch (Exception ignored) {
+            // Ignore unregister failures.
+        } finally {
+            printerAclReceiverRegistered = false;
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean isAclConnected(BluetoothDevice device) {
+        if (device == null) {
+            return false;
+        }
+        try {
+            java.lang.reflect.Method method = BluetoothDevice.class.getMethod("isConnected");
+            Object result = method.invoke(device);
+            if (result instanceof Boolean) {
+                return (Boolean) result;
+            }
+        } catch (Exception ignored) {
+            // Reflection may be unavailable on some OS variants.
+        }
+        return true;
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean hasLivePrinterConnectionLocked() {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            closeSocketLocked();
+            return false;
+        }
+        if (printerSocket == null || connectedPrinter == null) {
+            return false;
+        }
+
+        try {
+            if (!printerSocket.isConnected()) {
+                closeSocketLocked();
+                return false;
+            }
+        } catch (Exception ignored) {
+            closeSocketLocked();
+            return false;
+        }
+
+        if (!isAclConnected(connectedPrinter)) {
+            closeSocketLocked();
+            return false;
+        }
+
+        return true;
     }
 
     private static final class PrinterResult {
@@ -840,7 +954,7 @@ public class MainActivity extends AppCompatActivity {
         String printerAddress = "";
 
         synchronized (printerLock) {
-            if (printerSocket != null && printerSocket.isConnected()) {
+            if (hasLivePrinterConnectionLocked()) {
                 connected = true;
                 if (connectedPrinter != null) {
                     try {
@@ -881,7 +995,7 @@ public class MainActivity extends AppCompatActivity {
         } else if (connected) {
             message = "Connected";
         } else {
-            message = "Ready";
+            message = "Not connected";
         }
 
         return toJsonPrinterHealth(
@@ -900,7 +1014,7 @@ public class MainActivity extends AppCompatActivity {
 
     private PrinterResult getPrinterStatusInternal() {
         synchronized (printerLock) {
-            if (printerSocket != null && printerSocket.isConnected()) {
+            if (hasLivePrinterConnectionLocked()) {
                 String printerName = (connectedPrinter != null && connectedPrinter.getName() != null)
                         ? connectedPrinter.getName()
                         : "ZQ620";
@@ -922,7 +1036,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         synchronized (printerLock) {
-            if (printerSocket == null || !printerSocket.isConnected()) {
+            if (!hasLivePrinterConnectionLocked()) {
                 PrinterResult connectResult = connectZq620Internal();
                 if (!connectResult.ok) {
                     return connectResult;

@@ -169,6 +169,7 @@ const WEB_I18N = {
     uiSaveRule: "Save rule",
     uiDeleteRule: "Delete rule",
     uiClearForm: "Clear form",
+    uiClearFilters: "Clear filters",
     uiRefreshRules: "Refresh rules",
     uiLookupPlaceholder: "Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)",
     uiFilterPlaceholder: "Filter by serial/model/status",
@@ -304,6 +305,7 @@ const WEB_I18N = {
     uiSaveRule: "Saglabāt noteikumu",
     uiDeleteRule: "Dzēst noteikumu",
     uiClearForm: "Notīrīt formu",
+    uiClearFilters: "Notīrīt filtrus",
     uiRefreshRules: "Atjaunot noteikumus",
     uiLookupPlaceholder: "Meklē precīzu seriālu (S18167522504743 / 18167522504743 / 5CG3285C9K)",
     uiFilterPlaceholder: "Filtrē pēc seriāla/modeļa/statusa",
@@ -468,6 +470,7 @@ const els = {
   devicesList: document.getElementById("devicesList"),
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
+  listClear: document.getElementById("listClear"),
   refreshList: document.getElementById("refreshList"),
   syncNow: document.getElementById("syncNow"),
   exportCsv: document.getElementById("exportCsv"),
@@ -721,8 +724,14 @@ function refreshPrinterHealth({ silent = false } = {}) {
 
   if (connected) {
     setPrinterStatus(`Printer connected: ${printerName || "ZQ620"}`, "ok");
-  } else if (!silent) {
-    setPrinterStatus(`Printer: ${health.message || "not connected"}`, "info");
+  } else {
+    const msg = String(health.message || "not connected");
+    const lowered = msg.toLowerCase();
+    const tone =
+      lowered.includes("disabled") || lowered.includes("permission") || lowered.includes("unavailable")
+        ? "error"
+        : "info";
+    setPrinterStatus(`Printer: ${msg}`, tone);
   }
 }
 
@@ -1133,6 +1142,7 @@ function applyWebLanguageLabels() {
   if (els.refreshList) els.refreshList.textContent = trWeb("uiRefresh");
   if (els.exportCsv) els.exportCsv.textContent = trWeb("uiExportCsv");
   if (els.lookupLoad) els.lookupLoad.textContent = trWeb("uiLoad");
+  if (els.listClear) els.listClear.textContent = trWeb("uiClearFilters");
   if (els.diagRefresh) els.diagRefresh.textContent = trWeb("uiRefreshDiagnostics");
   if (els.auditLoad) els.auditLoad.textContent = trWeb("uiLoadAudit");
   if (els.prefixRulesRefresh) els.prefixRulesRefresh.textContent = trWeb("uiRefreshRules");
@@ -2621,6 +2631,20 @@ async function loadFromLookup() {
   await loadByScannedValue(cleaned, { allowGenericSingle: true });
 }
 
+function clearDevicesListTools() {
+  if (els.lookupSerial) {
+    els.lookupSerial.value = "";
+  }
+  if (els.listFilter) {
+    els.listFilter.value = "";
+  }
+  renderDevicesList();
+  setStatus(trWeb("msgCleared"));
+  if (els.listFilter) {
+    els.listFilter.focus();
+  }
+}
+
 els.serial.addEventListener("input", () => {
   els.serial.value = sanitizeSerialField(els.serial.value);
   clearTimeout(scanTimer);
@@ -2816,6 +2840,9 @@ els.clear.addEventListener("click", () => {
 });
 els.refreshList.addEventListener("click", loadDevicesList);
 els.listFilter.addEventListener("input", renderDevicesList);
+if (els.listClear) {
+  els.listClear.addEventListener("click", clearDevicesListTools);
+}
 
 els.devicesList.addEventListener("click", (e) => {
   const row = e.target.closest(".row[data-serial]");
