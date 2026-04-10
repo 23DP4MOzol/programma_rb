@@ -601,12 +601,15 @@ function zplSafe(value, maxLen = 40) {
 
 function buildAssetStickerZpl(device) {
   const serial = zplSafe(device?.serial || "-", 28);
-  const dbNo = zplSafe(String(device?.id || serial), 20);
   const [makeFromModel, modelFromModel] = splitModel(device?.model || "");
-  const make = zplSafe(makeFromModel || "-", 24);
-  const model = zplSafe(modelFromModel || device?.model || "-", 26);
-  const name = zplSafe(device?.name || `${make} ${model}`, 26);
-  const typeName = zplSafe(String(device?.device_type || "device").toUpperCase(), 20);
+  const make = zplSafe(makeFromModel || "-", 18);
+  const model = zplSafe(modelFromModel || device?.model || "-", 22);
+  const typeCode = String(device?.device_type || "device").trim().toLowerCase();
+  const translatedType = trWeb(`type_${typeCode}`);
+  const typeLabel = zplSafe(translatedType && translatedType !== `type_${typeCode}` ? translatedType : typeCode, 12);
+  const topLine = zplSafe(`${typeLabel} : ${make} ${model}`.replace(/\s+/g, " "), 44);
+  const commentRaw = String(device?.comment || "").trim();
+  const commentLine = commentRaw ? zplSafe(commentRaw, 48) : "";
 
   return [
     "^XA",
@@ -614,14 +617,11 @@ function buildAssetStickerZpl(device) {
     "^LL360",
     "^LH0,0",
     "^CI28",
-    "^FO20,20^A0N,36,36^FDASSET STICKER^FS",
-    `^FO20,70^A0N,26,26^FDName: ${name}^FS`,
-    `^FO20,105^A0N,26,26^FDMake: ${make}^FS`,
-    `^FO20,140^A0N,26,26^FDModel: ${model}^FS`,
-    `^FO20,175^A0N,26,26^FDType: ${typeName}^FS`,
-    `^FO20,210^A0N,26,26^FDDB No: ${dbNo}^FS`,
-    `^FO20,245^A0N,26,26^FDSerial: ${serial}^FS`,
-    `^FO340,70^BQN,2,5^FDLA,${serial}^FS`,
+    "^FO8,8^GB560,344,8^FS",
+    `^FO20,28^A0N,38,38^FB536,1,0,C^FD${topLine}^FS`,
+    `^FO188,98^BQN,2,6^FDLA,${serial}^FS`,
+    ...(commentLine ? [`^FO20,296^A0N,24,24^FB536,1,0,C^FD${commentLine}^FS`] : []),
+    `^FO20,326^A0N,34,34^FB536,1,0,C^FD${serial}^FS`,
     "^XZ",
   ].join("\n");
 }
