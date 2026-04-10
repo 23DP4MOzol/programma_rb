@@ -39,6 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String LOCAL_WEB_URL = "file:///android_asset/web/index.html";
     private static final long DISCOVERY_TIMEOUT_MS = 9000;
+    private static final long DISCOVERY_LIST_TIMEOUT_MS = 5500;
     private static final long BOND_TIMEOUT_MS = 9000;
 
     private BluetoothAdapter bluetoothAdapter;
@@ -136,6 +137,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private static final class PrinterCandidate {
+        final String name;
+        final String address;
+        final boolean bonded;
+
+        PrinterCandidate(String name, String address, boolean bonded) {
+            this.name = name;
+            this.address = address;
+            this.bonded = bonded;
+        }
+    }
+
     private String toJson(PrinterResult result) {
         return "{"
                 + "\"ok\":" + result.ok + ","
@@ -151,6 +164,56 @@ public class MainActivity extends AppCompatActivity {
                 .replace("\"", "\\\"")
                 .replace("\n", " ")
                 .replace("\r", " ");
+    }
+
+    private String toJsonPrinters(boolean ok, String message, List<PrinterCandidate> printers) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{")
+                .append("\"ok\":").append(ok).append(",")
+                .append("\"message\":\"").append(jsonEscape(message)).append("\",")
+                .append("\"printers\":[");
+
+        for (int i = 0; i < printers.size(); i++) {
+            PrinterCandidate p = printers.get(i);
+            if (i > 0) {
+                sb.append(",");
+            }
+            sb.append("{")
+                    .append("\"name\":\"").append(jsonEscape(p.name)).append("\",")
+                    .append("\"address\":\"").append(jsonEscape(p.address)).append("\",")
+                    .append("\"bonded\":").append(p.bonded)
+                    .append("}");
+        }
+
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private String toJsonPrinterHealth(
+            String message,
+            boolean bluetoothAvailable,
+            boolean bluetoothEnabled,
+            boolean connectPermission,
+            boolean scanPermission,
+            boolean locationPermission,
+            boolean connected,
+            String printer,
+            String address,
+            int bondedCount
+    ) {
+        return "{"
+                + "\"ok\":true,"
+                + "\"message\":\"" + jsonEscape(message) + "\"," 
+                + "\"bluetoothAvailable\":" + bluetoothAvailable + ","
+                + "\"bluetoothEnabled\":" + bluetoothEnabled + ","
+                + "\"connectPermission\":" + connectPermission + ","
+                + "\"scanPermission\":" + scanPermission + ","
+                + "\"locationPermission\":" + locationPermission + ","
+                + "\"connected\":" + connected + ","
+                + "\"printer\":\"" + jsonEscape(printer) + "\"," 
+                + "\"address\":\"" + jsonEscape(address) + "\"," 
+                + "\"bondedCount\":" + bondedCount
+                + "}";
     }
 
     private boolean hasPermission(String permission) {
@@ -416,6 +479,176 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @SuppressLint("MissingPermission")
+    private void addPrinterCandidate(List<PrinterCandidate> out, BluetoothDevice device) {
+        if (device == null || !isLikelyPrinter(device)) {
+            return;
+        }
+
+        String address;
+        try {
+            address = device.getAddress();
+        } catch (SecurityException se) {
+            return;
+        }
+        if (address == null || address.trim().isEmpty()) {
+            return;
+        }
+
+        for (PrinterCandidate c : out) {
+            if (address.equalsIgnoreCase(c.address)) {
+                return;
+            }
+        }
+
+        String name;
+        try {
+            name = device.getName();
+        } catch (SecurityException se) {
+            name = "";
+        }
+
+        boolean bonded = false;
+        try {
+            bonded = device.getBondState() == BluetoothDevice.BOND_BONDED;
+        } catch (SecurityException ignored) {
+            // Keep default false when state is inaccessible.
+        }
+
+        out.add(new PrinterCandidate(
+                (name == null || name.trim().isEmpty()) ? "(unnamed)" : name,
+                address,
+                bonded
+        ));
+    }
+
+    @SuppressLint("MissingPermission")
+    private List<BluetoothDevice> discoverNearbyPrinters(long timeoutMs) {
+        List<BluetoothDevice> discovered = new ArrayList<>();
+        if (bluetoothAdapter == null) {
+            return discovered;
+        }
+
+        final Object lock = new Object();
+
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent != null ? intent.getAction() : null;
+                if (!BluetoothDevice.ACTION_FOUND.equals(action)) {
+                    return;
+                }
+                try {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    if (device != null && isLikelyPrinter(device)) {
+                        String address = device.getAddress();
+                        if (address != null && !address.trim().isEmpty()) {
+                            boolean exists = false;
+                            for (BluetoothDevice d : discovered) {
+                                String dAddress = d.getAddress();
+                                if (dAddress != null && address.equalsIgnoreCase(dAddress)) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                discovered.add(device);
+                            }
+                        }
+                    }
+                    synchronized (lock) {
+                        lock.notifyAll();
+                    }
+                } catch (SecurityException ignored) {
+                    // Ignore permission races.
+                }
+            }
+        };
+
+        boolean registered = false;
+        try {
+            registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+            registered = true;
+
+            if (bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+            bluetoothAdapter.startDiscovery();
+
+            long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+            synchronized (lock) {
+                while (SystemClock.elapsedRealtime() < deadline) {
+                    long remaining = deadline - SystemClock.elapsedRealtime();
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    try {
+                        lock.wait(Math.min(remaining, 500));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        } catch (SecurityException ignored) {
+            return discovered;
+        } finally {
+            try {
+                if (bluetoothAdapter.isDiscovering()) {
+                    bluetoothAdapter.cancelDiscovery();
+                }
+            } catch (SecurityException ignored) {
+                // Ignore cleanup failures.
+            }
+
+            if (registered) {
+                try {
+                    unregisterReceiver(receiver);
+                } catch (Exception ignored) {
+                    // Ignore unregister failures.
+                }
+            }
+        }
+
+        return discovered;
+    }
+
+    @SuppressLint("MissingPermission")
+    private String listLikelyPrintersInternal() {
+        List<PrinterCandidate> candidates = new ArrayList<>();
+
+        if (bluetoothAdapter == null) {
+            return toJsonPrinters(false, "Bluetooth not available on this device", candidates);
+        }
+        if (!bluetoothAdapter.isEnabled()) {
+            return toJsonPrinters(false, "Enable Bluetooth first", candidates);
+        }
+        if (!ensureBluetoothPermission()) {
+            return toJsonPrinters(false, "Bluetooth permission requested. Allow Nearby devices, then tap Find printers again.", candidates);
+        }
+
+        try {
+            Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+            if (bonded != null) {
+                for (BluetoothDevice device : bonded) {
+                    addPrinterCandidate(candidates, device);
+                }
+            }
+        } catch (SecurityException ignored) {
+            return toJsonPrinters(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", candidates);
+        }
+
+        for (BluetoothDevice device : discoverNearbyPrinters(DISCOVERY_LIST_TIMEOUT_MS)) {
+            addPrinterCandidate(candidates, device);
+        }
+
+        if (candidates.isEmpty() && connectedPrinter != null) {
+            addPrinterCandidate(candidates, connectedPrinter);
+        }
+
+        return toJsonPrinters(true, candidates.isEmpty() ? "No likely printers found" : "ok", candidates);
+    }
+
+    @SuppressLint("MissingPermission")
     private String describeBondedDevices() {
         if (bluetoothAdapter == null) {
             return "Bluetooth unavailable";
@@ -531,6 +764,140 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private PrinterResult connectPrinterByAddressInternal(String address) {
+        if (bluetoothAdapter == null) {
+            return new PrinterResult(false, "Bluetooth not available on this device", "");
+        }
+        if (!bluetoothAdapter.isEnabled()) {
+            return new PrinterResult(false, "Enable Bluetooth first", "");
+        }
+        if (!ensureBluetoothPermission()) {
+            return new PrinterResult(false, "Bluetooth permission requested. Allow Nearby devices, then tap connect again.", "");
+        }
+
+        String targetAddress = address == null ? "" : address.trim();
+        if (targetAddress.isEmpty()) {
+            return new PrinterResult(false, "Select a printer first", "");
+        }
+
+        BluetoothDevice target = null;
+        try {
+            Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+            if (bonded != null) {
+                for (BluetoothDevice device : bonded) {
+                    String deviceAddress = device.getAddress();
+                    if (deviceAddress != null && targetAddress.equalsIgnoreCase(deviceAddress)) {
+                        target = device;
+                        break;
+                    }
+                }
+            }
+        } catch (SecurityException ignored) {
+            return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
+        }
+
+        if (target == null) {
+            try {
+                target = bluetoothAdapter.getRemoteDevice(targetAddress);
+            } catch (IllegalArgumentException iae) {
+                return new PrinterResult(false, "Invalid printer address", "");
+            }
+        }
+
+        if (!ensureBonded(target)) {
+            return new PrinterResult(false, "Could not pair with selected printer", "");
+        }
+
+        synchronized (printerLock) {
+            closeSocketLocked();
+            try {
+                bluetoothAdapter.cancelDiscovery();
+                BluetoothSocket socket = openSocket(target);
+                printerSocket = socket;
+                connectedPrinter = target;
+                String printerName = target.getName() == null ? "ZQ620" : target.getName();
+                return new PrinterResult(true, "Connected", printerName);
+            } catch (SecurityException se) {
+                closeSocketLocked();
+                return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
+            } catch (IOException io) {
+                closeSocketLocked();
+                return new PrinterResult(false, "Could not connect to selected printer", "");
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private String getPrinterHealthInternal() {
+        boolean bluetoothAvailable = bluetoothAdapter != null;
+        boolean bluetoothEnabled = bluetoothAvailable && bluetoothAdapter.isEnabled();
+        boolean connectPermission = hasBluetoothConnectPermission();
+        boolean scanPermission = hasBluetoothScanPermission();
+        boolean locationPermission = hasLegacyLocationPermission();
+
+        boolean connected = false;
+        String printerName = "";
+        String printerAddress = "";
+
+        synchronized (printerLock) {
+            if (printerSocket != null && printerSocket.isConnected()) {
+                connected = true;
+                if (connectedPrinter != null) {
+                    try {
+                        if (connectedPrinter.getName() != null) {
+                            printerName = connectedPrinter.getName();
+                        }
+                    } catch (SecurityException ignored) {
+                        printerName = "";
+                    }
+                    try {
+                        if (connectedPrinter.getAddress() != null) {
+                            printerAddress = connectedPrinter.getAddress();
+                        }
+                    } catch (SecurityException ignored) {
+                        printerAddress = "";
+                    }
+                }
+            }
+        }
+
+        int bondedCount = 0;
+        if (bluetoothAvailable) {
+            try {
+                Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+                bondedCount = bonded == null ? 0 : bonded.size();
+            } catch (SecurityException ignored) {
+                bondedCount = 0;
+            }
+        }
+
+        String message;
+        if (!bluetoothAvailable) {
+            message = "Bluetooth unavailable";
+        } else if (!bluetoothEnabled) {
+            message = "Bluetooth disabled";
+        } else if (!connectPermission || !scanPermission || !locationPermission) {
+            message = "Permission missing";
+        } else if (connected) {
+            message = "Connected";
+        } else {
+            message = "Ready";
+        }
+
+        return toJsonPrinterHealth(
+                message,
+                bluetoothAvailable,
+                bluetoothEnabled,
+                connectPermission,
+                scanPermission,
+                locationPermission,
+                connected,
+                printerName,
+                printerAddress,
+                bondedCount
+        );
+    }
+
     private PrinterResult getPrinterStatusInternal() {
         synchronized (printerLock) {
             if (printerSocket != null && printerSocket.isConnected()) {
@@ -586,8 +953,23 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public String listLikelyPrinters() {
+            return listLikelyPrintersInternal();
+        }
+
+        @JavascriptInterface
+        public String connectPrinterByAddress(String address) {
+            return toJson(connectPrinterByAddressInternal(address));
+        }
+
+        @JavascriptInterface
         public String getPrinterStatus() {
             return toJson(getPrinterStatusInternal());
+        }
+
+        @JavascriptInterface
+        public String getPrinterHealth() {
+            return getPrinterHealthInternal();
         }
 
         @JavascriptInterface

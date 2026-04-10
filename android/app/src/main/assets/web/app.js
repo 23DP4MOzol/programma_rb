@@ -220,7 +220,15 @@ const els = {
   clear: document.getElementById("clear"),
   printerConnect: document.getElementById("printerConnect"),
   printSticker: document.getElementById("printSticker"),
+  printerPicker: document.getElementById("printerPicker"),
+  printerRefresh: document.getElementById("printerRefresh"),
+  printerConnectSelected: document.getElementById("printerConnectSelected"),
   printerStatus: document.getElementById("printerStatus"),
+  printerHealthConnection: document.getElementById("printerHealthConnection"),
+  printerHealthTarget: document.getElementById("printerHealthTarget"),
+  printerHealthPerms: document.getElementById("printerHealthPerms"),
+  printerHealthBonded: document.getElementById("printerHealthBonded"),
+  printerHealthLastPrint: document.getElementById("printerHealthLastPrint"),
   devicesList: document.getElementById("devicesList"),
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
@@ -285,6 +293,8 @@ let selectedPrefixRuleId = "";
 let conflictResolve = null;
 let currentMakeSuggestion = "";
 let currentModelSuggestion = "";
+let printerCandidates = [];
+let lastPrinterPrintAt = "";
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -389,21 +399,168 @@ function findDeviceInCacheByToken(token) {
   );
 }
 
+function setPrinterHealthField(element, text, tone = "info") {
+  if (!element) return;
+  element.textContent = String(text || "-");
+  if (tone === "error") {
+    element.style.color = "#b00020";
+  } else if (tone === "ok") {
+    element.style.color = "#0a7a2f";
+  } else {
+    element.style.color = "#1a1a1a";
+  }
+}
+
+function formatLocalDateTime(iso) {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function renderPrinterPicker(candidates, selectedAddress = "") {
+  if (!els.printerPicker) return;
+  const safeList = Array.isArray(candidates) ? candidates : [];
+  printerCandidates = safeList;
+
+  const options = ['<option value="">Select printer...</option>'];
+  for (const item of safeList) {
+    const name = String(item?.name || "(unnamed)");
+    const address = String(item?.address || "");
+    if (!address) continue;
+    const bondedTag = item?.bonded ? " [bonded]" : " [new]";
+    const label = `${name}${bondedTag} (${address})`;
+    options.push(`<option value="${address}">${label}</option>`);
+  }
+
+  if (options.length === 1) {
+    options.push('<option value="">No printers found</option>');
+  }
+
+  els.printerPicker.innerHTML = options.join("");
+
+  const requested = String(selectedAddress || "").trim();
+  if (requested) {
+    els.printerPicker.value = requested;
+  }
+}
+
+function refreshPrinterHealth({ silent = false } = {}) {
+  if (!hasPrinterBridge()) {
+    setPrinterHealthField(els.printerHealthConnection, "Bridge unavailable", "error");
+    setPrinterHealthField(els.printerHealthTarget, "Android WebView only", "info");
+    setPrinterHealthField(els.printerHealthPerms, "Unknown", "info");
+    setPrinterHealthField(els.printerHealthBonded, "-", "info");
+    setPrinterHealthField(els.printerHealthLastPrint, formatLocalDateTime(lastPrinterPrintAt), "info");
+    if (!silent) {
+      setPrinterStatus("Printer bridge unavailable", "error");
+    }
+    return;
+  }
+
+  const health = callPrinterBridge("getPrinterHealth");
+  const connected = Boolean(health.connected);
+  const printerName = String(health.printer || "").trim();
+  const printerAddress = String(health.address || "").trim();
+  const targetText = printerName
+    ? `${printerName}${printerAddress ? ` (${printerAddress})` : ""}`
+    : els.printerPicker?.selectedOptions?.[0]?.textContent || "-";
+
+  const connectPermOk = Boolean(health.connectPermission);
+  const scanPermOk = Boolean(health.scanPermission);
+  const locationPermOk = Boolean(health.locationPermission);
+  const permissionTone = connectPermOk && scanPermOk && locationPermOk ? "ok" : "error";
+  const permissionText = `connect:${connectPermOk ? "ok" : "missing"}, scan:${scanPermOk ? "ok" : "missing"}, location:${locationPermOk ? "ok" : "missing"}`;
+
+  const connectionText = connected
+    ? `Connected${printerName ? ` (${printerName})` : ""}`
+    : String(health.message || "Not connected");
+
+  setPrinterHealthField(els.printerHealthConnection, connectionText, connected ? "ok" : "info");
+  setPrinterHealthField(els.printerHealthTarget, targetText, connected ? "ok" : "info");
+  setPrinterHealthField(els.printerHealthPerms, permissionText, permissionTone);
+  setPrinterHealthField(els.printerHealthBonded, String(health.bondedCount ?? "-"), "info");
+  setPrinterHealthField(els.printerHealthLastPrint, formatLocalDateTime(lastPrinterPrintAt), lastPrinterPrintAt ? "ok" : "info");
+
+  if (connected) {
+    setPrinterStatus(`Printer connected: ${printerName || "ZQ620"}`, "ok");
+  } else if (!silent) {
+    setPrinterStatus(`Printer: ${health.message || "not connected"}`, "info");
+  }
+}
+
+async function refreshPrinterCandidates({ silent = false } = {}) {
+  if (!hasPrinterBridge()) {
+    renderPrinterPicker([]);
+    refreshPrinterHealth({ silent: true });
+    if (!silent) {
+      setStatus("Printer integration is available only inside Android WebView APK", "error");
+    }
+    return;
+  }
+
+  const previouslySelected = String(els.printerPicker?.value || "").trim();
+  const result = callPrinterBridge("listLikelyPrinters");
+  const candidates = Array.isArray(result.printers) ? result.printers : [];
+  renderPrinterPicker(candidates, previouslySelected);
+
+  if (!silent) {
+    if (result.ok) {
+      setStatus(`Found ${candidates.length} printer(s)`, "ok");
+    } else {
+      setStatus(`Printer scan failed: ${result.message || "unknown error"}`, "error");
+    }
+  }
+
+  refreshPrinterHealth({ silent: true });
+}
+
+async function connectSelectedPrinter() {
+  if (!hasPrinterBridge()) {
+    setStatus("Printer integration is available only inside Android WebView APK", "error");
+    return;
+  }
+
+  const selectedAddress = String(els.printerPicker?.value || "").trim();
+  if (!selectedAddress) {
+    setStatus("Select a printer first", "error");
+    return;
+  }
+
+  const result = callPrinterBridge("connectPrinterByAddress", selectedAddress);
+  if (result.ok) {
+    const selected = printerCandidates.find((x) => String(x?.address || "") === selectedAddress);
+    const name = String(result.printer || selected?.name || "ZQ620");
+    setPrinterStatus(`Printer connected: ${name}`, "ok");
+    setStatus(`Connected selected printer: ${name}`, "ok");
+    await refreshPrinterCandidates({ silent: true });
+    refreshPrinterHealth({ silent: true });
+  } else {
+    setPrinterStatus(`Printer error: ${result.message || "connect failed"}`, "error");
+    setStatus(`Selected printer connect failed: ${result.message || "unknown error"}`, "error");
+    refreshPrinterHealth({ silent: true });
+  }
+}
+
 async function connectZq620Printer() {
   const result = callPrinterBridge("connectZq620");
   if (result.ok) {
     const printerName = String(result.printer || "ZQ620");
     setPrinterStatus(`Printer connected: ${printerName}`, "ok");
     setStatus(`Printer connected: ${printerName}`, "ok");
+    await refreshPrinterCandidates({ silent: true });
+    refreshPrinterHealth({ silent: true });
   } else {
     setPrinterStatus(`Printer error: ${result.message || "connect failed"}`, "error");
     setStatus(`Printer connect failed: ${result.message || "unknown error"}`, "error");
+    refreshPrinterHealth({ silent: true });
   }
 }
 
 function refreshPrinterStatus() {
   if (!hasPrinterBridge()) {
     setPrinterStatus("Printer bridge unavailable", "error");
+    refreshPrinterHealth({ silent: true });
     return;
   }
   const status = callPrinterBridge("getPrinterStatus");
@@ -413,6 +570,7 @@ function refreshPrinterStatus() {
   } else {
     setPrinterStatus(`Printer: ${status.message || "not connected"}`, "info");
   }
+  refreshPrinterHealth({ silent: true });
 }
 
 async function printAssetSticker() {
@@ -450,11 +608,14 @@ async function printAssetSticker() {
   const result = callPrinterBridge("printZpl", zpl);
   if (result.ok) {
     const serial = String(device.serial || cleaned);
+    lastPrinterPrintAt = new Date().toISOString();
     setStatus(`Sticker printed for ${serial}`, "ok");
     setPrinterStatus(`Printed: ${serial}`, "ok");
+    refreshPrinterHealth({ silent: true });
   } else {
     setStatus(`Print failed: ${result.message || "unknown error"}`, "error");
     setPrinterStatus(`Printer error: ${result.message || "print failed"}`, "error");
+    refreshPrinterHealth({ silent: true });
   }
 }
 
@@ -2132,6 +2293,19 @@ if (els.printerConnect) {
 if (els.printSticker) {
   els.printSticker.addEventListener("click", printAssetSticker);
 }
+if (els.printerRefresh) {
+  els.printerRefresh.addEventListener("click", () => {
+    refreshPrinterCandidates();
+  });
+}
+if (els.printerConnectSelected) {
+  els.printerConnectSelected.addEventListener("click", connectSelectedPrinter);
+}
+if (els.printerPicker) {
+  els.printerPicker.addEventListener("change", () => {
+    refreshPrinterHealth({ silent: true });
+  });
+}
 els.syncNow.addEventListener("click", syncNow);
 els.exportCsv.addEventListener("click", exportVisibleDevicesCsv);
 if (els.auditLoad) {
@@ -2242,6 +2416,8 @@ if (els.appVersion) {
 authContext = resolveAuthContext();
 applyAuthUiState();
 refreshPrinterStatus();
+refreshPrinterCandidates({ silent: true });
+refreshPrinterHealth({ silent: true });
 setSyncInfo(navigator.onLine ? "starting" : "offline", navigator.onLine ? "info" : "error");
 updateDiagnosticsPanel();
 const recoveredDraft = restoreDraft();
@@ -2265,6 +2441,8 @@ window.addEventListener("focus", () => {
   authContext = resolveAuthContext();
   applyAuthUiState();
   refreshPrinterStatus();
+  refreshPrinterCandidates({ silent: true });
+  refreshPrinterHealth({ silent: true });
   loadPrefixRules();
   loadPrefixRulesAdmin();
   loadDevicesList();

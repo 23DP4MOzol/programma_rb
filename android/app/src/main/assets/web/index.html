@@ -94,7 +94,36 @@
             <button id="printerConnect" class="btn btn--small">Connect ZQ620</button>
             <button id="printSticker" class="btn btn--small">Print asset sticker</button>
           </div>
+          <div class="actions__buttons actions__buttons--printer-picker">
+            <select id="printerPicker" class="input">
+              <option value="">Select printer...</option>
+            </select>
+            <button id="printerRefresh" class="btn btn--small">Find printers</button>
+            <button id="printerConnectSelected" class="btn btn--small">Connect selected</button>
+          </div>
           <div id="printerStatus" class="status">Printer: not connected</div>
+          <div class="printer-health" id="printerHealth">
+            <div class="printer-health__item">
+              <span>Connection</span>
+              <strong id="printerHealthConnection">-</strong>
+            </div>
+            <div class="printer-health__item">
+              <span>Target</span>
+              <strong id="printerHealthTarget">-</strong>
+            </div>
+            <div class="printer-health__item">
+              <span>Permissions</span>
+              <strong id="printerHealthPerms">-</strong>
+            </div>
+            <div class="printer-health__item">
+              <span>Bonded</span>
+              <strong id="printerHealthBonded">-</strong>
+            </div>
+            <div class="printer-health__item printer-health__item--wide">
+              <span>Last print</span>
+              <strong id="printerHealthLastPrint">-</strong>
+            </div>
+          </div>
         </div>
       </section>
 
