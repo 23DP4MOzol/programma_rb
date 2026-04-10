@@ -6,9 +6,14 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
@@ -33,6 +38,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_BT_PERMISSION = 7001;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String LOCAL_WEB_URL = "file:///android_asset/web/index.html";
+    private static final long DISCOVERY_TIMEOUT_MS = 9000;
+    private static final long BOND_TIMEOUT_MS = 9000;
 
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSocket printerSocket;
@@ -164,7 +171,27 @@ public class MainActivity extends AppCompatActivity {
         return hasPermission(Manifest.permission.BLUETOOTH_SCAN);
     }
 
+    private boolean hasLegacyLocationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            return true;
+        }
+        return hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                || hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION);
+    }
+
     private boolean ensureBluetoothPermission() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+            if (hasLegacyLocationPermission()) {
+                return true;
+            }
+            runOnUiThread(() -> ActivityCompat.requestPermissions(
+                    MainActivity.this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    REQ_BT_PERMISSION
+            ));
+            return false;
+        }
+
         if (hasBluetoothConnectPermission() && hasBluetoothScanPermission()) {
             return true;
         }
@@ -253,6 +280,141 @@ public class MainActivity extends AppCompatActivity {
         return any.get(0);
     }
 
+    private boolean isLikelyPrinterName(String upperName) {
+        if (upperName == null) return false;
+        return upperName.contains("ZQ620")
+                || upperName.matches("XX[A-Z0-9]{8,}")
+                || upperName.contains("ZQ6")
+                || upperName.contains("ZEBRA")
+                || upperName.contains("ZD")
+                || upperName.contains("ZT")
+                || upperName.contains("GK")
+                || upperName.contains("QL")
+                || upperName.contains("RW");
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean isLikelyPrinter(BluetoothDevice device) {
+        if (device == null) return false;
+        String name = device.getName() == null ? "" : device.getName().toUpperCase();
+        if (isLikelyPrinterName(name)) {
+            return true;
+        }
+
+        BluetoothClass klass = device.getBluetoothClass();
+        return klass != null && klass.getMajorDeviceClass() == BluetoothClass.Device.Major.IMAGING;
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean waitForBond(BluetoothDevice device, long timeoutMs) {
+        if (device == null) return false;
+        long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
+                return true;
+            }
+            SystemClock.sleep(250);
+        }
+        return device.getBondState() == BluetoothDevice.BOND_BONDED;
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean ensureBonded(BluetoothDevice device) {
+        if (device == null) {
+            return false;
+        }
+        if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
+            return true;
+        }
+        try {
+            device.createBond();
+            return waitForBond(device, BOND_TIMEOUT_MS);
+        } catch (SecurityException ignored) {
+            return false;
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private BluetoothDevice discoverNearbyPrinter(long timeoutMs) {
+        if (bluetoothAdapter == null) {
+            return null;
+        }
+
+        final Object lock = new Object();
+        final BluetoothDevice[] found = new BluetoothDevice[1];
+
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent != null ? intent.getAction() : null;
+                if (!BluetoothDevice.ACTION_FOUND.equals(action)) {
+                    return;
+                }
+                try {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    if (device != null && isLikelyPrinter(device) && found[0] == null) {
+                        found[0] = device;
+                        synchronized (lock) {
+                            lock.notifyAll();
+                        }
+                    }
+                } catch (SecurityException ignored) {
+                    // Ignore permission race
+                }
+            }
+        };
+
+        boolean registered = false;
+        try {
+            registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+            registered = true;
+
+            if (bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+            bluetoothAdapter.startDiscovery();
+
+            long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+            synchronized (lock) {
+                while (found[0] == null && SystemClock.elapsedRealtime() < deadline) {
+                    long remaining = deadline - SystemClock.elapsedRealtime();
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    try {
+                        lock.wait(Math.min(remaining, 500));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        } catch (SecurityException ignored) {
+            return null;
+        } finally {
+            try {
+                if (bluetoothAdapter.isDiscovering()) {
+                    bluetoothAdapter.cancelDiscovery();
+                }
+            } catch (SecurityException ignored) {
+                // Ignore cleanup failures
+            }
+
+            if (registered) {
+                try {
+                    unregisterReceiver(receiver);
+                } catch (Exception ignored) {
+                    // Ignore unregister failures
+                }
+            }
+        }
+
+        if (found[0] != null && ensureBonded(found[0])) {
+            return found[0];
+        }
+        return null;
+    }
+
     @SuppressLint("MissingPermission")
     private String describeBondedDevices() {
         if (bluetoothAdapter == null) {
@@ -339,6 +501,9 @@ public class MainActivity extends AppCompatActivity {
         BluetoothDevice target;
         try {
             target = findBondedZq620();
+            if (target == null) {
+                target = discoverNearbyPrinter(DISCOVERY_TIMEOUT_MS);
+            }
         } catch (SecurityException se) {
             return new PrinterResult(false, "Bluetooth permission missing. Allow Nearby devices in Android settings.", "");
         }

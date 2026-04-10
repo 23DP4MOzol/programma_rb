@@ -1179,11 +1179,12 @@ function isGenericToken(token) {
   return GENERIC_SERIAL_RE.test(token || "");
 }
 
-function extractPreferredSerial(rawValue) {
+function extractPreferredSerial(rawValue, options = {}) {
   const tokens = tokenizeScan(rawValue);
   if (!tokens.length) return null;
 
-  const mode = String(els.type?.value || "scanner").toLowerCase();
+  const mode = String(options.mode || els.type?.value || "scanner").toLowerCase();
+  const allowGenericSingle = options.allowGenericSingle === true;
   const hasDelimitedPayload = /[,;|]/.test(String(rawValue || ""));
 
   const scanner = tokens.find((t) => isScannerToken(t));
@@ -1202,7 +1203,7 @@ function extractPreferredSerial(rawValue) {
   if (isScannerToken(only) || isPlainScannerToken(only)) {
     return only;
   }
-  if ((mode === "laptop" || mode === "other") && isGenericToken(only)) return only;
+  if ((mode === "laptop" || mode === "other" || allowGenericSingle) && isGenericToken(only)) return only;
   return null;
 }
 
@@ -1729,8 +1730,10 @@ async function processQueuedSaves() {
   }
 }
 
-async function loadByScannedValue(rawValue) {
-  const token = extractPreferredSerial(rawValue);
+async function loadByScannedValue(rawValue, options = {}) {
+  const token = extractPreferredSerial(rawValue, {
+    allowGenericSingle: options.allowGenericSingle === true,
+  });
   if (!token) {
     if (String(rawValue || "").trim()) {
       els.serial.value = "";
@@ -2041,7 +2044,7 @@ async function loadAuditLogs() {
 }
 
 async function loadFromLookup() {
-  const token = extractPreferredSerial(els.lookupSerial.value);
+  const token = extractPreferredSerial(els.lookupSerial.value, { allowGenericSingle: true });
   if (!token) {
     setStatus("Enter serial in scanner or laptop format", "error");
     return;
@@ -2050,7 +2053,7 @@ async function loadFromLookup() {
   els.lookupSerial.value = cleaned;
   els.serial.value = cleaned;
   saveDraft();
-  await loadByScannedValue(cleaned);
+  await loadByScannedValue(cleaned, { allowGenericSingle: true });
 }
 
 els.serial.addEventListener("input", () => {
@@ -2223,9 +2226,8 @@ els.listFilter.addEventListener("input", renderDevicesList);
 els.devicesList.addEventListener("click", (e) => {
   const row = e.target.closest(".row[data-serial]");
   if (!row) return;
-  const token = extractPreferredSerial(row.getAttribute("data-serial") || "");
-  if (!token) return;
-  const cleaned = cleanToken(token);
+  const cleaned = cleanToken(row.getAttribute("data-serial") || "");
+  if (!cleaned) return;
   els.lookupSerial.value = cleaned;
   loadFromLookup();
 });
