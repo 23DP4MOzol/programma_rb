@@ -16,7 +16,14 @@
             <div class="brand__title">Inventory</div>
           </div>
         </div>
-        <div class="brand__subtitle">Device tracking</div>
+        <div class="brand__subtitle" id="brandSubtitle">Device tracking</div>
+        <div class="hero__tools">
+          <select id="langSelect" class="input hero__lang" aria-label="Language">
+            <option value="lv">LV</option>
+            <option value="en">EN</option>
+          </select>
+          <button id="themeToggle" class="btn btn--small hero__theme">Dark mode</button>
+        </div>
       </header>
 
       <section class="card card--action">
@@ -271,7 +278,7 @@
       </section>
 
       <footer class="footer">
-        <div>Hosted on GitHub Pages</div>
+        <div id="footerHosted">Hosted on GitHub Pages</div>
         <div class="footer__meta">
           <span id="authInfo">Role: anon (operator, anon)</span>
           <span id="appVersion">Version: web-2026.04.07</span>

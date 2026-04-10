@@ -85,6 +85,7 @@ const DRAFT_STORAGE_KEY = "rimi.inventory.draft.v1";
 const QUEUE_STORAGE_KEY = "rimi.inventory.queue.v1";
 const AUTH_TOKEN_STORAGE_KEY = "rimi.inventory.auth_jwt";
 const WEB_LANG_STORAGE_KEY = "rimi.inventory.lang";
+const WEB_THEME_STORAGE_KEY = "rimi.inventory.theme";
 const SCAN_DEBOUNCE_MS = 900;
 const SAVE_DEBOUNCE_MS = 1400;
 const WEB_APP_VERSION = "web-2026.04.07";
@@ -123,6 +124,107 @@ const WEB_I18N = {
     prefixRulesLoadError: "Prefix rules load failed: {error}",
     prefixRulesSaveError: "Prefix rule save failed: {error}",
     prefixRulesDeleteError: "Prefix rule delete failed: {error}",
+    uiThemeDark: "Dark mode",
+    uiThemeLight: "Light mode",
+    uiBrandSubtitle: "Device tracking",
+    uiActionTitle: "Action",
+    uiActionSubtitle: "Scan scanner serial (S + 13/14 digits) or laptop QR first token (e.g. 5CG3285C9K,...)",
+    uiDevicesTitle: "Devices",
+    uiDevicesSubtitle: "Read-only list from database",
+    uiDiagTitle: "Diagnostics",
+    uiDiagSubtitle: "Current connectivity and sync health",
+    uiDiagOnline: "Online",
+    uiDiagLastSync: "Last sync",
+    uiDiagApi: "API",
+    uiAuditTitle: "Audit (Admin)",
+    uiAuditSubtitle: "Change history from database (admin access required)",
+    uiPrefixTitle: "Prefix Rules (Admin)",
+    uiPrefixSubtitle: "Manage DB prefix->device model mapping",
+    uiPrefixKey: "Prefix key",
+    uiPrefixPriority: "Priority",
+    uiPrefixActive: "Active",
+    uiFooterHosted: "Hosted on GitHub Pages",
+    uiLabelSerial: "Serial (scan here)",
+    uiLabelType: "Type",
+    uiLabelStatus: "Status",
+    uiLabelMake: "Make",
+    uiLabelModel: "Model",
+    uiLabelFrom: "From store",
+    uiLabelTo: "To store",
+    uiLabelComment: "Comment",
+    uiSaveUpdate: "Save / Update",
+    uiClear: "Clear",
+    uiConnectZq620: "Connect ZQ620",
+    uiPrintSticker: "Print asset sticker",
+    uiSelectPrinter: "Select printer...",
+    uiFindPrinters: "Find printers",
+    uiConnectSelected: "Connect selected",
+    uiPrinterNotConnected: "Printer: not connected",
+    uiSyncNow: "Sync now",
+    uiRefresh: "Refresh",
+    uiRefreshDiagnostics: "Refresh diagnostics",
+    uiExportCsv: "Export CSV",
+    uiLoad: "Load",
+    uiLoadAudit: "Load audit",
+    uiSaveRule: "Save rule",
+    uiDeleteRule: "Delete rule",
+    uiClearForm: "Clear form",
+    uiRefreshRules: "Refresh rules",
+    uiLookupPlaceholder: "Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)",
+    uiFilterPlaceholder: "Filter by serial/model/status",
+    uiAuditPlaceholder: "Optional serial filter",
+    uiQueued: "Queued",
+    uiSyncPrefix: "Sync",
+    uiRolePrefix: "Role",
+    uiHealthPrefix: "Health",
+    uiHealthOffline: "offline",
+    uiHealthQueuePending: "queue pending",
+    uiHealthHealthy: "healthy",
+    status_RECEIVED: "Received",
+    status_PREPARING: "Preparing",
+    status_PREPARED: "Prepared",
+    status_SENT: "Sent",
+    status_IN_USE: "In use",
+    status_RETURNED: "Returned",
+    status_RETIRED: "Retired",
+    type_scanner: "Scanner",
+    type_laptop: "Laptop",
+    type_tablet: "Tablet",
+    type_phone: "Phone",
+    type_printer: "Printer",
+    type_other: "Other",
+    uiTableSerial: "Serial",
+    uiTableType: "Type",
+    uiTableModel: "Model",
+    uiTableStatus: "Status",
+    uiTableFrom: "From",
+    uiTableTo: "To",
+    uiTableComment: "Comment",
+    uiTableTime: "Time",
+    uiTableOperation: "Operation",
+    uiTableActor: "Actor",
+    msgShowing: "Showing {count}",
+    msgNoRowsMatchFilter: "No rows match this filter",
+    msgNoDevicesVisible: "No devices visible",
+    msgCheckPolicy: "No devices visible. Check Supabase SELECT policy.",
+    msgLoading: "Loading...",
+    msgLoadingDb: "Loading database...",
+    msgPleaseWait: "Please wait",
+    msgDatabaseError: "Database error",
+    msgNoAuditRows: "No audit rows",
+    msgRowsCount: "Rows: {count}",
+    msgAdminOnly: "Admin only",
+    msgAdminRequired: "Admin access required",
+    msgEnterSerialFormat: "Enter serial in scanner or laptop format",
+    msgCleared: "Cleared",
+    msgRecoveredDraft: "Recovered unsaved draft",
+    msgBackOnlineSyncing: "Back online. Syncing queued saves...",
+    msgOfflineQueued: "Offline mode: saves will be queued",
+    sync_starting: "starting",
+    sync_offline: "offline",
+    sync_back_online: "back online",
+    sync_up_to_date: "up to date",
+    sync_syncing_queued_saves: "syncing queued saves",
   },
   lv: {
     scanPopupTitle: "Skenēšanas rezultāts",
@@ -157,6 +259,107 @@ const WEB_I18N = {
     prefixRulesLoadError: "Prefiksu noteikumu ielāde neizdevās: {error}",
     prefixRulesSaveError: "Prefiksa noteikuma saglabāšana neizdevās: {error}",
     prefixRulesDeleteError: "Prefiksa noteikuma dzēšana neizdevās: {error}",
+    uiThemeDark: "Tumšais režīms",
+    uiThemeLight: "Gaišais režīms",
+    uiBrandSubtitle: "Ierīču uzskaite",
+    uiActionTitle: "Darbība",
+    uiActionSubtitle: "Skenē skenera seriālu (S + 13/14 cipari) vai laptop QR pirmo daļu (piem. 5CG3285C9K,...)",
+    uiDevicesTitle: "Ierīces",
+    uiDevicesSubtitle: "Tikai lasāms saraksts no datubāzes",
+    uiDiagTitle: "Diagnostika",
+    uiDiagSubtitle: "Pašreizējā savienojuma un sinhronizācijas veselība",
+    uiDiagOnline: "Tiešsaistē",
+    uiDiagLastSync: "Pēdējā sinhr.",
+    uiDiagApi: "API",
+    uiAuditTitle: "Audits (Admin)",
+    uiAuditSubtitle: "Izmaiņu vēsture no datubāzes (nepieciešama admin piekļuve)",
+    uiPrefixTitle: "Prefiksu noteikumi (Admin)",
+    uiPrefixSubtitle: "Pārvaldi DB prefikss->ierīces modelis kartējumu",
+    uiPrefixKey: "Prefiksa atslēga",
+    uiPrefixPriority: "Prioritāte",
+    uiPrefixActive: "Aktīvs",
+    uiFooterHosted: "Publicēts GitHub Pages",
+    uiLabelSerial: "Seriāls (skenē šeit)",
+    uiLabelType: "Tips",
+    uiLabelStatus: "Statuss",
+    uiLabelMake: "Ražotājs",
+    uiLabelModel: "Modelis",
+    uiLabelFrom: "No veikala",
+    uiLabelTo: "Uz veikalu",
+    uiLabelComment: "Komentārs",
+    uiSaveUpdate: "Saglabāt / Atjaunināt",
+    uiClear: "Notīrīt",
+    uiConnectZq620: "Pieslēgt ZQ620",
+    uiPrintSticker: "Drukāt uzlīmi",
+    uiSelectPrinter: "Izvēlies printeri...",
+    uiFindPrinters: "Meklēt printerus",
+    uiConnectSelected: "Pieslēgt izvēlēto",
+    uiPrinterNotConnected: "Printeris: nav pieslēgts",
+    uiSyncNow: "Sinhronizēt tagad",
+    uiRefresh: "Atjaunot",
+    uiRefreshDiagnostics: "Atjaunot diagnostiku",
+    uiExportCsv: "Eksportēt CSV",
+    uiLoad: "Ielādēt",
+    uiLoadAudit: "Ielādēt auditu",
+    uiSaveRule: "Saglabāt noteikumu",
+    uiDeleteRule: "Dzēst noteikumu",
+    uiClearForm: "Notīrīt formu",
+    uiRefreshRules: "Atjaunot noteikumus",
+    uiLookupPlaceholder: "Meklē precīzu seriālu (S18167522504743 / 18167522504743 / 5CG3285C9K)",
+    uiFilterPlaceholder: "Filtrē pēc seriāla/modeļa/statusa",
+    uiAuditPlaceholder: "Neobligāts seriāla filtrs",
+    uiQueued: "Rindā",
+    uiSyncPrefix: "Sinhr.",
+    uiRolePrefix: "Loma",
+    uiHealthPrefix: "Veselība",
+    uiHealthOffline: "bezsaistē",
+    uiHealthQueuePending: "rinda gaida",
+    uiHealthHealthy: "ok",
+    status_RECEIVED: "Saņemts",
+    status_PREPARING: "Sagatavošanā",
+    status_PREPARED: "Sagatavots",
+    status_SENT: "Nosūtīts",
+    status_IN_USE: "Lietošanā",
+    status_RETURNED: "Atgriezts",
+    status_RETIRED: "Norakstīts",
+    type_scanner: "Skeneris",
+    type_laptop: "Portatīvais",
+    type_tablet: "Planšete",
+    type_phone: "Telefons",
+    type_printer: "Printeris",
+    type_other: "Cits",
+    uiTableSerial: "Seriāls",
+    uiTableType: "Tips",
+    uiTableModel: "Modelis",
+    uiTableStatus: "Statuss",
+    uiTableFrom: "No",
+    uiTableTo: "Uz",
+    uiTableComment: "Komentārs",
+    uiTableTime: "Laiks",
+    uiTableOperation: "Darbība",
+    uiTableActor: "Lietotājs",
+    msgShowing: "Rāda {count}",
+    msgNoRowsMatchFilter: "Šim filtram nav rindu",
+    msgNoDevicesVisible: "Nav redzamu ierīču",
+    msgCheckPolicy: "Nav redzamu ierīču. Pārbaudi Supabase SELECT politiku.",
+    msgLoading: "Ielādē...",
+    msgLoadingDb: "Ielādē datubāzi...",
+    msgPleaseWait: "Lūdzu uzgaidi",
+    msgDatabaseError: "Datubāzes kļūda",
+    msgNoAuditRows: "Nav audita ierakstu",
+    msgRowsCount: "Rindas: {count}",
+    msgAdminOnly: "Tikai admin",
+    msgAdminRequired: "Nepieciešama admin piekļuve",
+    msgEnterSerialFormat: "Ievadi seriālu skenera vai laptop formātā",
+    msgCleared: "Notīrīts",
+    msgRecoveredDraft: "Atjaunots nesaglabāts melnraksts",
+    msgBackOnlineSyncing: "Atkal tiešsaistē. Sinhronizēju gaidošos ierakstus...",
+    msgOfflineQueued: "Bezsaistes režīms: saglabāšana tiks ielikta rindā",
+    sync_starting: "sāk",
+    sync_offline: "bezsaistē",
+    sync_back_online: "atkal tiešsaistē",
+    sync_up_to_date: "aktuāls",
+    sync_syncing_queued_saves: "sinhronizē rindu",
   },
 };
 
@@ -192,6 +395,30 @@ function resolveWebLanguage() {
 
 const WEB_LANG = resolveWebLanguage();
 
+function resolveWebTheme() {
+  let candidate = "";
+  try {
+    candidate = String(localStorage.getItem(WEB_THEME_STORAGE_KEY) || "").trim().toLowerCase();
+  } catch {
+    candidate = "";
+  }
+
+  if (candidate === "dark" || candidate === "light") {
+    return candidate;
+  }
+
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      return "dark";
+    }
+  } catch {
+    // ignore media query errors
+  }
+  return "light";
+}
+
+let WEB_THEME = resolveWebTheme();
+
 function trWeb(key) {
   return WEB_I18N[WEB_LANG]?.[key] || WEB_I18N.en[key] || key;
 }
@@ -201,7 +428,16 @@ function trWebFmt(key, vars = {}) {
   return String(template).replace(/\{(\w+)\}/g, (_m, k) => String(vars[k] ?? ""));
 }
 
+function trSyncMessage(message) {
+  const key = `sync_${String(message || "").trim().replace(/\s+/g, "_")}`;
+  const translated = trWeb(key);
+  return translated === key ? String(message || "") : translated;
+}
+
 const els = {
+  brandSubtitle: document.getElementById("brandSubtitle"),
+  langSelect: document.getElementById("langSelect"),
+  themeToggle: document.getElementById("themeToggle"),
   serial: document.getElementById("serial"),
   statusText: document.getElementById("status"),
   queueStatus: document.getElementById("queueStatus"),
@@ -274,6 +510,7 @@ const els = {
   lookupSerial: document.getElementById("lookupSerial"),
   lookupLoad: document.getElementById("lookupLoad"),
   authInfo: document.getElementById("authInfo"),
+  footerHosted: document.getElementById("footerHosted"),
 };
 
 let devicesCache = [];
@@ -621,10 +858,11 @@ async function printAssetSticker() {
 
 function setSyncInfo(message, tone = "info") {
   if (!els.syncInfo) return;
-  let text = `Sync: ${message}`;
+  const translatedMessage = trSyncMessage(message);
+  let text = `${trWeb("uiSyncPrefix")}: ${translatedMessage}`;
   if (message === "up to date" && lastSuccessfulSyncAt) {
     const local = new Date(lastSuccessfulSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    text = `Sync: ${message} (${local})`;
+    text = `${trWeb("uiSyncPrefix")}: ${translatedMessage} (${local})`;
   }
   els.syncInfo.textContent = text;
   if (tone === "error") {
@@ -641,10 +879,10 @@ function updateQueueStatus() {
   if (!els.queueStatus) return;
   const count = getQueuedSaves().length;
   if (count > 0) {
-    els.queueStatus.textContent = `Queued: ${count}`;
+    els.queueStatus.textContent = `${trWeb("uiQueued")}: ${count}`;
     els.queueStatus.style.color = "#b00020";
   } else {
-    els.queueStatus.textContent = "Queued: 0";
+    els.queueStatus.textContent = `${trWeb("uiQueued")}: 0`;
     els.queueStatus.style.color = "#0a7a2f";
   }
   updateDiagnosticsPanel();
@@ -824,7 +1062,150 @@ function registerPendingDevice() {
   }
 }
 
+function setTextBySelector(selector, value) {
+  const el = document.querySelector(selector);
+  if (el) {
+    el.textContent = String(value || "");
+  }
+}
+
+function setPlaceholderBySelector(selector, value) {
+  const el = document.querySelector(selector);
+  if (el) {
+    el.setAttribute("placeholder", String(value || ""));
+  }
+}
+
+function setOptionText(selectEl, value, label) {
+  if (!selectEl) return;
+  const option = selectEl.querySelector(`option[value="${value}"]`);
+  if (option) {
+    option.textContent = String(label || value);
+  }
+}
+
 function applyWebLanguageLabels() {
+  document.documentElement.setAttribute("lang", WEB_LANG);
+
+  if (els.langSelect) {
+    els.langSelect.value = WEB_LANG;
+  }
+
+  if (els.brandSubtitle) {
+    els.brandSubtitle.textContent = trWeb("uiBrandSubtitle");
+  }
+
+  setTextBySelector(".card--action .card__title", trWeb("uiActionTitle"));
+  setTextBySelector(".card--action .card__subtitle", trWeb("uiActionSubtitle"));
+  setTextBySelector("#devicesCard .card__title", trWeb("uiDevicesTitle"));
+  setTextBySelector("#devicesCard .card__subtitle", trWeb("uiDevicesSubtitle"));
+  setTextBySelector("#diagnosticsCard .card__title", trWeb("uiDiagTitle"));
+  setTextBySelector("#diagnosticsCard .card__subtitle", trWeb("uiDiagSubtitle"));
+  setTextBySelector("#auditCard .card__title", trWeb("uiAuditTitle"));
+  setTextBySelector("#auditCard .card__subtitle", trWeb("uiAuditSubtitle"));
+  setTextBySelector("#prefixRulesCard .card__title", trWeb("uiPrefixTitle"));
+  setTextBySelector("#prefixRulesCard .card__subtitle", trWeb("uiPrefixSubtitle"));
+
+  setTextBySelector('label[for="serial"]', trWeb("uiLabelSerial"));
+  setTextBySelector('label[for="type"]', trWeb("uiLabelType"));
+  setTextBySelector('label[for="statusSelect"]', trWeb("uiLabelStatus"));
+  setTextBySelector('label[for="make"]', trWeb("uiLabelMake"));
+  setTextBySelector('label[for="model"]', trWeb("uiLabelModel"));
+  setTextBySelector('label[for="fromStore"]', trWeb("uiLabelFrom"));
+  setTextBySelector('label[for="toStore"]', trWeb("uiLabelTo"));
+  setTextBySelector('label[for="comment"]', trWeb("uiLabelComment"));
+
+  if (els.save) els.save.textContent = trWeb("uiSaveUpdate");
+  if (els.clear) els.clear.textContent = trWeb("uiClear");
+  if (els.printerConnect) els.printerConnect.textContent = trWeb("uiConnectZq620");
+  if (els.printSticker) els.printSticker.textContent = trWeb("uiPrintSticker");
+  if (els.printerRefresh) els.printerRefresh.textContent = trWeb("uiFindPrinters");
+  if (els.printerConnectSelected) els.printerConnectSelected.textContent = trWeb("uiConnectSelected");
+
+  if (els.printerPicker) {
+    const firstOption = els.printerPicker.querySelector('option[value=""]');
+    if (firstOption) {
+      firstOption.textContent = trWeb("uiSelectPrinter");
+    }
+  }
+
+  if (els.syncNow) els.syncNow.textContent = trWeb("uiSyncNow");
+  if (els.refreshList) els.refreshList.textContent = trWeb("uiRefresh");
+  if (els.exportCsv) els.exportCsv.textContent = trWeb("uiExportCsv");
+  if (els.lookupLoad) els.lookupLoad.textContent = trWeb("uiLoad");
+  if (els.diagRefresh) els.diagRefresh.textContent = trWeb("uiRefreshDiagnostics");
+  if (els.auditLoad) els.auditLoad.textContent = trWeb("uiLoadAudit");
+  if (els.prefixRulesRefresh) els.prefixRulesRefresh.textContent = trWeb("uiRefreshRules");
+  if (els.prefixSave) els.prefixSave.textContent = trWeb("uiSaveRule");
+  if (els.prefixDelete) els.prefixDelete.textContent = trWeb("uiDeleteRule");
+  if (els.prefixClear) els.prefixClear.textContent = trWeb("uiClearForm");
+
+  setPlaceholderBySelector("#lookupSerial", trWeb("uiLookupPlaceholder"));
+  setPlaceholderBySelector("#listFilter", trWeb("uiFilterPlaceholder"));
+  setPlaceholderBySelector("#auditSerial", trWeb("uiAuditPlaceholder"));
+
+  if (els.type) {
+    setOptionText(els.type, "scanner", trWeb("type_scanner"));
+    setOptionText(els.type, "laptop", trWeb("type_laptop"));
+    setOptionText(els.type, "tablet", trWeb("type_tablet"));
+    setOptionText(els.type, "phone", trWeb("type_phone"));
+    setOptionText(els.type, "printer", trWeb("type_printer"));
+    setOptionText(els.type, "other", trWeb("type_other"));
+  }
+
+  if (els.prefixType) {
+    setOptionText(els.prefixType, "scanner", trWeb("type_scanner"));
+    setOptionText(els.prefixType, "laptop", trWeb("type_laptop"));
+    setOptionText(els.prefixType, "tablet", trWeb("type_tablet"));
+    setOptionText(els.prefixType, "phone", trWeb("type_phone"));
+    setOptionText(els.prefixType, "other", trWeb("type_other"));
+  }
+
+  if (els.statusSelect) {
+    setOptionText(els.statusSelect, "RECEIVED", trWeb("status_RECEIVED"));
+    setOptionText(els.statusSelect, "PREPARING", trWeb("status_PREPARING"));
+    setOptionText(els.statusSelect, "PREPARED", trWeb("status_PREPARED"));
+    setOptionText(els.statusSelect, "SENT", trWeb("status_SENT"));
+    setOptionText(els.statusSelect, "IN_USE", trWeb("status_IN_USE"));
+    setOptionText(els.statusSelect, "RETURNED", trWeb("status_RETURNED"));
+    setOptionText(els.statusSelect, "RETIRED", trWeb("status_RETIRED"));
+  }
+
+  setTextBySelector("#devicesCard .row--head span:nth-child(1)", trWeb("uiTableSerial"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(2)", trWeb("uiTableType"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(3)", trWeb("uiTableModel"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(4)", trWeb("uiTableStatus"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(5)", trWeb("uiTableFrom"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(6)", trWeb("uiTableTo"));
+  setTextBySelector("#devicesCard .row--head span:nth-child(7)", trWeb("uiTableComment"));
+
+  setTextBySelector("#auditCard .audit-row--head span:nth-child(1)", trWeb("uiTableTime"));
+  setTextBySelector("#auditCard .audit-row--head span:nth-child(2)", trWeb("uiTableOperation"));
+  setTextBySelector("#auditCard .audit-row--head span:nth-child(3)", trWeb("uiTableSerial"));
+  setTextBySelector("#auditCard .audit-row--head span:nth-child(4)", trWeb("uiTableActor"));
+
+  setTextBySelector("#diagnosticsCard .diag-item:nth-child(1) span", trWeb("uiDiagOnline"));
+  setTextBySelector("#diagnosticsCard .diag-item:nth-child(2) span", trWeb("uiQueued"));
+  setTextBySelector("#diagnosticsCard .diag-item:nth-child(3) span", trWeb("uiRolePrefix"));
+  setTextBySelector("#diagnosticsCard .diag-item:nth-child(4) span", trWeb("uiDiagLastSync"));
+  setTextBySelector("#diagnosticsCard .diag-item:nth-child(5) span", trWeb("uiDiagApi"));
+
+  setTextBySelector('label[for="prefixKey"]', trWeb("uiPrefixKey"));
+  setTextBySelector('label[for="prefixType"]', trWeb("uiLabelType"));
+  setTextBySelector('label[for="prefixMake"]', trWeb("uiLabelMake"));
+  setTextBySelector('label[for="prefixModel"]', trWeb("uiLabelModel"));
+  setTextBySelector('label[for="prefixPriority"]', trWeb("uiPrefixPriority"));
+  setTextBySelector('label[for="prefixActive"]', trWeb("uiPrefixActive"));
+
+  setTextBySelector("#footerHosted", trWeb("uiFooterHosted"));
+
+  const printerStatusText = String(els.printerStatus?.textContent || "").trim().toLowerCase();
+  if (els.printerStatus && (!printerStatusText || printerStatusText.includes("not connected") || printerStatusText.includes("nav pieslēgts"))) {
+    els.printerStatus.textContent = trWeb("uiPrinterNotConnected");
+  }
+
+  applyWebTheme(WEB_THEME);
+
   if (els.scanPopupTitle) {
     els.scanPopupTitle.textContent = trWeb("scanPopupTitle");
   }
@@ -849,6 +1230,24 @@ function applyWebLanguageLabels() {
   if (els.conflictCancel) {
     els.conflictCancel.textContent = trWeb("conflictCancel");
   }
+}
+
+function applyWebTheme(theme) {
+  WEB_THEME = theme === "dark" ? "dark" : "light";
+  document.body.classList.toggle("theme-dark", WEB_THEME === "dark");
+  try {
+    localStorage.setItem(WEB_THEME_STORAGE_KEY, WEB_THEME);
+  } catch {
+    // ignore storage errors
+  }
+
+  if (els.themeToggle) {
+    els.themeToggle.textContent = WEB_THEME === "dark" ? trWeb("uiThemeLight") : trWeb("uiThemeDark");
+  }
+}
+
+function toggleWebTheme() {
+  applyWebTheme(WEB_THEME === "dark" ? "light" : "dark");
 }
 
 function normalizePrefixKey(value) {
@@ -1154,7 +1553,7 @@ function applyAuthUiState() {
   if (els.authInfo) {
     const mode = authContext?.hasJwtSession ? "session" : "anon";
     const adminText = authContext?.isAdmin ? "admin" : "operator";
-    els.authInfo.textContent = `Role: ${authContext?.role || "anon"} (${adminText}, ${mode})`;
+    els.authInfo.textContent = `${trWeb("uiRolePrefix")}: ${authContext?.role || "anon"} (${adminText}, ${mode})`;
     els.authInfo.style.color = authContext?.isAdmin ? "#0a7a2f" : "#6b6b6b";
   }
 
@@ -1210,9 +1609,14 @@ function updateDiagnosticsPanel() {
     els.diagApi.textContent = SUPABASE_URL;
   }
 
-  const health = !navigator.onLine ? "offline" : queued > 0 ? "queue pending" : "healthy";
-  els.diagStatus.textContent = `Health: ${health}`;
-  els.diagStatus.style.color = health === "healthy" ? "#0a7a2f" : "#b00020";
+  const isHealthy = navigator.onLine && queued === 0;
+  const health = !navigator.onLine
+    ? trWeb("uiHealthOffline")
+    : queued > 0
+      ? trWeb("uiHealthQueuePending")
+      : trWeb("uiHealthHealthy");
+  els.diagStatus.textContent = `${trWeb("uiHealthPrefix")}: ${health}`;
+  els.diagStatus.style.color = isHealthy ? "#0a7a2f" : "#b00020";
 }
 
 function readStorageJson(key, fallbackValue) {
@@ -2072,13 +2476,13 @@ function renderDevicesList() {
   const rows = getFilteredRows();
   const hasFilter = String(els.listFilter.value || "").trim().length > 0;
 
-  els.listStatus.textContent = `Showing ${rows.length}`;
+  els.listStatus.textContent = trWebFmt("msgShowing", { count: rows.length });
 
   if (!rows.length) {
-    const helper = hasFilter ? "No rows match this filter" : "No devices visible. Check Supabase SELECT policy.";
+    const helper = hasFilter ? trWeb("msgNoRowsMatchFilter") : trWeb("msgCheckPolicy");
     els.devicesList.innerHTML = `
       <div class="row">
-        <span>No devices visible</span>
+        <span>${trWeb("msgNoDevicesVisible")}</span>
         <span>-</span>
         <span>-</span>
         <span>-</span>
@@ -2094,13 +2498,13 @@ function renderDevicesList() {
     .map(
       (row) => `
       <div class="row" data-serial="${row.serial || ""}">
-        <span data-label="Serial">${row.serial || ""}</span>
-        <span data-label="Type">${row.device_type || ""}</span>
-        <span data-label="Model">${row.model || ""}</span>
-        <span data-label="Status">${row.status || ""}</span>
-        <span data-label="From">${row.from_store || ""}</span>
-        <span data-label="To">${row.to_store || ""}</span>
-        <span data-label="Comment">${row.comment || ""}</span>
+        <span data-label="${trWeb("uiTableSerial")}">${row.serial || ""}</span>
+        <span data-label="${trWeb("uiTableType")}">${row.device_type || ""}</span>
+        <span data-label="${trWeb("uiTableModel")}">${row.model || ""}</span>
+        <span data-label="${trWeb("uiTableStatus")}">${row.status || ""}</span>
+        <span data-label="${trWeb("uiTableFrom")}">${row.from_store || ""}</span>
+        <span data-label="${trWeb("uiTableTo")}">${row.to_store || ""}</span>
+        <span data-label="${trWeb("uiTableComment")}">${row.comment || ""}</span>
       </div>
     `
     )
@@ -2108,17 +2512,17 @@ function renderDevicesList() {
 }
 
 async function loadDevicesList() {
-  els.listStatus.textContent = "Loading...";
-  setSyncInfo("loading device list");
+  els.listStatus.textContent = trWeb("msgLoading");
+  setSyncInfo(trWeb("msgLoading"));
   els.devicesList.innerHTML = `
     <div class="row">
-      <span>Loading database...</span>
+      <span>${trWeb("msgLoadingDb")}</span>
       <span>-</span>
       <span>-</span>
       <span>-</span>
       <span>-</span>
       <span>-</span>
-      <span>Please wait</span>
+      <span>${trWeb("msgPleaseWait")}</span>
     </div>
   `;
 
@@ -2133,11 +2537,11 @@ async function loadDevicesList() {
     setSyncInfo("up to date", "ok");
   } catch (error) {
     devicesCache = [];
-    els.listStatus.textContent = `Database error: ${error.message}`;
-    setSyncInfo("database error", "error");
+    els.listStatus.textContent = `${trWeb("msgDatabaseError")}: ${error.message}`;
+    setSyncInfo(trWeb("msgDatabaseError"), "error");
     els.devicesList.innerHTML = `
       <div class="row">
-        <span>Database error</span>
+        <span>${trWeb("msgDatabaseError")}</span>
         <span>-</span>
         <span>-</span>
         <span>-</span>
@@ -2154,7 +2558,7 @@ function renderAuditRows(rows) {
   if (!Array.isArray(rows) || !rows.length) {
     els.auditList.innerHTML = `
       <div class="audit-row">
-        <span>No audit rows</span>
+        <span>${trWeb("msgNoAuditRows")}</span>
         <span>-</span>
         <span>-</span>
         <span>-</span>
@@ -2182,7 +2586,7 @@ async function loadAuditLogs() {
 
   if (!authContext?.isAdmin) {
     renderAuditRows([]);
-    els.auditStatus.textContent = "Admin only";
+    els.auditStatus.textContent = trWeb("msgAdminOnly");
     return;
   }
 
@@ -2192,14 +2596,14 @@ async function loadAuditLogs() {
     path += `&serial=ilike.${encodeURIComponent(`%${serialFilter}%`)}`;
   }
 
-  els.auditStatus.textContent = "Loading...";
+  els.auditStatus.textContent = trWeb("msgLoading");
   try {
     const rows = await restRequest(path);
     renderAuditRows(Array.isArray(rows) ? rows : []);
-    els.auditStatus.textContent = `Rows: ${Array.isArray(rows) ? rows.length : 0}`;
+    els.auditStatus.textContent = trWebFmt("msgRowsCount", { count: Array.isArray(rows) ? rows.length : 0 });
   } catch (error) {
     renderAuditRows([]);
-    els.auditStatus.textContent = "Admin access required";
+    els.auditStatus.textContent = trWeb("msgAdminRequired");
     setStatus(`Audit unavailable: ${error.message}`, "error");
   }
 }
@@ -2207,7 +2611,7 @@ async function loadAuditLogs() {
 async function loadFromLookup() {
   const token = extractPreferredSerial(els.lookupSerial.value, { allowGenericSingle: true });
   if (!token) {
-    setStatus("Enter serial in scanner or laptop format", "error");
+    setStatus(trWeb("msgEnterSerialFormat"), "error");
     return;
   }
   const cleaned = cleanToken(token);
@@ -2287,6 +2691,22 @@ els.model.addEventListener("keydown", (e) => {
 
 els.lookupLoad.addEventListener("click", loadFromLookup);
 els.save.addEventListener("click", saveDevice);
+if (els.langSelect) {
+  els.langSelect.addEventListener("change", () => {
+    const nextLang = String(els.langSelect.value || "en").trim().toLowerCase() === "lv" ? "lv" : "en";
+    try {
+      localStorage.setItem(WEB_LANG_STORAGE_KEY, nextLang);
+    } catch {
+      // ignore storage errors
+    }
+    window.location.reload();
+  });
+}
+if (els.themeToggle) {
+  els.themeToggle.addEventListener("click", () => {
+    toggleWebTheme();
+  });
+}
 if (els.printerConnect) {
   els.printerConnect.addEventListener("click", connectZq620Printer);
 }
@@ -2391,7 +2811,7 @@ if (els.diagRefresh) {
 els.clear.addEventListener("click", () => {
   resetForm();
   clearDraft();
-  setStatus("Cleared");
+  setStatus(trWeb("msgCleared"));
   els.serial.focus();
 });
 els.refreshList.addEventListener("click", loadDevicesList);
@@ -2422,7 +2842,7 @@ setSyncInfo(navigator.onLine ? "starting" : "offline", navigator.onLine ? "info"
 updateDiagnosticsPanel();
 const recoveredDraft = restoreDraft();
 if (recoveredDraft) {
-  setStatus("Recovered unsaved draft");
+  setStatus(trWeb("msgRecoveredDraft"));
   if (els.serial.value) {
     loadByScannedValue(els.serial.value);
   }
@@ -2449,13 +2869,13 @@ window.addEventListener("focus", () => {
   processQueuedSaves();
 });
 window.addEventListener("online", () => {
-  setStatus("Back online. Syncing queued saves...");
+  setStatus(trWeb("msgBackOnlineSyncing"));
   setSyncInfo("back online", "ok");
   updateDiagnosticsPanel();
   processQueuedSaves();
 });
 window.addEventListener("offline", () => {
-  setStatus("Offline mode: saves will be queued", "error");
+  setStatus(trWeb("msgOfflineQueued"), "error");
   setSyncInfo("offline", "error");
   updateDiagnosticsPanel();
 });

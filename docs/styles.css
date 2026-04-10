@@ -5,16 +5,35 @@
   --accent: #cf2e2e;
   --accent-dark: #8d1f1f;
   --card: #ffffff;
+  --surface: #ffffff;
+  --surface-alt: #f1f1f1;
+  --hint: #b5bcc7;
   --border: #e3e3e3;
   --shadow: 0 10px 22px rgba(18, 18, 18, 0.12);
   --radius: 14px;
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
+body.theme-dark {
+  --bg: #0f1216;
+  --ink: #e8eaed;
+  --muted: #a5aab3;
+  --card: #171b21;
+  --surface: #1b2028;
+  --surface-alt: #232a35;
+  --hint: #7b8492;
+  --border: #2a2f39;
+  --shadow: 0 10px 22px rgba(0, 0, 0, 0.32);
+}
+
 body {
   margin: 0;
   background: radial-gradient(circle at top, #ffffff 0%, #f6f6f6 45%, #ededed 100%);
   color: var(--ink);
+}
+
+body.theme-dark {
+  background: radial-gradient(circle at top, #1f2630 0%, #151a21 45%, #0f1216 100%);
 }
 
 .shell {
@@ -33,6 +52,27 @@ body {
   box-shadow: var(--shadow);
   display: grid;
   gap: 4px;
+}
+
+.hero__tools {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.hero__lang {
+  width: 74px;
+  min-width: 74px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.hero__theme {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .logo {
@@ -70,7 +110,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
-  background: #fff;
+  background: var(--surface);
   align-items: start;
   min-width: 760px;
 }
@@ -84,7 +124,7 @@ body {
 }
 
 .row--head {
-  background: #f3f3f3;
+  background: var(--surface-alt);
   font-weight: 700;
   text-transform: uppercase;
   font-size: 11px;
@@ -117,12 +157,12 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
-  background: #fff;
+  background: var(--surface);
   align-items: start;
 }
 
 .prefix-row--head {
-  background: #f3f3f3;
+  background: var(--surface-alt);
   font-weight: 700;
   text-transform: uppercase;
   font-size: 11px;
@@ -141,12 +181,12 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
-  background: #fff;
+  background: var(--surface);
   align-items: start;
 }
 
 .audit-row--head {
-  background: #f3f3f3;
+  background: var(--surface-alt);
   font-weight: 700;
   text-transform: uppercase;
   font-size: 11px;
@@ -248,7 +288,7 @@ body {
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
-  background: #fff;
+  background: var(--surface);
   box-sizing: border-box;
 }
 
@@ -261,7 +301,7 @@ body {
   inset: 0;
   padding: 10px 12px;
   font-size: 14px;
-  color: #b5bcc7;
+  color: var(--hint);
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
@@ -315,7 +355,7 @@ body {
 
 .btn {
   border: 1px solid var(--border);
-  background: #f1f1f1;
+  background: var(--surface-alt);
   color: var(--ink);
   padding: 12px;
   border-radius: 10px;
@@ -351,7 +391,7 @@ body {
   padding: 8px 10px;
   display: grid;
   gap: 4px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .printer-health__item span {
@@ -411,7 +451,7 @@ body {
   padding: 8px 10px;
   display: grid;
   gap: 4px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .diag-item span {
@@ -444,7 +484,7 @@ body {
 
 .popup__card {
   width: min(520px, 96vw);
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
@@ -487,6 +527,10 @@ body {
   }
   .brand__title {
     font-size: 20px;
+  }
+
+  .hero__tools {
+    justify-content: flex-start;
   }
 
   .row {
