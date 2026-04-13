@@ -621,6 +621,15 @@ function parsePrinterBridgeResponse(raw) {
   return { ok: false, message: String(raw || "Unknown printer bridge response") };
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function hasPrinterBridge() {
   return Boolean(window.AndroidPrinter && typeof window.AndroidPrinter === "object");
 }
@@ -717,7 +726,7 @@ function renderPrinterPicker(candidates, selectedAddress = "") {
     if (!address) continue;
     const bondedTag = item?.bonded ? " [bonded]" : " [new]";
     const label = `${name}${bondedTag} (${address})`;
-    options.push(`<option value="${address}">${label}</option>`);
+    options.push(`<option value="${escapeHtml(address)}">${escapeHtml(label)}</option>`);
   }
 
   if (options.length === 1) {
@@ -1559,13 +1568,13 @@ function renderPrefixRules(rows) {
   els.prefixRulesList.innerHTML = rows
     .map(
       (row) => `
-      <div class="prefix-row" data-prefix-id="${row.id}">
-        <span>${row.prefix_key || ""}</span>
-        <span>${row.device_type || ""}</span>
-        <span>${row.make || ""}</span>
-        <span>${row.model || ""}</span>
-        <span>${row.priority ?? ""}</span>
-        <span>${row.active === false ? "no" : "yes"}</span>
+      <div class="prefix-row" data-prefix-id="${escapeHtml(row.id)}">
+        <span>${escapeHtml(row.prefix_key || "")}</span>
+        <span>${escapeHtml(row.device_type || "")}</span>
+        <span>${escapeHtml(row.make || "")}</span>
+        <span>${escapeHtml(row.model || "")}</span>
+        <span>${escapeHtml(row.priority ?? "")}</span>
+        <span>${escapeHtml(row.active === false ? "no" : "yes")}</span>
       </div>
     `
     )
@@ -2176,7 +2185,7 @@ function sanitizeSerialField(value) {
   if (!raw) return "";
 
   // Keep common payload separators for URL/JSON/key-value scan formats.
-  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]"']/g, "").slice(0, 220);
+  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]()"']/g, "").slice(0, 220);
 }
 
 function sanitizeLookupField(value) {
@@ -2184,7 +2193,7 @@ function sanitizeLookupField(value) {
   if (!raw) return "";
 
   // Same behavior for lookup/paste workflows.
-  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]"']/g, "").slice(0, 220);
+  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]()"']/g, "").slice(0, 220);
 }
 
 function splitModel(modelText) {
@@ -2897,14 +2906,14 @@ function renderDevicesList() {
   els.devicesList.innerHTML = rows
     .map(
       (row) => `
-      <div class="row" data-serial="${row.serial || ""}">
-        <span data-label="${trWeb("uiTableSerial")}">${row.serial || ""}</span>
-        <span data-label="${trWeb("uiTableType")}">${row.device_type || ""}</span>
-        <span data-label="${trWeb("uiTableModel")}">${row.model || ""}</span>
-        <span data-label="${trWeb("uiTableStatus")}">${row.status || ""}</span>
-        <span data-label="${trWeb("uiTableFrom")}">${row.from_store || ""}</span>
-        <span data-label="${trWeb("uiTableTo")}">${row.to_store || ""}</span>
-        <span data-label="${trWeb("uiTableComment")}">${row.comment || ""}</span>
+      <div class="row" data-serial="${escapeHtml(row.serial || "")}">
+        <span data-label="${escapeHtml(trWeb("uiTableSerial"))}">${escapeHtml(row.serial || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableType"))}">${escapeHtml(row.device_type || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableModel"))}">${escapeHtml(row.model || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableStatus"))}">${escapeHtml(row.status || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableFrom"))}">${escapeHtml(row.from_store || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableTo"))}">${escapeHtml(row.to_store || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableComment"))}">${escapeHtml(row.comment || "")}</span>
       </div>
     `
     )
@@ -2967,7 +2976,7 @@ async function loadDevicesList() {
         <span>-</span>
         <span>-</span>
         <span>-</span>
-        <span>${String(error.message || "Unknown error")}</span>
+        <span>${escapeHtml(String(error.message || "Unknown error"))}</span>
       </div>
     `;
   }
@@ -2991,10 +3000,10 @@ function renderAuditRows(rows) {
     .map(
       (row) => `
       <div class="audit-row">
-        <span>${String(row.event_time || "").replace("T", " ")}</span>
-        <span>${row.operation || ""}</span>
-        <span>${row.serial || ""}</span>
-        <span>${row.actor || ""}</span>
+        <span>${escapeHtml(String(row.event_time || "").replace("T", " "))}</span>
+        <span>${escapeHtml(row.operation || "")}</span>
+        <span>${escapeHtml(row.serial || "")}</span>
+        <span>${escapeHtml(row.actor || "")}</span>
       </div>
     `
     )
@@ -3334,10 +3343,13 @@ window.addEventListener("offline", () => {
   updateDiagnosticsPanel();
 });
 setInterval(() => {
+  if (document.visibilityState && document.visibilityState !== "visible") {
+    return;
+  }
   authContext = resolveAuthContext();
   applyAuthUiState();
   loadPrefixRules();
   loadPrefixRulesAdmin();
   loadDevicesList();
   processQueuedSaves();
-}, 20000);
+}, 60000);
