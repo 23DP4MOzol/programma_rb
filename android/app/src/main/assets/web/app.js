@@ -1758,9 +1758,19 @@ function extractPreferredSerial(rawValue, options = {}) {
   const tokens = tokenizeScan(rawValue);
   if (!tokens.length) return null;
 
+  const hasPlusPayload = /\+/.test(String(rawValue || ""));
   const mode = String(options.mode || els.type?.value || "scanner").toLowerCase();
   const allowGenericSingle = options.allowGenericSingle === true;
-  const hasDelimitedPayload = /[,;|]/.test(String(rawValue || ""));
+  const hasDelimitedPayload = /[,;|+]/.test(String(rawValue || ""));
+
+  // Some tablet QR payloads are "part+SERIAL+part"; serial is the middle token.
+  if (hasPlusPayload && tokens.length >= 2) {
+    const middleToken = tokens[Math.floor(tokens.length / 2)] || "";
+    if (isGenericToken(middleToken)) return middleToken;
+
+    const secondToken = tokens[1] || "";
+    if (isGenericToken(secondToken)) return secondToken;
+  }
 
   const scanner = tokens.find((t) => isScannerToken(t));
   if (scanner) return scanner;
@@ -1807,7 +1817,7 @@ function sanitizeSerialField(value) {
   if (!raw) return "";
 
   // Keep delimiters while typing so multi-token QR payloads can be parsed.
-  return raw.replace(/[^A-Z0-9,;|\s]/g, "").slice(0, 20);
+  return raw.replace(/[^A-Z0-9,;|+\s]/g, "").slice(0, 80);
 }
 
 function sanitizeLookupField(value) {
@@ -1815,7 +1825,7 @@ function sanitizeLookupField(value) {
   if (!raw) return "";
 
   // Same behavior for lookup/paste workflows.
-  return raw.replace(/[^A-Z0-9,;|\s]/g, "").slice(0, 20);
+  return raw.replace(/[^A-Z0-9,;|+\s]/g, "").slice(0, 80);
 }
 
 function splitModel(modelText) {
