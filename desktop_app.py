@@ -710,6 +710,9 @@ class DesktopApp:
             "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
             "lang": self.lang,
             "prefix_rules": "",
+            "warranty_remote_api_url": "",
+            "warranty_remote_api_key": "",
+            "warranty_remote_api_timeout_sec": 25,
             "admin_email": "",
             "admin_access_token": "",
             "admin_refresh_token": "",
@@ -1121,6 +1124,91 @@ class DesktopApp:
             raw_bytes = response.read() or b""
         return raw_bytes.decode(charset, errors="ignore")
 
+    def _remote_warranty_api_url(self) -> str:
+        env_value = str(os.environ.get("WARRANTY_REMOTE_API_URL", "")).strip()
+        if env_value:
+            return env_value
+        return str((self.config or {}).get("warranty_remote_api_url") or "").strip()
+
+    def _remote_warranty_api_key(self) -> str:
+        env_value = str(os.environ.get("WARRANTY_REMOTE_API_KEY", "")).strip()
+        if env_value:
+            return env_value
+        return str((self.config or {}).get("warranty_remote_api_key") or "").strip()
+
+    def _remote_warranty_api_timeout_sec(self) -> int:
+        raw_env = str(os.environ.get("WARRANTY_REMOTE_API_TIMEOUT_SEC", "")).strip()
+        raw_cfg = str((self.config or {}).get("warranty_remote_api_timeout_sec") or "").strip()
+        for raw in (raw_env, raw_cfg, "25"):
+            try:
+                value = int(raw)
+                if value > 0:
+                    return value
+            except Exception:
+                continue
+        return 25
+
+    def _lookup_warranty_via_remote_worker(
+        self,
+        *,
+        make: str,
+        make_key: str,
+        serial: str,
+        checker_url: str,
+    ) -> dict[str, object] | None:
+        endpoint = self._remote_warranty_api_url()
+        if not endpoint:
+            return None
+
+        request_body = {
+            "make": make_key or make,
+            "serial": serial,
+            "checker_url": checker_url,
+        }
+        payload = json.dumps(request_body).encode("utf-8")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "programma_rb-desktop/1.0",
+        }
+        api_key = self._remote_warranty_api_key()
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        timeout_sec = self._remote_warranty_api_timeout_sec()
+        try:
+            req = urlrequest.Request(endpoint, data=payload, headers=headers, method="POST")
+            with urlrequest.urlopen(req, timeout=timeout_sec) as response:
+                charset = "utf-8"
+                content_type = response.headers.get("Content-Type", "")
+                match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
+                if match:
+                    charset = match.group(1)
+                raw_text = (response.read() or b"").decode(charset, errors="ignore")
+
+            parsed = json.loads(raw_text)
+            if not isinstance(parsed, dict):
+                return {
+                    "ok": False,
+                    "reason": "remote_worker_unavailable",
+                    "details": "Remote worker returned non-JSON object",
+                    "checker_url": checker_url,
+                    "source_mode": "remote",
+                }
+
+            parsed.setdefault("checker_url", checker_url)
+            parsed["source_mode"] = "remote"
+            return parsed
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": "remote_worker_unavailable",
+                "details": str(exc),
+                "checker_url": checker_url,
+                "source_mode": "remote",
+            }
+
     def _resolve_hp_warranty_result_url(self, serial: str) -> str:
         token = re.sub(r"[^A-Za-z0-9\-]", "", (serial or "").strip())
         if not token:
@@ -1427,7 +1515,20 @@ class DesktopApp:
         if not target:
             return False
 
-        launched = False
+        try:
+            parsed = urlparse.urlparse(target)
+            if parsed.scheme.lower() == "http" and parsed.netloc.lower().endswith("support.hp.com"):
+                target = urlparse.urlunparse(parsed._replace(scheme="https"))
+        except Exception:
+            pass
+
+        if os.name == "nt":
+            try:
+                os.startfile(target)  # type: ignore[attr-defined]
+                return True
+            except Exception:
+                pass
+
         edge_exe = ""
         try:
             edge_exe = self._detect_edge_browser_executable_path()
@@ -1436,7 +1537,6 @@ class DesktopApp:
 
         if edge_exe:
             edge_commands: list[list[str]] = [
-                [edge_exe, "--new-window", target],
                 [edge_exe, "--new-tab", target],
                 [edge_exe, target],
             ]
@@ -1447,20 +1547,9 @@ class DesktopApp:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-                    launched = True
+                    return True
                 except Exception:
                     continue
-
-        # In managed Edge setups, protocol launch can open URL even when first process starts on corporate page.
-        try:
-            if os.name == "nt":
-                os.startfile(f"microsoft-edge:{target}")  # type: ignore[attr-defined]
-                launched = True
-        except Exception:
-            pass
-
-        if launched:
-            return True
 
         try:
             subprocess.Popen(
@@ -1597,6 +1686,21 @@ class DesktopApp:
         if not checker_url:
             return {"ok": False, "reason": "checker_not_configured"}
 
+        remote_result = self._lookup_warranty_via_remote_worker(
+            make=make,
+            make_key=make_key,
+            serial=serial,
+            checker_url=checker_url,
+        )
+        remote_details = ""
+        if remote_result is not None:
+            if bool(remote_result.get("ok")):
+                return remote_result
+            remote_details = str(remote_result.get("details") or "").strip()
+            if make_key == "hp":
+                remote_result.setdefault("checker_url", checker_url)
+                return remote_result
+
         direct_result = self._lookup_warranty_via_http_checker(
             make=make,
             make_key=make_key,
@@ -1604,6 +1708,17 @@ class DesktopApp:
             checker_url=checker_url,
         )
         if bool(direct_result.get("ok")):
+            return direct_result
+
+        if remote_details:
+            local_details = str(direct_result.get("details") or "").strip()
+            merged_details = " | ".join(x for x in (local_details, f"remote: {remote_details}") if x)
+            if merged_details:
+                direct_result["details"] = merged_details
+
+        # HP pages are heavily JS/captcha/session-gated and frequently blocked in managed environments.
+        if make_key == "hp":
+            direct_result.setdefault("checker_url", checker_url)
             return direct_result
 
         try:
@@ -1652,6 +1767,7 @@ class DesktopApp:
                     options.add_argument("--disable-gpu")
                     options.add_argument("--no-first-run")
                     options.add_argument("--no-default-browser-check")
+
                     launch_attempts: list[tuple[str, object]] = []
                     if edge_driver_path:
                         launch_attempts.append(
@@ -2000,6 +2116,20 @@ class DesktopApp:
                     pass
 
                 checker_url = str(result.get("checker_url") or (self._warranty_checker_config_for_make(make) or {}).get("url") or "")
+                config_url = str((self._warranty_checker_config_for_make(make) or {}).get("url") or "").strip()
+                make_key = self._normalize_make_for_warranty_checker(make)
+                manual_checker_url = ""
+                if config_url:
+                    manual_checker_url = self._build_checker_url_with_serial(
+                        make=make,
+                        serial=serial,
+                        checker_url=config_url,
+                    ) or config_url
+                if make_key == "hp":
+                    manual_checker_url = config_url or manual_checker_url or checker_url
+                if not manual_checker_url:
+                    manual_checker_url = checker_url
+
                 base_comment, _ = self._split_comment_and_warranty(self.comment_var.get())
 
                 if bool(result.get("ok")):
@@ -2027,14 +2157,18 @@ class DesktopApp:
                     return
 
                 reason = str(result.get("reason") or "not_found")
-                marker = self._build_web_warranty_not_found_marker(make=make, serial=serial, checker_url=checker_url)
+                marker = self._build_web_warranty_not_found_marker(make=make, serial=serial, checker_url=manual_checker_url)
                 self.comment_var.set(f"{base_comment} | {marker}" if base_comment else marker)
                 opened_manual_checker = False
                 copied_checker_url = False
-                if checker_url and reason not in {"make_not_supported", "checker_not_configured"}:
-                    opened_manual_checker = self._open_checker_in_system_browser(checker_url)
-                    if not opened_manual_checker:
-                        copied_checker_url = self._copy_to_clipboard(checker_url)
+                if manual_checker_url and reason not in {
+                    "make_not_supported",
+                    "checker_not_configured",
+                    "remote_worker_unavailable",
+                }:
+                    copied_checker_url = self._copy_to_clipboard(manual_checker_url)
+                    if make_key != "hp":
+                        opened_manual_checker = self._open_checker_in_system_browser(manual_checker_url)
 
                 if reason == "make_not_supported":
                     info = self.tr("desktop_warranty_unsupported_make", make=make)
@@ -2043,16 +2177,18 @@ class DesktopApp:
                 elif reason == "browser_launch_failed":
                     info = self.tr("desktop_warranty_driver_missing")
                 elif reason == "browser_policy_blocked":
-                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url) if opened_manual_checker else self.tr("desktop_warranty_browser_policy_blocked")
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url) if opened_manual_checker else self.tr("desktop_warranty_browser_policy_blocked")
                 elif reason == "dynamic_page_requires_browser":
-                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url) if opened_manual_checker else self.tr("desktop_warranty_dynamic_page")
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url) if opened_manual_checker else self.tr("desktop_warranty_dynamic_page")
+                elif reason == "remote_worker_unavailable":
+                    info = self.tr("desktop_warranty_remote_worker_unavailable")
                 else:
                     info = self.tr("desktop_warranty_not_found")
 
-                if opened_manual_checker and checker_url:
-                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url)
-                elif copied_checker_url and checker_url:
-                    info = self.tr("desktop_warranty_checker_url_copied", url=checker_url)
+                if copied_checker_url and manual_checker_url:
+                    info = self.tr("desktop_warranty_checker_url_copied", url=manual_checker_url)
+                elif opened_manual_checker and manual_checker_url:
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url)
 
                 self._write_result(
                     {
@@ -2061,7 +2197,7 @@ class DesktopApp:
                         "reason": reason,
                         "serial": serial,
                         "make": make,
-                        "source": checker_url,
+                        "source": manual_checker_url,
                         "details": str(result.get("details") or ""),
                     },
                     ok=False,

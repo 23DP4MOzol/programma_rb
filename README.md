@@ -99,6 +99,26 @@ RLS pamatprincips:
 - `app_metadata.device_admin=true` vai
 - `device_admin=true`
 
+### Automātiska HP garantija (attālināts serviss)
+
+Ja šajā datorā uzņēmuma politika bloķē pārlūka automatizāciju, HP garantijas auto-nolasīšanu var darbināt caur atsevišķu servisu uz neierobežotas mašīnas.
+
+- Servisa kods: `remote_worker/hp_warranty_worker.py`
+- Ātra uzstādīšana: `remote_worker/README.md`
+
+Desktop klientam iestati:
+
+```powershell
+$env:WARRANTY_REMOTE_API_URL = "http://<worker-host>:8787/warranty/lookup"
+$env:WARRANTY_REMOTE_API_KEY = "change-me"
+```
+
+Vai pievieno šīs vērtības `app_config.json`:
+
+- `warranty_remote_api_url`
+- `warranty_remote_api_key`
+- `warranty_remote_api_timeout_sec`
+
 ### CLI (opcioniāli)
 
 ```powershell
@@ -216,6 +236,26 @@ RLS baseline:
 
 - `app_metadata.device_admin=true` or
 - `device_admin=true`
+
+### Automatic HP Warranty (Remote Worker)
+
+If company policy blocks browser automation on this PC, run HP auto warranty lookup through a separate worker on an unrestricted machine.
+
+- Worker code: `remote_worker/hp_warranty_worker.py`
+- Quick setup: `remote_worker/README.md`
+
+Set on desktop client:
+
+```powershell
+$env:WARRANTY_REMOTE_API_URL = "http://<worker-host>:8787/warranty/lookup"
+$env:WARRANTY_REMOTE_API_KEY = "change-me"
+```
+
+Or set these keys in `app_config.json`:
+
+- `warranty_remote_api_url`
+- `warranty_remote_api_key`
+- `warranty_remote_api_timeout_sec`
 
 ### CLI (optional)
 
