@@ -492,8 +492,8 @@ public class MainActivity extends AppCompatActivity {
         try {
             runOnUiThread(() -> {
                 ScanOptions options = new ScanOptions();
-                options.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
-                options.setPrompt("Scan QR code");
+                options.setDesiredBarcodeFormats(ScanOptions.ALL_CODE_TYPES);
+                options.setPrompt("Scan barcode or QR code");
                 options.setBeepEnabled(false);
                 options.setOrientationLocked(true);
                 options.setBarcodeImageEnabled(false);
@@ -501,7 +501,7 @@ public class MainActivity extends AppCompatActivity {
             });
             return new PrinterResult(true, "started", "");
         } catch (Exception ex) {
-            return new PrinterResult(false, "Could not start native QR scanner", "");
+            return new PrinterResult(false, "Could not start native code scanner", "");
         }
     }
 

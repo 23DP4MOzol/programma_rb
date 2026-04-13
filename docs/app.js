@@ -4,6 +4,21 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const SCANNER_SERIAL_RE = /^S\d{13,14}$/i;
 const PLAIN_SCANNER_RE = /^\d{13,14}$/;
 const GENERIC_SERIAL_RE = /^[A-Z0-9]{8,20}$/;
+const WEB_BARCODE_FORMATS = [
+  "qr_code",
+  "code_128",
+  "code_39",
+  "code_93",
+  "codabar",
+  "ean_13",
+  "ean_8",
+  "itf",
+  "upc_a",
+  "upc_e",
+  "data_matrix",
+  "pdf417",
+  "aztec",
+];
 
 const FALLBACK_PREFIX_HINTS = {
   "D2:18": { device_type: "scanner", make: "Zebra", model: "TC51" },
@@ -1213,7 +1228,7 @@ async function startQrCameraScan() {
   }
 
   try {
-    qrDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    qrDetector = new window.BarcodeDetector({ formats: WEB_BARCODE_FORMATS });
   } catch {
     try {
       qrDetector = new window.BarcodeDetector();
@@ -1970,12 +1985,86 @@ function cleanToken(value) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+function safeDecodeComponent(value) {
+  try {
+    return decodeURIComponent(String(value || "").replace(/\+/g, "%20"));
+  } catch {
+    return String(value || "");
+  }
+}
+
+function addTokenCandidate(candidates, value) {
+  const cleaned = cleanToken(value);
+  if (cleaned) {
+    candidates.add(cleaned);
+  }
+}
+
+function collectJsonTokenCandidates(node, candidates) {
+  if (node == null) return;
+
+  if (Array.isArray(node)) {
+    node.forEach((item) => collectJsonTokenCandidates(item, candidates));
+    return;
+  }
+
+  if (typeof node !== "object") {
+    addTokenCandidate(candidates, node);
+    return;
+  }
+
+  const preferredKeyRe = /^(SERIAL|SERIALNUMBER|SERIAL_NUMBER|SN|SNR|ASSET|ASSETTAG|ASSET_TAG|DEVICEID|DEVICE_ID|ID|CODE)$/;
+
+  Object.entries(node).forEach(([key, value]) => {
+    const normalizedKey = String(key || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (preferredKeyRe.test(normalizedKey)) {
+      addTokenCandidate(candidates, value);
+    }
+    if (typeof value === "object") {
+      collectJsonTokenCandidates(value, candidates);
+    }
+  });
+}
+
 function tokenizeScan(rawValue) {
-  return String(rawValue || "")
-    .toUpperCase()
+  const raw = String(rawValue || "");
+  const upper = raw.toUpperCase();
+  const candidates = new Set();
+
+  upper
     .split(/[\s,;|+]+/)
-    .map((x) => cleanToken(x))
-    .filter(Boolean);
+    .forEach((part) => addTokenCandidate(candidates, part));
+
+  const keyValueRe = /\b(?:SERIAL|SN|SNR|ASSET(?:_?TAG)?|DEVICE(?:_?ID)?|DEV(?:_?ID)?|ID|CODE)\s*[:=]\s*([A-Z0-9\-_/]+)/gi;
+  let match;
+  while ((match = keyValueRe.exec(upper)) !== null) {
+    addTokenCandidate(candidates, match[1]);
+  }
+
+  const queryRe = /(?:[?&]|^)(?:SERIAL|SN|SNR|ASSET(?:_?TAG)?|DEVICE(?:_?ID)?|DEV(?:_?ID)?|ID|CODE)=([^&#]+)/gi;
+  while ((match = queryRe.exec(raw)) !== null) {
+    addTokenCandidate(candidates, safeDecodeComponent(match[1]));
+  }
+
+  const gs1Match = upper.match(/\(21\)\s*([A-Z0-9\-]{4,30})/);
+  if (gs1Match) {
+    addTokenCandidate(candidates, gs1Match[1]);
+  }
+
+  const trimmed = raw.trim();
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      collectJsonTokenCandidates(parsed, candidates);
+    } catch {
+      // Keep best-effort tokenization when payload is not valid JSON.
+    }
+  }
+
+  const genericRuns = upper.match(/[A-Z0-9]{8,24}/g) || [];
+  genericRuns.forEach((part) => addTokenCandidate(candidates, part));
+
+  return Array.from(candidates);
 }
 
 function isScannerToken(token) {
@@ -1990,14 +2079,48 @@ function isGenericToken(token) {
   return GENERIC_SERIAL_RE.test(token || "");
 }
 
+function scoreSerialCandidate(token, mode, hasStructuredPayload) {
+  if (!token) return -1;
+
+  let score = -1;
+  if (isScannerToken(token)) {
+    score = 120;
+  } else if (isPlainScannerToken(token)) {
+    score = 110;
+  } else if (isGenericToken(token)) {
+    score = 75;
+  } else {
+    return -1;
+  }
+
+  if (mode === "laptop" || mode === "other") {
+    score += 10;
+  }
+  if (hasStructuredPayload) {
+    score += 5;
+  }
+  if (/^\d+$/.test(token)) {
+    score += 4;
+  }
+  if (token.length >= 13 && token.length <= 16) {
+    score += 6;
+  }
+  if (/^S\d{13,14}$/.test(token)) {
+    score += 8;
+  }
+
+  return score;
+}
+
 function extractPreferredSerial(rawValue, options = {}) {
-  const tokens = tokenizeScan(rawValue);
+  const source = String(rawValue || "");
+  const tokens = tokenizeScan(source);
   if (!tokens.length) return null;
 
-  const hasPlusPayload = /\+/.test(String(rawValue || ""));
+  const hasPlusPayload = /\+/.test(source);
   const mode = String(options.mode || els.type?.value || "scanner").toLowerCase();
   const allowGenericSingle = options.allowGenericSingle === true;
-  const hasDelimitedPayload = /[,;|+]/.test(String(rawValue || ""));
+  const hasStructuredPayload = /[,;|+=?&:\/{}\[\]()]/.test(source);
 
   // Some tablet QR payloads are "part+SERIAL+part"; serial is the middle token.
   if (hasPlusPayload && tokens.length >= 2) {
@@ -2008,23 +2131,23 @@ function extractPreferredSerial(rawValue, options = {}) {
     if (isGenericToken(secondToken)) return secondToken;
   }
 
-  const scanner = tokens.find((t) => isScannerToken(t));
-  if (scanner) return scanner;
+  const ranked = tokens
+    .map((token) => ({
+      token,
+      score: scoreSerialCandidate(token, mode, hasStructuredPayload),
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => b.score - a.score);
 
-  const plainScanner = tokens.find((t) => isPlainScannerToken(t));
-  if (plainScanner) return plainScanner;
-
-  if (tokens.length > 1) {
-    const first = tokens[0];
-    if ((mode === "laptop" || hasDelimitedPayload) && isGenericToken(first)) return first;
-    return null;
+  if (ranked.length) {
+    const best = ranked[0].token;
+    if (isScannerToken(best) || isPlainScannerToken(best)) return best;
+    if ((mode === "laptop" || mode === "other" || allowGenericSingle || hasStructuredPayload || tokens.length === 1) && isGenericToken(best)) {
+      return best;
+    }
   }
 
-  const only = tokens[0];
-  if (isScannerToken(only) || isPlainScannerToken(only)) {
-    return only;
-  }
-  if ((mode === "laptop" || mode === "other" || allowGenericSingle) && isGenericToken(only)) return only;
+  if (tokens.length === 1 && allowGenericSingle && isGenericToken(tokens[0])) return tokens[0];
   return null;
 }
 
@@ -2052,8 +2175,8 @@ function sanitizeSerialField(value) {
   const raw = String(value || "").toUpperCase();
   if (!raw) return "";
 
-  // Keep delimiters while typing so multi-token QR payloads can be parsed.
-  return raw.replace(/[^A-Z0-9,;|+\s]/g, "").slice(0, 80);
+  // Keep common payload separators for URL/JSON/key-value scan formats.
+  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]"']/g, "").slice(0, 220);
 }
 
 function sanitizeLookupField(value) {
@@ -2061,7 +2184,7 @@ function sanitizeLookupField(value) {
   if (!raw) return "";
 
   // Same behavior for lookup/paste workflows.
-  return raw.replace(/[^A-Z0-9,;|+\s]/g, "").slice(0, 80);
+  return raw.replace(/[^A-Z0-9,;|+\s:\/?&=%._\-{}\[\]"']/g, "").slice(0, 220);
 }
 
 function splitModel(modelText) {
