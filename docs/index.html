@@ -39,7 +39,11 @@
         </div>
 
         <label class="label" for="serial">Serial (scan here)</label>
-        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" maxlength="20" placeholder="S12345678901234 or 5CG3285C9K" />
+        <input id="serial" class="input input--large" type="text" inputmode="text" autocomplete="off" maxlength="80" placeholder="S12345678901234 or 5CG3285C9K" />
+
+        <div class="actions__buttons actions__buttons--scan">
+          <button id="scanQr" class="btn btn--small">Scan QR (camera)</button>
+        </div>
 
         <div class="grid">
           <div>
@@ -149,7 +153,7 @@
         </div>
         <div class="list-tools">
           <div class="lookup-row">
-            <input id="lookupSerial" class="input" type="text" maxlength="20" placeholder="Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)" />
+            <input id="lookupSerial" class="input" type="text" maxlength="80" placeholder="Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)" />
             <button id="lookupLoad" class="btn btn--small">Load</button>
           </div>
           <div class="lookup-row">
@@ -297,6 +301,17 @@
         <div class="popup__actions">
           <button id="scanPopupRegister" class="btn primary">Register new device</button>
           <button id="scanPopupClose" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="qrScanPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="qrScanTitle">
+      <div class="popup__card popup__card--scan">
+        <div class="popup__title" id="qrScanTitle">Scan QR code</div>
+        <video id="qrScanVideo" class="qr-video" autoplay playsinline muted></video>
+        <div class="popup__message" id="qrScanMessage">Starting camera...</div>
+        <div class="popup__actions">
+          <button id="qrScanClose" class="btn">Close</button>
         </div>
       </div>
     </div>

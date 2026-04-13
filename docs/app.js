@@ -95,6 +95,13 @@ const WEB_I18N = {
     scanPopupTitle: "Scan result",
     scanPopupRegister: "Register new device",
     scanPopupClose: "Close",
+    scanQrTitle: "Scan QR code",
+    scanQrStarting: "Starting camera...",
+    scanQrUnsupported: "Camera QR scan is not supported on this WebView. Use scanner input instead.",
+    scanQrPermissionDenied: "Camera permission denied. Allow Camera permission and try again.",
+    scanQrCanceled: "QR scan canceled",
+    scanQrDetected: "QR scanned: {serial}",
+    scanQrUnrecognized: "QR read, but serial format was not recognized",
     scanRegisterStatus: "Register a new device: confirm Type / Make / Model and save.",
     scanFoundDbStatus: "Loaded from database",
     scanFoundDbPopup: "Found in database: existing device loaded.",
@@ -156,6 +163,7 @@ const WEB_I18N = {
     uiClear: "Clear",
     uiConnectZq620: "Connect ZQ620",
     uiPrintSticker: "Print asset sticker",
+    uiScanQr: "Scan QR (camera)",
     uiSelectPrinter: "Select printer...",
     uiFindPrinters: "Find printers",
     uiConnectSelected: "Connect selected",
@@ -231,6 +239,13 @@ const WEB_I18N = {
     scanPopupTitle: "Skenēšanas rezultāts",
     scanPopupRegister: "Reģistrēt jaunu ierīci",
     scanPopupClose: "Aizvērt",
+    scanQrTitle: "Skenēt QR kodu",
+    scanQrStarting: "Palaižu kameru...",
+    scanQrUnsupported: "QR skenēšana ar kameru šajā WebView nav atbalstīta. Izmanto skenera ievadi.",
+    scanQrPermissionDenied: "Kameras atļauja liegta. Atļauj kameru un mēģini vēlreiz.",
+    scanQrCanceled: "QR skenēšana atcelta",
+    scanQrDetected: "QR nolasīts: {serial}",
+    scanQrUnrecognized: "QR nolasīts, bet seriāla formātu neatpazina",
     scanRegisterStatus: "Reģistrē jaunu ierīci: pārbaudi Tips / Ražotājs / Modelis un saglabā.",
     scanFoundDbStatus: "Ielādēts no datubāzes",
     scanFoundDbPopup: "Atrasts datubāzē: esošā ierīce ielādēta.",
@@ -292,6 +307,7 @@ const WEB_I18N = {
     uiClear: "Notīrīt",
     uiConnectZq620: "Pieslēgt ZQ620",
     uiPrintSticker: "Drukāt uzlīmi",
+    uiScanQr: "Skenēt QR (kamera)",
     uiSelectPrinter: "Izvēlies printeri...",
     uiFindPrinters: "Meklēt printerus",
     uiConnectSelected: "Pieslēgt izvēlēto",
@@ -441,6 +457,7 @@ const els = {
   langSelect: document.getElementById("langSelect"),
   themeToggle: document.getElementById("themeToggle"),
   serial: document.getElementById("serial"),
+  scanQr: document.getElementById("scanQr"),
   statusText: document.getElementById("status"),
   queueStatus: document.getElementById("queueStatus"),
   appVersion: document.getElementById("appVersion"),
@@ -504,6 +521,11 @@ const els = {
   scanPopupMessage: document.getElementById("scanPopupMessage"),
   scanPopupRegister: document.getElementById("scanPopupRegister"),
   scanPopupClose: document.getElementById("scanPopupClose"),
+  qrScanPopup: document.getElementById("qrScanPopup"),
+  qrScanTitle: document.getElementById("qrScanTitle"),
+  qrScanVideo: document.getElementById("qrScanVideo"),
+  qrScanMessage: document.getElementById("qrScanMessage"),
+  qrScanClose: document.getElementById("qrScanClose"),
   conflictPopup: document.getElementById("conflictPopup"),
   conflictPopupTitle: document.getElementById("conflictPopupTitle"),
   conflictPopupMessage: document.getElementById("conflictPopupMessage"),
@@ -535,6 +557,10 @@ let currentMakeSuggestion = "";
 let currentModelSuggestion = "";
 let printerCandidates = [];
 let lastPrinterPrintAt = "";
+let qrScanStream = null;
+let qrScanActive = false;
+let qrScanAnimationId = 0;
+let qrDetector = null;
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -1030,6 +1056,167 @@ function refreshInlineSuggestions() {
   updateModelInlineSuggestion();
 }
 
+function setQrScanMessage(message, tone = "info") {
+  if (!els.qrScanMessage) return;
+  els.qrScanMessage.textContent = String(message || "");
+  if (tone === "error") {
+    els.qrScanMessage.style.color = "#b00020";
+  } else if (tone === "ok") {
+    els.qrScanMessage.style.color = "#0a7a2f";
+  } else {
+    els.qrScanMessage.style.color = "var(--ink)";
+  }
+}
+
+function stopQrCameraScan() {
+  if (qrScanAnimationId) {
+    cancelAnimationFrame(qrScanAnimationId);
+  }
+  qrScanAnimationId = 0;
+  qrScanActive = false;
+
+  if (qrScanStream) {
+    for (const track of qrScanStream.getTracks()) {
+      try {
+        track.stop();
+      } catch {
+        // ignore track stop failures
+      }
+    }
+  }
+  qrScanStream = null;
+
+  if (els.qrScanVideo) {
+    try {
+      els.qrScanVideo.pause();
+    } catch {
+      // ignore pause errors
+    }
+    els.qrScanVideo.srcObject = null;
+  }
+}
+
+function hideQrScanPopup({ silent = false } = {}) {
+  stopQrCameraScan();
+  setPopupVisibility(els.qrScanPopup, false);
+  if (!silent) {
+    setStatus(trWeb("scanQrCanceled"));
+  }
+}
+
+async function handleQrDetected(rawValue) {
+  stopQrCameraScan();
+  setPopupVisibility(els.qrScanPopup, false);
+
+  const raw = String(rawValue || "").trim();
+  if (!raw) {
+    setStatus(trWeb("scanQrUnrecognized"), "error");
+    return;
+  }
+
+  const token = extractPreferredSerial(raw, { allowGenericSingle: true });
+  if (!token) {
+    setStatus(trWeb("scanQrUnrecognized"), "error");
+    return;
+  }
+
+  const cleaned = cleanToken(token);
+  els.serial.value = cleaned;
+  els.lookupSerial.value = cleaned;
+  saveDraft();
+  setStatus(trWebFmt("scanQrDetected", { serial: cleaned }), "ok");
+  await loadByScannedValue(raw, { allowGenericSingle: true });
+}
+
+function scheduleQrFrame() {
+  qrScanAnimationId = requestAnimationFrame(runQrScanFrame);
+}
+
+function runQrScanFrame() {
+  if (!qrScanActive || !els.qrScanVideo || !qrDetector) {
+    return;
+  }
+
+  qrDetector
+    .detect(els.qrScanVideo)
+    .then((codes) => {
+      if (!qrScanActive) {
+        return;
+      }
+
+      const found = (codes || []).find((item) => item && String(item.rawValue || "").trim());
+      if (found) {
+        handleQrDetected(found.rawValue);
+        return;
+      }
+
+      scheduleQrFrame();
+    })
+    .catch(() => {
+      if (qrScanActive) {
+        scheduleQrFrame();
+      }
+    });
+}
+
+async function startQrCameraScan() {
+  if (qrScanActive) {
+    return;
+  }
+
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    setStatus(trWeb("scanQrUnsupported"), "error");
+    return;
+  }
+
+  if (typeof window.BarcodeDetector !== "function") {
+    setStatus(trWeb("scanQrUnsupported"), "error");
+    return;
+  }
+
+  try {
+    qrDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+  } catch {
+    try {
+      qrDetector = new window.BarcodeDetector();
+    } catch {
+      setStatus(trWeb("scanQrUnsupported"), "error");
+      return;
+    }
+  }
+
+  setPopupVisibility(els.qrScanPopup, true);
+  setQrScanMessage(trWeb("scanQrStarting"));
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    });
+
+    qrScanStream = stream;
+    if (els.qrScanVideo) {
+      els.qrScanVideo.srcObject = stream;
+      await els.qrScanVideo.play();
+    }
+    qrScanActive = true;
+    scheduleQrFrame();
+  } catch (error) {
+    stopQrCameraScan();
+    setPopupVisibility(els.qrScanPopup, false);
+    const text = String(error?.name || error?.message || "");
+    if (/NotAllowedError|PermissionDenied/i.test(text)) {
+      setStatus(trWeb("scanQrPermissionDenied"), "error");
+    } else {
+      setStatus(trWeb("scanQrUnsupported"), "error");
+    }
+  }
+}
+
 function setPopupVisibility(popupEl, visible) {
   if (!popupEl) return;
   if (visible) {
@@ -1126,6 +1313,7 @@ function applyWebLanguageLabels() {
 
   if (els.save) els.save.textContent = trWeb("uiSaveUpdate");
   if (els.clear) els.clear.textContent = trWeb("uiClear");
+  if (els.scanQr) els.scanQr.textContent = trWeb("uiScanQr");
   if (els.printerConnect) els.printerConnect.textContent = trWeb("uiConnectZq620");
   if (els.printSticker) els.printSticker.textContent = trWeb("uiPrintSticker");
   if (els.printerRefresh) els.printerRefresh.textContent = trWeb("uiFindPrinters");
@@ -1224,6 +1412,15 @@ function applyWebLanguageLabels() {
   }
   if (els.scanPopupClose) {
     els.scanPopupClose.textContent = trWeb("scanPopupClose");
+  }
+  if (els.qrScanTitle) {
+    els.qrScanTitle.textContent = trWeb("scanQrTitle");
+  }
+  if (els.qrScanMessage) {
+    els.qrScanMessage.textContent = trWeb("scanQrStarting");
+  }
+  if (els.qrScanClose) {
+    els.qrScanClose.textContent = trWeb("scanPopupClose");
   }
   if (els.conflictPopupTitle) {
     els.conflictPopupTitle.textContent = trWeb("conflictTitle");
@@ -2741,6 +2938,9 @@ if (els.themeToggle) {
     toggleWebTheme();
   });
 }
+if (els.scanQr) {
+  els.scanQr.addEventListener("click", startQrCameraScan);
+}
 if (els.printerConnect) {
   els.printerConnect.addEventListener("click", connectZq620Printer);
 }
@@ -2786,6 +2986,16 @@ if (els.scanPopup) {
     }
   });
 }
+if (els.qrScanClose) {
+  els.qrScanClose.addEventListener("click", () => hideQrScanPopup());
+}
+if (els.qrScanPopup) {
+  els.qrScanPopup.addEventListener("click", (e) => {
+    if (e.target === els.qrScanPopup) {
+      hideQrScanPopup();
+    }
+  });
+}
 if (els.conflictReload) {
   els.conflictReload.addEventListener("click", () => resolveConflictPopup("reload"));
 }
@@ -2805,8 +3015,12 @@ if (els.conflictPopup) {
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     hideScanPopup();
+    hideQrScanPopup({ silent: true });
     resolveConflictPopup("cancel");
   }
+});
+window.addEventListener("beforeunload", () => {
+  stopQrCameraScan();
 });
 if (els.prefixRulesRefresh) {
   els.prefixRulesRefresh.addEventListener("click", loadPrefixRulesAdmin);

@@ -359,6 +359,10 @@ body.theme-dark {
   grid-template-columns: minmax(180px, 1.6fr) repeat(2, minmax(140px, 1fr));
 }
 
+.actions__buttons--scan {
+  grid-template-columns: minmax(170px, 240px);
+}
+
 .check {
   display: flex;
   gap: 8px;
@@ -504,6 +508,19 @@ body.theme-dark {
   padding: 14px;
   display: grid;
   gap: 10px;
+}
+
+.popup__card--scan {
+  width: min(620px, 96vw);
+}
+
+.qr-video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .popup__title {

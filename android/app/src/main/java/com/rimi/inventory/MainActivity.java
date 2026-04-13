@@ -16,9 +16,11 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -36,6 +38,7 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQ_BT_PERMISSION = 7001;
+    private static final int REQ_CAMERA_PERMISSION = 7002;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String LOCAL_WEB_URL = "file:///android_asset/web/index.html";
     private static final long DISCOVERY_TIMEOUT_MS = 9000;
@@ -49,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
     private WebView appWebView;
     private boolean localWebFallbackLoaded = false;
     private boolean printerAclReceiverRegistered = false;
+    private PermissionRequest pendingWebPermissionRequest;
 
     private final BroadcastReceiver printerAclReceiver = new BroadcastReceiver() {
         @Override
@@ -108,6 +112,19 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
 
+        appWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                handleWebPermissionRequest(request);
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingWebPermissionRequest == request) {
+                    pendingWebPermissionRequest = null;
+                }
+            }
+        });
         appWebView.setWebViewClient(new InventoryWebViewClient());
         appWebView.addJavascriptInterface(new AndroidPrinterBridge(), "AndroidPrinter");
         appWebView.clearCache(true);
@@ -157,8 +174,74 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean hasCameraPermission() {
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void handleWebPermissionRequest(PermissionRequest request) {
+        if (request == null) {
+            return;
+        }
+
+        boolean wantsCamera = false;
+        String[] resources = request.getResources();
+        if (resources != null) {
+            for (String resource : resources) {
+                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                    wantsCamera = true;
+                    break;
+                }
+            }
+        }
+
+        if (!wantsCamera) {
+            request.grant(resources);
+            return;
+        }
+
+        runOnUiThread(() -> {
+            if (hasCameraPermission()) {
+                request.grant(request.getResources());
+                return;
+            }
+
+            pendingWebPermissionRequest = request;
+            ActivityCompat.requestPermissions(
+                    MainActivity.this,
+                    new String[]{Manifest.permission.CAMERA},
+                    REQ_CAMERA_PERMISSION
+            );
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != REQ_CAMERA_PERMISSION) {
+            return;
+        }
+
+        PermissionRequest pending = pendingWebPermissionRequest;
+        pendingWebPermissionRequest = null;
+        if (pending == null) {
+            return;
+        }
+
+        boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        if (granted) {
+            pending.grant(pending.getResources());
+        } else {
+            pending.deny();
+        }
+    }
+
     @Override
     protected void onDestroy() {
+        if (pendingWebPermissionRequest != null) {
+            pendingWebPermissionRequest.deny();
+            pendingWebPermissionRequest = null;
+        }
         unregisterPrinterAclReceiver();
         super.onDestroy();
         synchronized (printerLock) {
