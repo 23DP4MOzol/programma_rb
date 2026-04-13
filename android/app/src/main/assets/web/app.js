@@ -1068,6 +1068,30 @@ function setQrScanMessage(message, tone = "info") {
   }
 }
 
+async function handleAndroidQrScanResult(payload) {
+  let parsed = payload;
+  if (typeof payload === "string") {
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      parsed = { rawValue: String(payload || "") };
+    }
+  }
+
+  const canceled = Boolean(parsed?.canceled);
+  const rawValue = String(parsed?.rawValue || parsed?.text || "").trim();
+  if (canceled || !rawValue) {
+    setStatus(trWeb("scanQrCanceled"));
+    return;
+  }
+
+  await handleQrDetected(rawValue);
+}
+
+window.onAndroidQrScanResult = (payload) => {
+  handleAndroidQrScanResult(payload);
+};
+
 function stopQrCameraScan() {
   if (qrScanAnimationId) {
     cancelAnimationFrame(qrScanAnimationId);
@@ -1162,6 +1186,14 @@ function runQrScanFrame() {
 async function startQrCameraScan() {
   if (qrScanActive) {
     return;
+  }
+
+  if (hasPrinterBridge()) {
+    const nativeResult = callPrinterBridge("scanQr");
+    if (nativeResult.ok) {
+      setStatus(trWeb("scanQrStarting"));
+      return;
+    }
   }
 
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {

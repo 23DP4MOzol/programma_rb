@@ -25,8 +25,12 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+
+import com.journeyapps.barcodescanner.ScanContract;
+import com.journeyapps.barcodescanner.ScanOptions;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -53,6 +57,15 @@ public class MainActivity extends AppCompatActivity {
     private boolean localWebFallbackLoaded = false;
     private boolean printerAclReceiverRegistered = false;
     private PermissionRequest pendingWebPermissionRequest;
+    private final ActivityResultLauncher<ScanOptions> qrScanLauncher =
+            registerForActivityResult(new ScanContract(), result -> {
+                String contents = result != null ? result.getContents() : null;
+                if (contents == null || contents.trim().isEmpty()) {
+                    notifyWebQrScanResult("", true, "canceled");
+                } else {
+                    notifyWebQrScanResult(contents, false, "");
+                }
+            });
 
     private final BroadcastReceiver printerAclReceiver = new BroadcastReceiver() {
         @Override
@@ -411,6 +424,40 @@ public class MainActivity extends AppCompatActivity {
                 + "\"address\":\"" + jsonEscape(address) + "\"," 
                 + "\"bondedCount\":" + bondedCount
                 + "}";
+    }
+
+    private void notifyWebQrScanResult(String rawValue, boolean canceled, String error) {
+        if (appWebView == null) {
+            return;
+        }
+
+        final String payload = "{"
+                + "\"rawValue\":\"" + jsonEscape(rawValue) + "\"," 
+                + "\"canceled\":" + canceled + ","
+                + "\"error\":\"" + jsonEscape(error) + "\""
+                + "}";
+
+        appWebView.post(() -> appWebView.evaluateJavascript(
+                "window.onAndroidQrScanResult && window.onAndroidQrScanResult(" + payload + ")",
+                null
+        ));
+    }
+
+    private PrinterResult scanQrInternal() {
+        try {
+            runOnUiThread(() -> {
+                ScanOptions options = new ScanOptions();
+                options.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
+                options.setPrompt("Scan QR code");
+                options.setBeepEnabled(false);
+                options.setOrientationLocked(true);
+                options.setBarcodeImageEnabled(false);
+                qrScanLauncher.launch(options);
+            });
+            return new PrinterResult(true, "started", "");
+        } catch (Exception ex) {
+            return new PrinterResult(false, "Could not start native QR scanner", "");
+        }
     }
 
     private boolean hasPermission(String permission) {
@@ -1172,6 +1219,11 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public String printZpl(String zpl) {
             return toJson(printZplInternal(zpl));
+        }
+
+        @JavascriptInterface
+        public String scanQr() {
+            return toJson(scanQrInternal());
         }
     }
 }
