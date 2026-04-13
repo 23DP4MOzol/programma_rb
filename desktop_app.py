@@ -1582,6 +1582,8 @@ class DesktopApp:
                     if WARRANTY_WEB_AUTOMATION_HEADLESS:
                         options.add_argument("--headless=new")
                     options.add_argument("--disable-gpu")
+                    options.add_argument("--no-first-run")
+                    options.add_argument("--no-default-browser-check")
                     launch_attempts: list[tuple[str, object]] = []
                     if edge_driver_path:
                         launch_attempts.append(
@@ -1653,7 +1655,38 @@ class DesktopApp:
 
         try:
             driver.set_page_load_timeout(WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
-            driver.get(checker_url)
+
+            opened_in_fresh_tab = False
+            try:
+                driver.get("about:blank")
+            except Exception:
+                pass
+
+            try:
+                driver.execute_script("window.open(arguments[0], '_blank');", checker_url)
+                tab_wait = WebDriverWait(driver, 8)
+                tab_wait.until(lambda d: len(d.window_handles) >= 2)
+
+                handles = list(driver.window_handles)
+                target_handle = handles[-1]
+
+                # Keep only the checker tab so policy-enforced startup pages do not interfere.
+                for handle in handles:
+                    if handle == target_handle:
+                        continue
+                    try:
+                        driver.switch_to.window(handle)
+                        driver.close()
+                    except Exception:
+                        pass
+
+                driver.switch_to.window(target_handle)
+                opened_in_fresh_tab = True
+            except Exception:
+                opened_in_fresh_tab = False
+
+            if not opened_in_fresh_tab:
+                driver.get(checker_url)
 
             wait = WebDriverWait(driver, WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
             body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
