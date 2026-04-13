@@ -117,6 +117,20 @@ const WARRANTY_PUBLIC_API_BY_MAKE = {
   samsung: { endpoint: "", serialParam: "serialNumber" },
   apple: { endpoint: "", serialParam: "serialNumber" },
 };
+const WARRANTY_CHECKER_URL_BY_MAKE = {
+  hp: "https://support.hp.com/us-en/check-warranty",
+  lenovo: "https://pcsupport.lenovo.com/us/en/warrantylookup#/",
+  zebra: "https://support.zebra.com/warrantycheck",
+  samsung: "https://www.samsung.com/us/support/warranty/",
+  apple: "https://checkcoverage.apple.com/",
+};
+const WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE = {
+  hp: "serialnumber",
+  lenovo: "serial",
+  zebra: "serial",
+  samsung: "serialNumber",
+  apple: "sn",
+};
 const WARRANTY_MONTHS_BY_PREFIX = {
   "5CG32": 36,
   "5CG21": 36,
@@ -224,6 +238,7 @@ const WEB_I18N = {
     uiRefreshDiagnostics: "Refresh diagnostics",
     uiExportCsv: "Export CSV",
     uiLoad: "Load",
+    uiOpenChecker: "Open checker",
     uiLoadAudit: "Load audit",
     uiSaveRule: "Save rule",
     uiDeleteRule: "Delete rule",
@@ -282,6 +297,9 @@ const WEB_I18N = {
     msgBackOnlineSyncing: "Back online. Syncing queued saves...",
     msgOfflineQueued: "Offline mode: saves will be queued",
     msgNoInternet: "No internet connection. Connect to Wi-Fi or mobile data.",
+    msgWarrantyCheckerOpened: "Warranty checker opened",
+    msgWarrantyCheckerOpenFailed: "Could not open warranty checker on this device",
+    msgWarrantyCheckerUnavailable: "Warranty checker is not available for this make",
     uiDiagApiOffline: "offline (no internet)",
     sync_starting: "starting",
     sync_offline: "offline",
@@ -371,6 +389,7 @@ const WEB_I18N = {
     uiRefreshDiagnostics: "Atjaunot diagnostiku",
     uiExportCsv: "Eksportēt CSV",
     uiLoad: "Ielādēt",
+    uiOpenChecker: "Atvērt garantijas pārbaudi",
     uiLoadAudit: "Ielādēt auditu",
     uiSaveRule: "Saglabāt noteikumu",
     uiDeleteRule: "Dzēst noteikumu",
@@ -429,6 +448,9 @@ const WEB_I18N = {
     msgBackOnlineSyncing: "Atkal tiešsaistē. Sinhronizēju gaidošos ierakstus...",
     msgOfflineQueued: "Bezsaistes režīms: saglabāšana tiks ielikta rindā",
     msgNoInternet: "Nav interneta savienojuma. Pieslēdzies Wi-Fi vai mobilajiem datiem.",
+    msgWarrantyCheckerOpened: "Garantijas pārbaude atvērta",
+    msgWarrantyCheckerOpenFailed: "Neizdevās atvērt garantijas pārbaudi šajā ierīcē",
+    msgWarrantyCheckerUnavailable: "Šim ražotājam nav pieejama garantijas pārbaude",
     uiDiagApiOffline: "bezsaistē (nav interneta)",
     sync_starting: "sāk",
     sync_offline: "bezsaistē",
@@ -2354,6 +2376,88 @@ function buildWarrantyPublicApiQueryUrl(make, serial) {
   }
 }
 
+function warrantyCheckerUrlForMake(make) {
+  const normalized = normalizeMakeForPublicApi(make);
+  if (!normalized) return "";
+
+  if (WARRANTY_CHECKER_URL_BY_MAKE[normalized]) {
+    return WARRANTY_CHECKER_URL_BY_MAKE[normalized];
+  }
+
+  const firstWord = normalized.split(" ")[0];
+  return WARRANTY_CHECKER_URL_BY_MAKE[firstWord] || "";
+}
+
+function warrantyCheckerSerialParamForMake(make) {
+  const normalized = normalizeMakeForPublicApi(make);
+  if (!normalized) return "";
+
+  if (WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized]) {
+    return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized];
+  }
+
+  const firstWord = normalized.split(" ")[0];
+  return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[firstWord] || "";
+}
+
+function buildWarrantyCheckerAutomationUrl(make, serial) {
+  const baseUrl = warrantyCheckerUrlForMake(make);
+  if (!baseUrl) return "";
+
+  const cleaned = cleanToken(serial);
+  if (!cleaned) return baseUrl;
+
+  const serialParam = warrantyCheckerSerialParamForMake(make);
+  if (!serialParam) return baseUrl;
+
+  try {
+    const url = new URL(baseUrl);
+    if (!url.searchParams.has(serialParam)) {
+      url.searchParams.set(serialParam, cleaned);
+    }
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+function openWarrantyCheckerUrl(url) {
+  const target = String(url || "").trim();
+  if (!target) return false;
+
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return false;
+  }
+
+  if (!/^https?:$/i.test(parsed.protocol)) {
+    return false;
+  }
+
+  try {
+    const popup = window.open(parsed.toString(), "_blank", "noopener,noreferrer");
+    if (popup) {
+      try {
+        popup.opener = null;
+      } catch {
+        // ignore opener assignment failures
+      }
+      return true;
+    }
+  } catch {
+    // ignore and try same-tab fallback
+  }
+
+  try {
+    window.location.assign(parsed.toString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getWarrantyApiCacheKey(make, serial) {
   const normalizedMake = normalizeMakeForPublicApi(make);
   const cleaned = cleanToken(serial);
@@ -2492,6 +2596,10 @@ function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt, make })
     const queryUrl = buildWarrantyPublicApiQueryUrl(resolvedMake, cleaned);
     if (queryUrl) {
       return `${WARRANTY_MARKER} PUBLIC-API AUTO-CHECK: couldn't find it for ${resolvedMake} (serial ${cleaned}) ${queryUrl}`;
+    }
+    const checkerUrl = buildWarrantyCheckerAutomationUrl(resolvedMake, cleaned);
+    if (checkerUrl) {
+      return `${WARRANTY_MARKER} WEBVIEW-CHECK: public API is not configured for ${resolvedMake}; open checker for serial ${cleaned}: ${checkerUrl}`;
     }
     return `${WARRANTY_MARKER} PUBLIC-API AUTO-CHECK: couldn't find it for ${resolvedMake} (serial ${cleaned}); public API is not configured`;
   }
@@ -3452,9 +3560,20 @@ function renderDevicesList() {
     return;
   }
 
+  const checkerButtonLabel = escapeHtml(trWeb("uiOpenChecker"));
+
   els.devicesList.innerHTML = rows
-    .map(
-      (row) => `
+    .map((row) => {
+      const rowSerial = cleanToken(row.serial || "");
+      const rowMake = splitModel(row.model || "")[0] || "";
+      const checkerUrl = buildWarrantyCheckerAutomationUrl(rowMake, rowSerial);
+      const checkerButton = checkerUrl
+        ? `<button type="button" class="btn btn--small row__checker-btn js-open-checker" data-checker-url="${escapeHtml(
+            checkerUrl
+          )}">${checkerButtonLabel}</button>`
+        : "";
+
+      return `
       <div class="row" data-serial="${escapeHtml(row.serial || "")}">
         <span data-label="${escapeHtml(trWeb("uiTableSerial"))}">${escapeHtml(row.serial || "")}</span>
         <span data-label="${escapeHtml(trWeb("uiTableType"))}">${escapeHtml(row.device_type || "")}</span>
@@ -3462,10 +3581,12 @@ function renderDevicesList() {
         <span data-label="${escapeHtml(trWeb("uiTableStatus"))}">${escapeHtml(row.status || "")}</span>
         <span data-label="${escapeHtml(trWeb("uiTableFrom"))}">${escapeHtml(row.from_store || "")}</span>
         <span data-label="${escapeHtml(trWeb("uiTableTo"))}">${escapeHtml(row.to_store || "")}</span>
-        <span data-label="${escapeHtml(trWeb("uiTableComment"))}">${escapeHtml(row.comment || "")}</span>
+        <span data-label="${escapeHtml(trWeb("uiTableComment"))}"><span class="row__comment-text">${escapeHtml(
+          row.comment || ""
+        )}</span>${checkerButton}</span>
       </div>
     `
-    )
+    })
     .join("");
 }
 
@@ -3831,6 +3952,22 @@ if (els.listClear) {
 }
 
 els.devicesList.addEventListener("click", (e) => {
+  const checkerButton = e.target.closest(".js-open-checker");
+  if (checkerButton) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const checkerUrl = String(checkerButton.getAttribute("data-checker-url") || "").trim();
+    if (!checkerUrl) {
+      setStatus(trWeb("msgWarrantyCheckerUnavailable"), "error");
+      return;
+    }
+
+    const opened = openWarrantyCheckerUrl(checkerUrl);
+    setStatus(trWeb(opened ? "msgWarrantyCheckerOpened" : "msgWarrantyCheckerOpenFailed"), opened ? "ok" : "error");
+    return;
+  }
+
   const row = e.target.closest(".row[data-serial]");
   if (!row) return;
   const cleaned = cleanToken(row.getAttribute("data-serial") || "");

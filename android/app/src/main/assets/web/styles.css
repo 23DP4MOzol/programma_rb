@@ -123,6 +123,15 @@ body.theme-dark {
   line-height: 1.25;
 }
 
+.row__comment-text {
+  display: block;
+}
+
+.row__checker-btn {
+  margin-top: 6px;
+  width: max-content;
+}
+
 .row--head {
   background: var(--surface-alt);
   font-weight: 700;

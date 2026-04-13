@@ -1223,12 +1223,26 @@ class DesktopApp:
 
         try:
             from selenium import webdriver  # type: ignore
+            from selenium.webdriver.chrome.service import Service as ChromeService  # type: ignore
             from selenium.webdriver.common.by import By  # type: ignore
             from selenium.webdriver.common.keys import Keys  # type: ignore
+            from selenium.webdriver.edge.service import Service as EdgeService  # type: ignore
             from selenium.webdriver.support import expected_conditions as EC  # type: ignore
             from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
         except Exception:
             return {"ok": False, "reason": "selenium_missing", "checker_url": checker_url}
+
+        edge_manager = None
+        chrome_manager = None
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager  # type: ignore
+            from webdriver_manager.microsoft import EdgeChromiumDriverManager  # type: ignore
+
+            edge_manager = EdgeChromiumDriverManager
+            chrome_manager = ChromeDriverManager
+        except Exception:
+            edge_manager = None
+            chrome_manager = None
 
         driver = None
         launch_errors: list[str] = []
@@ -1239,14 +1253,46 @@ class DesktopApp:
                     if WARRANTY_WEB_AUTOMATION_HEADLESS:
                         options.add_argument("--headless=new")
                     options.add_argument("--disable-gpu")
-                    driver = webdriver.Edge(options=options)
+                    launch_attempts: list[object] = []
+                    if edge_manager is not None:
+                        launch_attempts.append(
+                            lambda: webdriver.Edge(
+                                service=EdgeService(edge_manager().install()),
+                                options=options,
+                            )
+                        )
+                    launch_attempts.append(lambda: webdriver.Edge(options=options))
+
+                    for attempt in launch_attempts:
+                        try:
+                            driver = attempt()
+                            break
+                        except Exception as edge_exc:
+                            launch_errors.append(f"edge-launch: {edge_exc}")
                 else:
                     options = webdriver.ChromeOptions()
                     if WARRANTY_WEB_AUTOMATION_HEADLESS:
                         options.add_argument("--headless=new")
                     options.add_argument("--disable-gpu")
-                    driver = webdriver.Chrome(options=options)
-                break
+                    launch_attempts = []
+                    if chrome_manager is not None:
+                        launch_attempts.append(
+                            lambda: webdriver.Chrome(
+                                service=ChromeService(chrome_manager().install()),
+                                options=options,
+                            )
+                        )
+                    launch_attempts.append(lambda: webdriver.Chrome(options=options))
+
+                    for attempt in launch_attempts:
+                        try:
+                            driver = attempt()
+                            break
+                        except Exception as chrome_exc:
+                            launch_errors.append(f"chrome-launch: {chrome_exc}")
+
+                if driver is not None:
+                    break
             except Exception as exc:
                 launch_errors.append(f"{browser}: {exc}")
 
@@ -1470,6 +1516,8 @@ class DesktopApp:
                     info = self.tr("desktop_warranty_unsupported_make", make=make)
                 elif reason == "selenium_missing":
                     info = self.tr("desktop_warranty_selenium_missing")
+                elif reason == "browser_launch_failed":
+                    info = self.tr("desktop_warranty_driver_missing")
                 else:
                     info = self.tr("desktop_warranty_not_found")
 
