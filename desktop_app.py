@@ -1655,38 +1655,108 @@ class DesktopApp:
 
         try:
             driver.set_page_load_timeout(WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
+            checker_host = urlparse.urlparse(checker_url).netloc.lower()
 
-            opened_in_fresh_tab = False
-            try:
-                driver.get("about:blank")
-            except Exception:
-                pass
+            def _is_checker_url(raw_url: str | None) -> bool:
+                target = (raw_url or "").strip().lower()
+                if not target:
+                    return False
+                if checker_host:
+                    return checker_host in (urlparse.urlparse(target).netloc.lower())
+                return checker_url.lower() in target
 
-            try:
-                driver.execute_script("window.open(arguments[0], '_blank');", checker_url)
-                tab_wait = WebDriverWait(driver, 8)
-                tab_wait.until(lambda d: len(d.window_handles) >= 2)
+            checker_ready = False
+            for _ in range(3):
+                handles_before = []
+                try:
+                    handles_before = list(driver.window_handles)
+                except Exception:
+                    handles_before = []
 
-                handles = list(driver.window_handles)
-                target_handle = handles[-1]
+                opened_new_tab = False
+                try:
+                    driver.execute_script("window.open(arguments[0], '_blank');", checker_url)
+                    WebDriverWait(driver, 8).until(
+                        lambda d: len(d.window_handles) > len(handles_before)
+                    )
+                    opened_new_tab = True
+                except Exception:
+                    opened_new_tab = False
 
-                # Keep only the checker tab so policy-enforced startup pages do not interfere.
-                for handle in handles:
-                    if handle == target_handle:
-                        continue
+                handles_after = []
+                try:
+                    handles_after = list(driver.window_handles)
+                except Exception:
+                    handles_after = handles_before
+
+                target_handle = ""
+                for handle in reversed(handles_after):
                     try:
                         driver.switch_to.window(handle)
-                        driver.close()
+                        if _is_checker_url(str(driver.current_url or "")):
+                            target_handle = handle
+                            break
+                    except Exception:
+                        continue
+
+                if not target_handle and handles_after:
+                    candidate = ""
+                    if opened_new_tab:
+                        for handle in handles_after:
+                            if handle not in handles_before:
+                                candidate = handle
+                                break
+                    if not candidate:
+                        candidate = handles_after[-1]
+
+                    try:
+                        driver.switch_to.window(candidate)
+                        driver.get(checker_url)
+                        target_handle = candidate
+                    except Exception:
+                        target_handle = ""
+
+                if not target_handle:
+                    try:
+                        driver.get(checker_url)
+                        target_handle = str(driver.current_window_handle or "")
+                    except Exception:
+                        continue
+
+                try:
+                    for handle in list(driver.window_handles):
+                        if handle == target_handle:
+                            continue
+                        try:
+                            driver.switch_to.window(handle)
+                            driver.close()
+                        except Exception:
+                            pass
+                    driver.switch_to.window(target_handle)
+                except Exception:
+                    pass
+
+                try:
+                    WebDriverWait(driver, 8).until(lambda d: _is_checker_url(str(d.current_url or "")))
+                    checker_ready = True
+                    break
+                except Exception:
+                    try:
+                        driver.get(checker_url)
+                        if _is_checker_url(str(driver.current_url or "")):
+                            checker_ready = True
+                            break
                     except Exception:
                         pass
 
-                driver.switch_to.window(target_handle)
-                opened_in_fresh_tab = True
-            except Exception:
-                opened_in_fresh_tab = False
-
-            if not opened_in_fresh_tab:
-                driver.get(checker_url)
+            if not checker_ready:
+                current_url = str(getattr(driver, "current_url", "") or "")
+                return {
+                    "ok": False,
+                    "reason": "browser_policy_blocked",
+                    "details": f"Could not keep checker tab focused; current_url={current_url}",
+                    "checker_url": checker_url,
+                }
 
             wait = WebDriverWait(driver, WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
             body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
