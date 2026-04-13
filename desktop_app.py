@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import calendar
+import html
 import json
 import os
+import shutil
 import threading
 import traceback
 import tkinter as tk
@@ -15,6 +17,8 @@ from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox
 from tkinter import ttk
+from urllib import parse as urlparse
+from urllib import request as urlrequest
 
 from i18n import load_translations, t
 from serial_parsing import extract_preferred_serial, normalize_for_store
@@ -140,6 +144,13 @@ WARRANTY_WEB_CHECKER_BY_MAKE: dict[str, dict[str, str]] = {
     "zebra": {"url": "https://support.zebra.com/warrantycheck"},
     "samsung": {"url": "https://www.samsung.com/us/support/warranty/"},
     "apple": {"url": "https://checkcoverage.apple.com/"},
+}
+WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE: dict[str, str] = {
+    "hp": "serialnumber",
+    "lenovo": "serial",
+    "zebra": "serial",
+    "samsung": "serialNumber",
+    "apple": "sn",
 }
 WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC = 25
 WARRANTY_WEB_AUTOMATION_HEADLESS = False
@@ -874,6 +885,34 @@ class DesktopApp:
         key = self._normalize_make_for_warranty_checker(make)
         return WARRANTY_WEB_CHECKER_BY_MAKE.get(key)
 
+    def _warranty_checker_serial_param_for_make(self, make: str | None) -> str:
+        key = self._normalize_make_for_warranty_checker(make)
+        return WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE.get(key, "")
+
+    def _build_checker_url_with_serial(self, *, make: str, serial: str, checker_url: str) -> str:
+        base = (checker_url or "").strip()
+        if not base:
+            return ""
+
+        token = re.sub(r"[^A-Za-z0-9\-]", "", (serial or "").strip())
+        if not token:
+            return base
+
+        serial_param = self._warranty_checker_serial_param_for_make(make)
+        if not serial_param:
+            return base
+
+        try:
+            parsed = urlparse.urlparse(base)
+            pairs = urlparse.parse_qsl(parsed.query, keep_blank_values=True)
+            query: dict[str, str] = {k: v for k, v in pairs}
+            if serial_param not in query:
+                query[serial_param] = token
+            new_query = urlparse.urlencode(query)
+            return urlparse.urlunparse(parsed._replace(query=new_query))
+        except Exception:
+            return base
+
     def _warranty_automation_rules_for_make(self, make_key: str) -> dict[str, object]:
         rules = WARRANTY_WEB_AUTOMATION_RULES_BY_MAKE.get(make_key)
         return rules if isinstance(rules, dict) else {}
@@ -1048,6 +1087,111 @@ class DesktopApp:
             "summary": summary,
         }
 
+    def _extract_visible_text_from_html(self, html_text: str) -> str:
+        text = str(html_text or "")
+        text = re.sub(r"(?is)<script\b[^>]*>.*?</script>", " ", text)
+        text = re.sub(r"(?is)<style\b[^>]*>.*?</style>", " ", text)
+        text = re.sub(r"(?is)<!--.*?-->", " ", text)
+        text = re.sub(r"(?is)<[^>]+>", " ", text)
+        text = html.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _http_get_text(self, url: str) -> str:
+        req = urlrequest.Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urlrequest.urlopen(req, timeout=WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC) as response:
+            content_type = response.headers.get("Content-Type", "")
+            charset = "utf-8"
+            match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
+            if match:
+                charset = match.group(1)
+            raw_bytes = response.read() or b""
+        return raw_bytes.decode(charset, errors="ignore")
+
+    def _resolve_hp_warranty_result_url(self, serial: str) -> str:
+        token = re.sub(r"[^A-Za-z0-9\-]", "", (serial or "").strip())
+        if not token:
+            return ""
+
+        endpoint = (
+            "https://support.hp.com/wcc-services/searchresult/us-en"
+            f"?q={urlparse.quote(token)}&context=pdp&navigation=false"
+            "&authState=anonymous&template=WarrantyLanding"
+        )
+        try:
+            payload = self._http_get_text(endpoint)
+            parsed = json.loads(payload)
+            verify_data = (
+                (parsed or {}).get("data", {})
+                .get("verifyResponse", {})
+                .get("data", {})
+            )
+            if not isinstance(verify_data, dict):
+                return ""
+
+            seo_name = str(verify_data.get("SEOFriendlyName") or "").strip()
+            product_series_oid = str(verify_data.get("productSeriesOID") or "").strip()
+            product_name_oid = str(
+                verify_data.get("productNameOID")
+                or verify_data.get("productNamOID")
+                or ""
+            ).strip()
+            sku = str(verify_data.get("productNumber") or "").strip()
+            resolved_serial = str(verify_data.get("serialNumber") or token).strip()
+
+            if not (seo_name and product_series_oid and product_name_oid and sku and resolved_serial):
+                return ""
+
+            encoded_seo = urlparse.quote(seo_name)
+            encoded_sku = urlparse.quote(sku)
+            encoded_serial = urlparse.quote(resolved_serial)
+            return (
+                "https://support.hp.com/us-en/warrantyresult/"
+                f"{encoded_seo}/{product_series_oid}/model/{product_name_oid}"
+                f"?sku={encoded_sku}&serialnumber={encoded_serial}"
+            )
+        except Exception:
+            return ""
+
+    def _lookup_warranty_via_http_checker(self, *, make: str, make_key: str, serial: str, checker_url: str) -> dict[str, object]:
+        query_url = self._build_checker_url_with_serial(make=make, serial=serial, checker_url=checker_url)
+        target_url = query_url or checker_url
+
+        if make_key == "hp":
+            hp_url = self._resolve_hp_warranty_result_url(serial)
+            if hp_url:
+                target_url = hp_url
+
+        if not target_url:
+            return {"ok": False, "reason": "checker_not_configured", "checker_url": checker_url}
+
+        try:
+            html_text = self._http_get_text(target_url)
+
+            page_text = self._extract_visible_text_from_html(html_text)
+            parsed = self._extract_warranty_from_page_text(page_text, make_key=make_key)
+            parsed["checker_url"] = target_url
+            parsed["source_mode"] = "http"
+            if not bool(parsed.get("ok")):
+                parsed["details"] = "Public checker page fetched, but warranty fields were not clearly detected"
+            return parsed
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": "http_fetch_failed",
+                "details": str(exc),
+                "checker_url": target_url,
+            }
+
     def _first_interactable_element_by_selectors(self, driver: object, selectors: tuple[str, ...]) -> object | None:
         from selenium.webdriver.common.by import By  # type: ignore
 
@@ -1211,6 +1355,62 @@ class DesktopApp:
             except Exception:
                 pass
 
+    def _detect_local_edge_driver_path(self) -> str:
+        env_candidates = (
+            os.environ.get("WARRANTY_EDGE_DRIVER_PATH", ""),
+            os.environ.get("MSEDGEDRIVER", ""),
+            os.environ.get("EDGEWEBDRIVER", ""),
+            os.environ.get("WEBDRIVER_EDGE_DRIVER", ""),
+        )
+        path_candidates: list[Path] = []
+
+        for raw in env_candidates:
+            text = (raw or "").strip()
+            if text:
+                path_candidates.append(Path(text).expanduser())
+
+        app_dir = Path(__file__).resolve().parent
+        cwd = Path.cwd()
+        path_candidates.extend(
+            [
+                app_dir / "msedgedriver.exe",
+                app_dir / "drivers" / "msedgedriver.exe",
+                cwd / "msedgedriver.exe",
+                cwd / "drivers" / "msedgedriver.exe",
+            ]
+        )
+
+        for candidate in path_candidates:
+            try:
+                if candidate.is_file():
+                    return str(candidate)
+            except Exception:
+                continue
+
+        found_on_path = shutil.which("msedgedriver") or shutil.which("msedgedriver.exe")
+        return str(found_on_path or "")
+
+    def _is_chrome_available_for_warranty(self) -> bool:
+        if shutil.which("chrome") or shutil.which("chrome.exe"):
+            return True
+
+        install_roots = [
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("PROGRAMFILES(X86)", ""),
+            os.environ.get("LOCALAPPDATA", ""),
+        ]
+        for root in install_roots:
+            if not (root or "").strip():
+                continue
+            candidate = Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            try:
+                if candidate.is_file():
+                    return True
+            except Exception:
+                continue
+
+        return False
+
     def _lookup_warranty_via_web_checker(self, *, make: str, serial: str) -> dict[str, object]:
         make_key = self._normalize_make_for_warranty_checker(make)
         config = self._warranty_checker_config_for_make(make)
@@ -1221,6 +1421,15 @@ class DesktopApp:
         if not checker_url:
             return {"ok": False, "reason": "checker_not_configured"}
 
+        direct_result = self._lookup_warranty_via_http_checker(
+            make=make,
+            make_key=make_key,
+            serial=serial,
+            checker_url=checker_url,
+        )
+        if bool(direct_result.get("ok")):
+            return direct_result
+
         try:
             from selenium import webdriver  # type: ignore
             from selenium.webdriver.chrome.service import Service as ChromeService  # type: ignore
@@ -1230,7 +1439,8 @@ class DesktopApp:
             from selenium.webdriver.support import expected_conditions as EC  # type: ignore
             from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
         except Exception:
-            return {"ok": False, "reason": "selenium_missing", "checker_url": checker_url}
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
 
         edge_manager = None
         chrome_manager = None
@@ -1244,52 +1454,76 @@ class DesktopApp:
             edge_manager = None
             chrome_manager = None
 
+        edge_driver_path = self._detect_local_edge_driver_path()
+        chrome_available = self._is_chrome_available_for_warranty()
+
         driver = None
         launch_errors: list[str] = []
-        for browser in ("edge", "chrome"):
+        browsers: list[str] = ["edge"]
+        if chrome_available:
+            browsers.append("chrome")
+        else:
+            launch_errors.append("chrome-skip: chrome browser is not installed")
+
+        for browser in browsers:
             try:
                 if browser == "edge":
                     options = webdriver.EdgeOptions()
                     if WARRANTY_WEB_AUTOMATION_HEADLESS:
                         options.add_argument("--headless=new")
                     options.add_argument("--disable-gpu")
-                    launch_attempts: list[object] = []
-                    if edge_manager is not None:
+                    launch_attempts: list[tuple[str, object]] = []
+                    if edge_driver_path:
                         launch_attempts.append(
-                            lambda: webdriver.Edge(
-                                service=EdgeService(edge_manager().install()),
-                                options=options,
+                            (
+                                "edge-local-driver",
+                                lambda: webdriver.Edge(
+                                    service=EdgeService(edge_driver_path),
+                                    options=options,
+                                ),
                             )
                         )
-                    launch_attempts.append(lambda: webdriver.Edge(options=options))
+                    launch_attempts.append(("edge-default", lambda: webdriver.Edge(options=options)))
+                    if edge_manager is not None:
+                        launch_attempts.append(
+                            (
+                                "edge-webdriver-manager",
+                                lambda: webdriver.Edge(
+                                    service=EdgeService(edge_manager().install()),
+                                    options=options,
+                                ),
+                            )
+                        )
 
-                    for attempt in launch_attempts:
+                    for attempt_name, attempt in launch_attempts:
                         try:
                             driver = attempt()
                             break
                         except Exception as edge_exc:
-                            launch_errors.append(f"edge-launch: {edge_exc}")
+                            launch_errors.append(f"{attempt_name}: {edge_exc}")
                 else:
                     options = webdriver.ChromeOptions()
                     if WARRANTY_WEB_AUTOMATION_HEADLESS:
                         options.add_argument("--headless=new")
                     options.add_argument("--disable-gpu")
-                    launch_attempts = []
+                    launch_attempts: list[tuple[str, object]] = [("chrome-default", lambda: webdriver.Chrome(options=options))]
                     if chrome_manager is not None:
                         launch_attempts.append(
-                            lambda: webdriver.Chrome(
-                                service=ChromeService(chrome_manager().install()),
-                                options=options,
+                            (
+                                "chrome-webdriver-manager",
+                                lambda: webdriver.Chrome(
+                                    service=ChromeService(chrome_manager().install()),
+                                    options=options,
+                                ),
                             )
                         )
-                    launch_attempts.append(lambda: webdriver.Chrome(options=options))
 
-                    for attempt in launch_attempts:
+                    for attempt_name, attempt in launch_attempts:
                         try:
                             driver = attempt()
                             break
                         except Exception as chrome_exc:
-                            launch_errors.append(f"chrome-launch: {chrome_exc}")
+                            launch_errors.append(f"{attempt_name}: {chrome_exc}")
 
                 if driver is not None:
                     break
@@ -1297,12 +1531,13 @@ class DesktopApp:
                 launch_errors.append(f"{browser}: {exc}")
 
         if driver is None:
-            return {
-                "ok": False,
-                "reason": "browser_launch_failed",
-                "details": " | ".join(launch_errors),
-                "checker_url": checker_url,
-            }
+            direct_details = str(direct_result.get("details") or "").strip()
+            browser_details = " | ".join(launch_errors).strip()
+            merged_details = " | ".join(x for x in (direct_details, browser_details) if x)
+            if merged_details:
+                direct_result["details"] = merged_details
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
 
         try:
             driver.set_page_load_timeout(WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
