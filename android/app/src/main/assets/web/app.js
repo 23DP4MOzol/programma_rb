@@ -105,6 +105,31 @@ const SCAN_DEBOUNCE_MS = 900;
 const SAVE_DEBOUNCE_MS = 1400;
 const WEB_APP_VERSION = "web-2026.04.07";
 
+const WARRANTY_MARKER = "[WARRANTY]";
+const WARRANTY_MONTHS_BY_PREFIX = {
+  "5CG32": 36,
+  "5CG21": 36,
+  "5CG": 36,
+  PF: 36,
+  PC: 36,
+  "40": 36,
+  "24": 36,
+  "21": 36,
+  "20": 36,
+  "19": 36,
+  "18": 36,
+  "17": 36,
+};
+const WARRANTY_PREFIX_KEYS_DESC = Object.keys(WARRANTY_MONTHS_BY_PREFIX).sort((a, b) => b.length - a.length);
+const WARRANTY_MONTHS_BY_TYPE = {
+  scanner: 36,
+  laptop: 36,
+  tablet: 24,
+  phone: 24,
+  printer: 24,
+  other: 12,
+};
+
 const WEB_I18N = {
   en: {
     scanPopupTitle: "Scan result",
@@ -582,6 +607,7 @@ let qrScanStream = null;
 let qrScanActive = false;
 let qrScanAnimationId = 0;
 let qrDetector = null;
+const loadedCreatedAtBySerial = new Map();
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -2184,6 +2210,147 @@ function serialVariants(token) {
   return Array.from(out);
 }
 
+function parseIsoDateOnly(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+}
+
+function addMonthsUtc(baseDate, months) {
+  if (!(baseDate instanceof Date) || Number.isNaN(baseDate.getTime())) {
+    return null;
+  }
+  if (!Number.isFinite(months) || months <= 0) {
+    return new Date(baseDate.getTime());
+  }
+
+  const year = baseDate.getUTCFullYear();
+  const month = baseDate.getUTCMonth();
+  const day = baseDate.getUTCDate();
+
+  const firstDayTarget = new Date(Date.UTC(year, month + months, 1));
+  const lastDayTarget = new Date(Date.UTC(firstDayTarget.getUTCFullYear(), firstDayTarget.getUTCMonth() + 1, 0));
+  const safeDay = Math.min(day, lastDayTarget.getUTCDate());
+
+  return new Date(Date.UTC(firstDayTarget.getUTCFullYear(), firstDayTarget.getUTCMonth(), safeDay));
+}
+
+function warrantyMonthsForSerial(token, deviceType) {
+  const normalized = cleanToken(token);
+  if (!normalized) {
+    const fallback = WARRANTY_MONTHS_BY_TYPE[String(deviceType || "other").toLowerCase()] || WARRANTY_MONTHS_BY_TYPE.other;
+    return { months: fallback, source: `device-type:${String(deviceType || "other").toLowerCase()}` };
+  }
+
+  const candidates = [normalized];
+  if (isScannerToken(normalized)) {
+    candidates.push(normalized.slice(1));
+  }
+
+  for (const prefix of WARRANTY_PREFIX_KEYS_DESC) {
+    if (candidates.some((candidate) => candidate.startsWith(prefix))) {
+      return { months: WARRANTY_MONTHS_BY_PREFIX[prefix], source: `serial-prefix:${prefix}` };
+    }
+  }
+
+  const fallbackType = String(deviceType || "other").toLowerCase();
+  const fallback = WARRANTY_MONTHS_BY_TYPE[fallbackType] || WARRANTY_MONTHS_BY_TYPE.other;
+  return { months: fallback, source: `device-type:${fallbackType}` };
+}
+
+function splitCommentAndWarrantySegment(comment) {
+  const text = String(comment || "").trim();
+  if (!text) return { base: "", warranty: "" };
+
+  const idx = text.toUpperCase().indexOf(WARRANTY_MARKER);
+  if (idx < 0) {
+    return { base: text, warranty: "" };
+  }
+
+  const base = text.slice(0, idx).replace(/[\s|]+$/g, "").trim();
+  const warranty = text.slice(idx).trim();
+  return { base, warranty };
+}
+
+function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt }) {
+  const cleaned = cleanToken(serial);
+  if (!cleaned) return "";
+
+  const { months, source } = warrantyMonthsForSerial(cleaned, deviceType);
+  if (!months || months <= 0) return "";
+
+  const startDate = parseIsoDateOnly(createdAt) || parseIsoDateOnly(new Date().toISOString());
+  const endDate = addMonthsUtc(startDate, months);
+  if (!endDate) return "";
+
+  const today = parseIsoDateOnly(new Date().toISOString());
+  const status = today && today.getTime() <= endDate.getTime() ? "ACTIVE" : "EXPIRED";
+  const endText = endDate.toISOString().slice(0, 10);
+  return `${WARRANTY_MARKER} ${status} until ${endText} (${months}m; ${source})`;
+}
+
+function prepareCommentForPersist(rawComment, { serial, deviceType, createdAt, allowAdminOverride = false } = {}) {
+  const text = String(rawComment || "").trim();
+  if (allowAdminOverride) {
+    return text;
+  }
+
+  const { base } = splitCommentAndWarrantySegment(text);
+  const marker = buildWarrantyMarkerFromContext({ serial, deviceType, createdAt });
+  if (!marker) return base;
+  return base ? `${base} | ${marker}` : marker;
+}
+
+function commentWithWarrantyPreview(comment, { serial, deviceType, createdAt } = {}) {
+  return prepareCommentForPersist(comment, {
+    serial,
+    deviceType,
+    createdAt,
+    allowAdminOverride: false,
+  });
+}
+
+function rememberCreatedAtForToken(token, createdAt) {
+  const value = String(createdAt || "").trim();
+  if (!value) return;
+  for (const variant of serialVariants(token)) {
+    loadedCreatedAtBySerial.set(variant, value);
+  }
+}
+
+function getKnownCreatedAtForToken(token) {
+  for (const variant of serialVariants(token)) {
+    const createdAt = loadedCreatedAtBySerial.get(variant);
+    if (createdAt) return createdAt;
+  }
+  return "";
+}
+
+function resolveCreatedAtForSave(cleanedToken, existingDevice = null) {
+  const direct = String(existingDevice?.created_at || "").trim();
+  if (direct) return direct;
+  return getKnownCreatedAtForToken(cleanedToken);
+}
+
+function refreshWarrantyCommentPreview({ serial, deviceType, createdAt } = {}) {
+  if (authContext?.isAdmin) return;
+  const cleaned = cleanToken(serial || els.serial.value || "");
+  if (!cleaned) return;
+
+  const resolvedType = String(deviceType || els.type.value || "scanner").trim().toLowerCase() || "scanner";
+  const resolvedCreatedAt =
+    createdAt !== undefined ? String(createdAt || "").trim() : resolveCreatedAtForSave(cleaned, null);
+
+  els.comment.value = commentWithWarrantyPreview(els.comment.value, {
+    serial: cleaned,
+    deviceType: resolvedType,
+    createdAt: resolvedCreatedAt,
+  });
+  saveDraft();
+}
+
 function sanitizeSerialField(value) {
   const raw = String(value || "").toUpperCase();
   if (!raw) return "";
@@ -2220,14 +2387,25 @@ function composeModel(make, model) {
 
 function buildSaveOperation(cleanedToken) {
   const expected = getKnownRevisionForToken(cleanedToken);
+  const resolvedType = (els.type.value || "scanner").trim() || "scanner";
+  const resolvedCreatedAt = resolveCreatedAtForSave(cleanedToken, null);
+  const comment = prepareCommentForPersist(els.comment.value, {
+    serial: cleanedToken,
+    deviceType: resolvedType,
+    createdAt: resolvedCreatedAt,
+    allowAdminOverride: Boolean(authContext?.isAdmin),
+  });
+
   return {
     serial: normalizeForStore(cleanedToken),
-    device_type: (els.type.value || "scanner").trim() || "scanner",
+    device_type: resolvedType,
     model: composeModel(els.make.value, els.model.value),
     from_store: els.fromStore.value.trim(),
     to_store: els.toStore.value.trim(),
     status: els.statusSelect.value,
-    comment: els.comment.value.trim(),
+    comment,
+    created_at: resolvedCreatedAt || null,
+    allow_admin_override: Boolean(authContext?.isAdmin),
     expected_updated_at: expected || null,
   };
 }
@@ -2461,6 +2639,7 @@ function resetMutableFields() {
   els.fromStore.value = "";
   els.toStore.value = "";
   els.comment.value = "";
+  refreshWarrantyCommentPreview();
 }
 
 function resetIdentityFields() {
@@ -2486,7 +2665,13 @@ function fillFormFromDevice(device) {
   els.statusSelect.value = device.status || "RECEIVED";
   els.fromStore.value = device.from_store || "";
   els.toStore.value = device.to_store || "";
-  els.comment.value = device.comment || "";
+  const preview = commentWithWarrantyPreview(device.comment || "", {
+    serial: device.serial || els.serial.value || "",
+    deviceType: device.device_type || "scanner",
+    createdAt: device.created_at || "",
+  });
+  els.comment.value = authContext?.isAdmin ? String(device.comment || "") : preview;
+  rememberCreatedAtForToken(device.serial || "", device.created_at || "");
   setIdentityEditable(false);
   refreshInlineSuggestions();
   saveDraft();
@@ -2501,6 +2686,7 @@ function applyGuess(guess) {
   if (guess.model) {
     els.model.value = guess.model;
   }
+  refreshWarrantyCommentPreview({ serial: els.serial.value, deviceType: guess.device_type || "scanner", createdAt: "" });
   refreshInlineSuggestions();
   saveDraft();
 }
@@ -2631,11 +2817,20 @@ async function processQueuedSaves() {
       const op = queue[i];
       try {
         const existing = await getDeviceBySerial(op.serial || "");
+        const serialForComment = String(op.serial || existing?.serial || "").trim();
+        const deviceTypeForComment = String(op.device_type || existing?.device_type || "scanner").trim() || "scanner";
+        const createdAtForComment = String(op.created_at || existing?.created_at || getKnownCreatedAtForToken(serialForComment) || "").trim();
+        const commentForPersist = prepareCommentForPersist(op.comment, {
+          serial: serialForComment,
+          deviceType: deviceTypeForComment,
+          createdAt: createdAtForComment,
+          allowAdminOverride: Boolean(op.allow_admin_override),
+        });
         const editPayload = {
           from_store: op.from_store || "",
           to_store: op.to_store || "",
           status: op.status || "RECEIVED",
-          comment: op.comment || "",
+          comment: commentForPersist || "",
         };
 
         if (existing) {
@@ -2653,6 +2848,7 @@ async function processQueuedSaves() {
           if (Array.isArray(rows) && rows[0]?.updated_at) {
             rememberRevisionForToken(op.serial || "", rows[0].updated_at);
           }
+          rememberCreatedAtForToken(op.serial || "", existing.created_at || createdAtForComment || rows?.[0]?.created_at || "");
         } else {
           const rows = await restRequest("devices", {
             method: "POST",
@@ -2666,6 +2862,9 @@ async function processQueuedSaves() {
           });
           if (Array.isArray(rows) && rows[0]?.updated_at) {
             rememberRevisionForToken(op.serial || "", rows[0].updated_at);
+          }
+          if (Array.isArray(rows) && rows[0]?.created_at) {
+            rememberCreatedAtForToken(op.serial || "", rows[0].created_at);
           }
         }
         synced += 1;
@@ -2743,7 +2942,9 @@ async function loadByScannedValue(rawValue, options = {}) {
     rememberRevisionForToken(cleaned, device.updated_at || "");
     if (device.serial) {
       rememberRevisionForToken(device.serial, device.updated_at || "");
+      rememberCreatedAtForToken(device.serial, device.created_at || "");
     }
+    rememberCreatedAtForToken(cleaned, device.created_at || "");
     fillFormFromDevice(device);
     setStatus(trWeb("scanFoundDbStatus"), "ok");
     showScanPopup(trWeb("scanFoundDbPopup"));
@@ -2754,6 +2955,7 @@ async function loadByScannedValue(rawValue, options = {}) {
 
   for (const variant of serialVariants(cleaned)) {
     loadedRevisionBySerial.delete(variant);
+    loadedCreatedAtBySerial.delete(variant);
   }
 
   resetIdentityFields();
@@ -2795,13 +2997,20 @@ async function saveDevice() {
   }
 
   els.serial.value = cleaned;
+  let queuedOperation = buildSaveOperation(cleaned);
+  els.comment.value = queuedOperation.comment || "";
   saveDraft();
-
-  const queuedOperation = buildSaveOperation(cleaned);
 
   let existing = null;
   try {
     existing = await getDeviceBySerial(cleaned);
+    if (existing?.created_at) {
+      rememberCreatedAtForToken(cleaned, existing.created_at);
+      rememberCreatedAtForToken(existing.serial || cleaned, existing.created_at);
+    }
+    queuedOperation = buildSaveOperation(cleaned);
+    els.comment.value = queuedOperation.comment || "";
+    saveDraft();
   } catch (error) {
     if (isConnectivityError(error)) {
       enqueueSaveOperation(queuedOperation);
@@ -2817,7 +3026,7 @@ async function saveDevice() {
     from_store: els.fromStore.value.trim(),
     to_store: els.toStore.value.trim(),
     status: els.statusSelect.value,
-    comment: els.comment.value.trim(),
+    comment: queuedOperation.comment || "",
   };
 
   try {
@@ -2838,6 +3047,9 @@ async function saveDevice() {
           if (Array.isArray(overwriteRows) && overwriteRows[0]?.updated_at) {
             rememberRevisionForToken(cleaned, overwriteRows[0].updated_at);
           }
+          if (Array.isArray(overwriteRows) && overwriteRows[0]?.created_at) {
+            rememberCreatedAtForToken(cleaned, overwriteRows[0].created_at);
+          }
           setStatus(trWeb("conflictOverwrittenStatus"), "ok");
           markSave(cleaned);
         } else if (decision === "reload") {
@@ -2852,6 +3064,9 @@ async function saveDevice() {
         if (Array.isArray(rows) && rows[0]?.updated_at) {
           rememberRevisionForToken(cleaned, rows[0].updated_at);
         }
+        if (Array.isArray(rows) && rows[0]?.created_at) {
+          rememberCreatedAtForToken(cleaned, rows[0].created_at);
+        }
         setStatus("Updated existing device", "ok");
         markSave(cleaned);
       }
@@ -2865,6 +3080,9 @@ async function saveDevice() {
       const rows = await restRequest("devices", { method: "POST", body: insertPayload, prefer: "return=representation" });
       if (Array.isArray(rows) && rows[0]?.updated_at) {
         rememberRevisionForToken(cleaned, rows[0].updated_at);
+      }
+      if (Array.isArray(rows) && rows[0]?.created_at) {
+        rememberCreatedAtForToken(cleaned, rows[0].created_at);
       }
       setStatus("Added new device", "ok");
       markSave(cleaned);
@@ -3108,6 +3326,7 @@ els.lookupSerial.addEventListener("keydown", (e) => {
 
 els.type.addEventListener("change", () => {
   refreshInlineSuggestions();
+  refreshWarrantyCommentPreview();
 });
 
 els.make.addEventListener("input", () => {

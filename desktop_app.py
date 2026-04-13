@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import base64
+import calendar
 import json
 import os
 import traceback
 import tkinter as tk
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from tkinter import font as tkfont
 from tkinter import simpledialog
 import re
@@ -104,6 +105,56 @@ DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
         "Other": ["POS Terminal", "Cash Drawer", "Customer Display", "Label Applicator", "Scale", "Kiosk", "RFID Reader", "Access Point", "Docking Station", "Charging Cradle"],
     },
 }
+
+WARRANTY_MARKER = "[WARRANTY]"
+
+# Specific serial prefixes can override generic device-type warranty defaults.
+WARRANTY_MONTHS_BY_PREFIX: dict[str, int] = {
+    "5CG32": 36,
+    "5CG21": 36,
+    "5CG": 36,
+    "PF": 36,
+    "PC": 36,
+    "40": 36,
+    "24": 36,
+    "21": 36,
+    "20": 36,
+    "19": 36,
+    "18": 36,
+    "17": 36,
+}
+
+WARRANTY_MONTHS_BY_TYPE: dict[str, int] = {
+    "scanner": 36,
+    "laptop": 36,
+    "tablet": 24,
+    "phone": 24,
+    "printer": 24,
+    "other": 12,
+}
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(candidate).date()
+    except Exception:
+        return None
+
+
+def _add_months(base_date: date, months: int) -> date:
+    if months <= 0:
+        return base_date
+
+    month_index = base_date.month - 1 + months
+    year = base_date.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    day = min(base_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 def _claim_to_bool(value: object) -> bool:
@@ -256,6 +307,7 @@ class DeviceEditor(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         self.serial = serial
+        self._created_at: str | None = None
 
         self.app._register_editor(self)
 
@@ -391,19 +443,34 @@ class DeviceEditor(tk.Toplevel):
         self.from_store_var.set(d.from_store or "")
         self.to_store_var.set(d.to_store or "")
         self.status_var.set(self.app._display_value(d.status or "RECEIVED", kind="status"))
-        self.comment_var.set(d.comment or "")
+        self._created_at = d.created_at
+        self.comment_var.set(
+            self.app._comment_with_warranty_preview(
+                d.comment,
+                serial=d.serial,
+                device_type=d.device_type or "other",
+                created_at=d.created_at,
+            )
+        )
 
     def _on_save(self) -> None:
         try:
             if not self.app._require_pin():
                 return
+            device_type = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
             fields = {
-                "device_type": self.app._code_from_display(self.type_var.get(), kind="type") or "scanner",
+                "device_type": device_type,
                 "model": self.model_var.get().strip() or None,
                 "from_store": self.from_store_var.get().strip() or None,
                 "to_store": self.to_store_var.get().strip() or None,
                 "status": self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
-                "comment": self.comment_var.get().strip() or None,
+                "comment": self.app._prepare_comment_for_persist(
+                    self.comment_var.get(),
+                    serial=self.serial,
+                    device_type=device_type,
+                    created_at=self._created_at,
+                    allow_admin_override=self.app._admin_login_active,
+                ),
             }
             changed = self.app.db.update_device(
                 self.serial,
@@ -502,6 +569,7 @@ class DesktopApp:
 
         self._selected_serial: str | None = None
         self._selected_updated_at: str | None = None
+        self._selected_created_at: str | None = None
         self._editors: set[DeviceEditor] = set()
         self.theme: str = "light"  # "light" | "dark"
         self._filter_refresh_job: str | None = None
@@ -598,6 +666,127 @@ class DesktopApp:
         if kind == "type":
             return self._type_display_to_code.get(display, display)
         return display
+
+    def _display_from_code(self, code: str, kind: str) -> str:
+        return self._display_value(code, kind=kind)
+
+    def _warranty_months_for_serial(self, serial: str, device_type: str) -> tuple[int, str]:
+        raw_serial = re.sub(r"[^A-Z0-9]", "", (serial or "").upper())
+        if not raw_serial:
+            months = WARRANTY_MONTHS_BY_TYPE.get(device_type or "other", WARRANTY_MONTHS_BY_TYPE["other"])
+            return months, f"device-type:{device_type or 'other'}"
+
+        candidates = [raw_serial]
+        if raw_serial.startswith("S") and raw_serial[1:].isdigit():
+            candidates.append(raw_serial[1:])
+
+        for prefix in sorted(WARRANTY_MONTHS_BY_PREFIX, key=len, reverse=True):
+            if any(candidate.startswith(prefix) for candidate in candidates):
+                return WARRANTY_MONTHS_BY_PREFIX[prefix], f"serial-prefix:{prefix}"
+
+        months = WARRANTY_MONTHS_BY_TYPE.get(device_type or "other", WARRANTY_MONTHS_BY_TYPE["other"])
+        return months, f"device-type:{device_type or 'other'}"
+
+    def _build_warranty_marker(self, *, serial: str, device_type: str, created_at: str | None) -> str | None:
+        normalized = (serial or "").strip()
+        if not normalized:
+            return None
+
+        months, source = self._warranty_months_for_serial(normalized, device_type)
+        if months <= 0:
+            return None
+
+        start_date = _parse_iso_date(created_at) or datetime.now(timezone.utc).date()
+        end_date = _add_months(start_date, months)
+        today = datetime.now(timezone.utc).date()
+        status = "ACTIVE" if today <= end_date else "EXPIRED"
+        return f"{WARRANTY_MARKER} {status} until {end_date.isoformat()} ({months}m; {source})"
+
+    def _split_comment_and_warranty(self, comment: str | None) -> tuple[str, str | None]:
+        text = (comment or "").strip()
+        if not text:
+            return "", None
+
+        idx = text.upper().find(WARRANTY_MARKER)
+        if idx < 0:
+            return text, None
+
+        base = text[:idx].rstrip(" |")
+        warranty = text[idx:].strip() or None
+        return base, warranty
+
+    def _prepare_comment_for_persist(
+        self,
+        comment: str | None,
+        *,
+        serial: str,
+        device_type: str,
+        created_at: str | None,
+        allow_admin_override: bool,
+    ) -> str | None:
+        raw = (comment or "").strip()
+        if allow_admin_override:
+            return raw or None
+
+        base_comment, _old_warranty = self._split_comment_and_warranty(raw)
+        marker = self._build_warranty_marker(serial=serial, device_type=device_type, created_at=created_at)
+        if not marker:
+            return base_comment or None
+        if base_comment:
+            return f"{base_comment} | {marker}"
+        return marker
+
+    def _comment_with_warranty_preview(
+        self,
+        comment: str | None,
+        *,
+        serial: str,
+        device_type: str,
+        created_at: str | None,
+    ) -> str:
+        return (
+            self._prepare_comment_for_persist(
+                comment,
+                serial=serial,
+                device_type=device_type,
+                created_at=created_at,
+                allow_admin_override=False,
+            )
+            or ""
+        )
+
+    def _resolve_created_at_for_serial(self, serial: str | None) -> str | None:
+        if self._selected_created_at:
+            return self._selected_created_at
+
+        key = (serial or "").strip()
+        if not key:
+            return None
+
+        try:
+            existing = self.db.get_device(key)
+            return existing.created_at if existing else None
+        except Exception:
+            return None
+
+    def _refresh_warranty_comment_preview(
+        self,
+        *,
+        serial: str | None = None,
+        device_type: str | None = None,
+        created_at: str | None = None,
+    ) -> None:
+        resolved_serial = (serial if serial is not None else self.serial_var.get()).strip()
+        resolved_type = device_type or (self._code_from_display(self.type_var.get(), kind="type") or "scanner")
+        resolved_created = created_at if created_at is not None else self._selected_created_at
+        self.comment_var.set(
+            self._comment_with_warranty_preview(
+                self.comment_var.get(),
+                serial=resolved_serial,
+                device_type=resolved_type,
+                created_at=resolved_created,
+            )
+        )
 
     # ---------- Config / Prefix Rules ----------
 
@@ -782,6 +971,7 @@ class DesktopApp:
             self.serial_var.set(existing.serial)
             self._selected_serial = existing.serial
             self._selected_updated_at = existing.updated_at
+            self._selected_created_at = existing.created_at
             self._write_result({"ok": True, "info": self.tr("desktop_scan_info_loaded")})
             self._show_scan_result_popup(self.tr("desktop_scan_found_db"))
             return
@@ -857,6 +1047,12 @@ class DesktopApp:
                         self.serial_var.set(normalized_serial)
                         self._selected_serial = normalized_serial
                         self._selected_updated_at = None
+                        self._selected_created_at = None
+                        self._refresh_warranty_comment_preview(
+                            serial=normalized_serial,
+                            device_type=guessed_device.device_type or "scanner",
+                            created_at=None,
+                        )
                         self.overwrite_var.set(False)
                         self._write_result(
                             {
@@ -886,6 +1082,12 @@ class DesktopApp:
                 self.make_var.set(guess_make)
                 self._on_action_make_changed()
                 self.model_var.set(guess_model.replace(guess_make + " ", "", 1))
+                self._selected_created_at = None
+                self._refresh_warranty_comment_preview(
+                    serial=normalized_serial,
+                    device_type=guess_type,
+                    created_at=None,
+                )
                 self.overwrite_var.set(False)
                 self._write_result(
                     {
@@ -907,6 +1109,8 @@ class DesktopApp:
         # Keep serial ready for manual entry when no rule matched.
         self._selected_serial = normalized_serial
         self._selected_updated_at = None
+        self._selected_created_at = None
+        self._refresh_warranty_comment_preview(serial=normalized_serial, created_at=None)
         self.overwrite_var.set(False)
         self._write_result({"ok": True, "info": self.tr("desktop_scan_info_not_found")})
         self._show_scan_result_popup(
@@ -921,6 +1125,8 @@ class DesktopApp:
             self.serial_var.set(normalized)
         self._selected_serial = normalized or None
         self._selected_updated_at = None
+        self._selected_created_at = None
+        self._refresh_warranty_comment_preview(serial=normalized, created_at=None)
         self.overwrite_var.set(False)
         self._write_result({"ok": True, "info": self.tr("desktop_scan_register_status")})
         try:
@@ -992,15 +1198,24 @@ class DesktopApp:
         self.from_store_var.set(device.from_store or "")
         self.to_store_var.set(device.to_store or "")
         self.status_var.set(self._display_from_code(device.status, "status"))
-        self.comment_var.set(device.comment or "")
+        self.comment_var.set(
+            self._comment_with_warranty_preview(
+                device.comment,
+                serial=device.serial,
+                device_type=device.device_type or "other",
+                created_at=device.created_at,
+            )
+        )
         self._selected_serial = device.serial
         self._selected_updated_at = device.updated_at
+        self._selected_created_at = device.created_at
         self.overwrite_var.set(True) # Ready for update
 
     def _on_action_type_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
         self.make_var.set("")
         self.model_var.set("")
         self._refresh_action_make_model_values(preserve_typed_model=True)
+        self._refresh_warranty_comment_preview()
 
     def _on_action_make_changed(self, _event: tk.Event | None = None) -> None:  # type: ignore[override]
         self.model_var.set("")
@@ -3058,7 +3273,14 @@ class DesktopApp:
         from_store = self.from_store_var.get().strip() or None
         to_store = self.to_store_var.get().strip() or None
         status = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
-        comment = self.comment_var.get().strip() or None
+        created_at = self._resolve_created_at_for_serial(serial)
+        comment = self._prepare_comment_for_persist(
+            self.comment_var.get(),
+            serial=serial,
+            device_type=device_type,
+            created_at=created_at,
+            allow_admin_override=self._admin_login_active,
+        )
 
         model: str | None
         if model_text and make:
@@ -3077,6 +3299,7 @@ class DesktopApp:
             to_store=to_store,
             status=status,
             comment=comment,
+            created_at=created_at,
         )
 
     def add_device(self) -> None:
@@ -3089,7 +3312,9 @@ class DesktopApp:
                     return
             self.db.add_device(device, overwrite=overwrite)
             self._selected_serial = device.serial
-            self._selected_updated_at = device.updated_at
+            refreshed = self.db.get_device(device.serial)
+            self._selected_updated_at = refreshed.updated_at if refreshed else None
+            self._selected_created_at = refreshed.created_at if refreshed else device.created_at
             self._write_result({"ok": True, "action": "add", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
             self._after_save()
@@ -3127,6 +3352,7 @@ class DesktopApp:
             self._selected_serial = device.serial
             refreshed = self.db.get_device(device.serial)
             self._selected_updated_at = refreshed.updated_at if refreshed else None
+            self._selected_created_at = refreshed.created_at if refreshed else device.created_at
             self._write_result({"ok": True, "action": "update", "serial": device.serial})
             self.refresh_list(select_serial=device.serial)
             self._after_save()
@@ -3154,6 +3380,7 @@ class DesktopApp:
                     refreshed = self.db.get_device(device.serial)
                     self._selected_serial = device.serial
                     self._selected_updated_at = refreshed.updated_at if refreshed else None
+                    self._selected_created_at = refreshed.created_at if refreshed else device.created_at
                     self._write_result(
                         {"ok": True, "action": "update", "serial": device.serial, "conflict": "overwrite"}
                     )
@@ -3208,6 +3435,7 @@ class DesktopApp:
     def change_status(self) -> None:
         serial = ""
         status_code = "RECEIVED"
+        comment: str | None = None
         try:
             serial = self.serial_var.get().strip() or (self._selected_serial or "")
             if not serial:
@@ -3216,16 +3444,26 @@ class DesktopApp:
                 return
 
             status_code = self._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
+            created_at = self._resolve_created_at_for_serial(serial)
+            device_type = self._code_from_display(self.type_var.get(), kind="type") or "scanner"
+            comment = self._prepare_comment_for_persist(
+                self.comment_var.get(),
+                serial=serial,
+                device_type=device_type,
+                created_at=created_at,
+                allow_admin_override=self._admin_login_active,
+            )
             changed = self.db.change_status(
                 serial,
                 status_code,
                 to_store=self.to_store_var.get().strip() or None,
-                comment=self.comment_var.get().strip() or None,
+                comment=comment,
             )
             if not changed:
                 raise ValueError(self.tr("not_found"))
 
             self._selected_serial = serial
+            self.comment_var.set(comment or "")
             self._write_result(
                 {
                     "ok": True,
@@ -3244,7 +3482,7 @@ class DesktopApp:
                         "serial": serial,
                         "status": status_code,
                         "to_store": self.to_store_var.get().strip() or None,
-                        "comment": self.comment_var.get().strip() or None,
+                        "comment": comment,
                     }
                 )
                 self._write_result({"ok": True, "offline": True, "action": "status", "serial": serial})
@@ -3287,6 +3525,7 @@ class DesktopApp:
     def clear_form(self) -> None:
         self._selected_serial = None
         self._selected_updated_at = None
+        self._selected_created_at = None
         self.serial_var.set("")
         self.type_var.set(self._display_value("scanner", kind="type"))
         self.make_var.set("")
@@ -3414,8 +3653,10 @@ class DesktopApp:
         try:
             device = self.db.get_device(serial)
             self._selected_updated_at = device.updated_at if device else None
+            self._selected_created_at = device.created_at if device else None
         except Exception:
             self._selected_updated_at = None
+            self._selected_created_at = None
 
     def _open_audit_viewer(self) -> None:
         if not self._authorize_admin_panel():
