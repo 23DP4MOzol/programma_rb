@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import calendar
 import html
+import io
 import json
 import os
 import shutil
+import subprocess
 import threading
 import traceback
 import tkinter as tk
@@ -19,6 +21,7 @@ from tkinter import messagebox
 from tkinter import ttk
 from urllib import parse as urlparse
 from urllib import request as urlrequest
+import zipfile
 
 from i18n import load_translations, t
 from serial_parsing import extract_preferred_serial, normalize_for_store
@@ -1182,7 +1185,13 @@ class DesktopApp:
             parsed["checker_url"] = target_url
             parsed["source_mode"] = "http"
             if not bool(parsed.get("ok")):
-                parsed["details"] = "Public checker page fetched, but warranty fields were not clearly detected"
+                if make_key == "hp" and str(parsed.get("reason") or "") == "empty_page":
+                    parsed["reason"] = "dynamic_page_requires_browser"
+                    parsed["details"] = (
+                        "HP warranty result page is JavaScript-rendered and requires browser automation"
+                    )
+                else:
+                    parsed["details"] = "Public checker page fetched, but warranty fields were not clearly detected"
             return parsed
         except Exception as exc:
             return {
@@ -1390,6 +1399,105 @@ class DesktopApp:
         found_on_path = shutil.which("msedgedriver") or shutil.which("msedgedriver.exe")
         return str(found_on_path or "")
 
+    def _detect_edge_browser_executable_path(self) -> str:
+        env_roots = [
+            os.environ.get("PROGRAMFILES(X86)", ""),
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("LOCALAPPDATA", ""),
+        ]
+        candidates: list[Path] = []
+        for root in env_roots:
+            if not (root or "").strip():
+                continue
+            candidates.append(Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe")
+
+        for candidate in candidates:
+            try:
+                if candidate.is_file():
+                    return str(candidate)
+            except Exception:
+                continue
+
+        found = shutil.which("msedge") or shutil.which("msedge.exe")
+        return str(found or "")
+
+    def _detect_edge_browser_version(self) -> str:
+        edge_exe = self._detect_edge_browser_executable_path()
+        if not edge_exe:
+            return ""
+        try:
+            proc = subprocess.run(
+                [edge_exe, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            text = f"{proc.stdout or ''} {proc.stderr or ''}".strip()
+            match = re.search(r"(\d+\.\d+\.\d+\.\d+)", text)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+        return ""
+
+    def _download_local_edge_driver(self) -> str:
+        app_dir = Path(__file__).resolve().parent
+        drivers_dir = app_dir / "drivers"
+        driver_path = drivers_dir / "msedgedriver.exe"
+
+        try:
+            if driver_path.is_file():
+                return str(driver_path)
+        except Exception:
+            pass
+
+        version = self._detect_edge_browser_version()
+        urls: list[str] = []
+        if version:
+            urls.append(f"https://msedgedriver.microsoft.com/{version}/edgedriver_win64.zip")
+        urls.append("https://msedgedriver.microsoft.com/LATEST_STABLE")
+
+        try:
+            drivers_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return ""
+
+        for url in urls:
+            try:
+                text_response = ""
+                if url.endswith("/LATEST_STABLE"):
+                    text_response = self._http_get_text(url).strip()
+                    if not text_response:
+                        continue
+                    version_url = f"https://msedgedriver.microsoft.com/{text_response}/edgedriver_win64.zip"
+                else:
+                    version_url = url
+
+                req = urlrequest.Request(
+                    version_url,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                with urlrequest.urlopen(req, timeout=WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC) as response:
+                    archive_bytes = response.read() or b""
+
+                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                    members = [name for name in zf.namelist() if name.lower().endswith("msedgedriver.exe")]
+                    if not members:
+                        continue
+                    with zf.open(members[0]) as src, open(driver_path, "wb") as dst:
+                        dst.write(src.read())
+
+                try:
+                    if driver_path.is_file() and driver_path.stat().st_size > 0:
+                        return str(driver_path)
+                except Exception:
+                    continue
+            except Exception:
+                continue
+
+        return ""
+
     def _is_chrome_available_for_warranty(self) -> bool:
         if shutil.which("chrome") or shutil.which("chrome.exe"):
             return True
@@ -1455,6 +1563,8 @@ class DesktopApp:
             chrome_manager = None
 
         edge_driver_path = self._detect_local_edge_driver_path()
+        if not edge_driver_path:
+            edge_driver_path = self._download_local_edge_driver()
         chrome_available = self._is_chrome_available_for_warranty()
 
         driver = None
@@ -1536,6 +1646,8 @@ class DesktopApp:
             merged_details = " | ".join(x for x in (direct_details, browser_details) if x)
             if merged_details:
                 direct_result["details"] = merged_details
+            if re.search(r"devtoolsactiveport|remote debugging is disallowed|group policy", merged_details, flags=re.IGNORECASE):
+                direct_result["reason"] = "browser_policy_blocked"
             direct_result.setdefault("checker_url", checker_url)
             return direct_result
 
@@ -1753,6 +1865,10 @@ class DesktopApp:
                     info = self.tr("desktop_warranty_selenium_missing")
                 elif reason == "browser_launch_failed":
                     info = self.tr("desktop_warranty_driver_missing")
+                elif reason == "browser_policy_blocked":
+                    info = self.tr("desktop_warranty_browser_policy_blocked")
+                elif reason == "dynamic_page_requires_browser":
+                    info = self.tr("desktop_warranty_dynamic_page")
                 else:
                     info = self.tr("desktop_warranty_not_found")
 
