@@ -187,6 +187,7 @@ const WEB_I18N = {
     uiRolePrefix: "Role",
     uiHealthPrefix: "Health",
     uiHealthOffline: "offline",
+    uiHealthOfflineNoInternet: "offline (no internet)",
     uiHealthQueuePending: "queue pending",
     uiHealthHealthy: "healthy",
     status_RECEIVED: "Received",
@@ -229,6 +230,8 @@ const WEB_I18N = {
     msgRecoveredDraft: "Recovered unsaved draft",
     msgBackOnlineSyncing: "Back online. Syncing queued saves...",
     msgOfflineQueued: "Offline mode: saves will be queued",
+    msgNoInternet: "No internet connection. Connect to Wi-Fi or mobile data.",
+    uiDiagApiOffline: "offline (no internet)",
     sync_starting: "starting",
     sync_offline: "offline",
     sync_back_online: "back online",
@@ -331,6 +334,7 @@ const WEB_I18N = {
     uiRolePrefix: "Loma",
     uiHealthPrefix: "Veselība",
     uiHealthOffline: "bezsaistē",
+    uiHealthOfflineNoInternet: "bezsaistē (nav interneta)",
     uiHealthQueuePending: "rinda gaida",
     uiHealthHealthy: "ok",
     status_RECEIVED: "Saņemts",
@@ -373,6 +377,8 @@ const WEB_I18N = {
     msgRecoveredDraft: "Atjaunots nesaglabāts melnraksts",
     msgBackOnlineSyncing: "Atkal tiešsaistē. Sinhronizēju gaidošos ierakstus...",
     msgOfflineQueued: "Bezsaistes režīms: saglabāšana tiks ielikta rindā",
+    msgNoInternet: "Nav interneta savienojuma. Pieslēdzies Wi-Fi vai mobilajiem datiem.",
+    uiDiagApiOffline: "bezsaistē (nav interneta)",
     sync_starting: "sāk",
     sync_offline: "bezsaistē",
     sync_back_online: "atkal tiešsaistē",
@@ -1845,12 +1851,13 @@ function updateDiagnosticsPanel() {
     els.diagLastSync.textContent = lastSyncText;
   }
   if (els.diagApi) {
-    els.diagApi.textContent = SUPABASE_URL;
+    els.diagApi.textContent = navigator.onLine ? SUPABASE_URL : trWeb("uiDiagApiOffline");
+    els.diagApi.style.color = navigator.onLine ? "#0a7a2f" : "#b00020";
   }
 
   const isHealthy = navigator.onLine && queued === 0;
   const health = !navigator.onLine
-    ? trWeb("uiHealthOffline")
+    ? trWeb("uiHealthOfflineNoInternet")
     : queued > 0
       ? trWeb("uiHealthQueuePending")
       : trWeb("uiHealthHealthy");
@@ -2430,11 +2437,20 @@ async function restRequest(path, { method = "GET", body = null, prefer = "" } = 
   if (body !== null) headers["Content-Type"] = "application/json";
   if (prefer) headers.Prefer = prefer;
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method,
-    headers,
-    body: body === null ? undefined : JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      method,
+      headers,
+      body: body === null ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    const text = String((error && error.message) || error || "");
+    if (!navigator.onLine || /failed to fetch|network|internet/i.test(text)) {
+      throw new Error(trWeb("msgNoInternet"));
+    }
+    throw error;
+  }
 
   const text = await response.text();
   let json = null;
@@ -2578,6 +2594,11 @@ async function loadByScannedValue(rawValue, options = {}) {
   try {
     device = await getDeviceBySerial(cleaned);
   } catch (error) {
+    if (isConnectivityError(error)) {
+      setStatus(trWeb("msgNoInternet"), "error");
+      updateDiagnosticsPanel();
+      return;
+    }
     setStatus(`Database error: ${error.message}`, "error");
     return;
   }
@@ -2792,6 +2813,26 @@ async function loadDevicesList() {
     lastSuccessfulSyncAt = new Date().toISOString();
     setSyncInfo("up to date", "ok");
   } catch (error) {
+    if (isConnectivityError(error)) {
+      const offlineMessage = trWeb("msgNoInternet");
+      devicesCache = [];
+      els.listStatus.textContent = `${trWeb("msgDatabaseError")}: ${offlineMessage}`;
+      setSyncInfo("offline", "error");
+      setStatus(offlineMessage, "error");
+      els.devicesList.innerHTML = `
+        <div class="row">
+          <span>${trWeb("msgDatabaseError")}</span>
+          <span>-</span>
+          <span>-</span>
+          <span>-</span>
+          <span>-</span>
+          <span>-</span>
+          <span>${offlineMessage}</span>
+        </div>
+      `;
+      updateDiagnosticsPanel();
+      return;
+    }
     devicesCache = [];
     els.listStatus.textContent = `${trWeb("msgDatabaseError")}: ${error.message}`;
     setSyncInfo(trWeb("msgDatabaseError"), "error");
@@ -3165,7 +3206,7 @@ window.addEventListener("online", () => {
   processQueuedSaves();
 });
 window.addEventListener("offline", () => {
-  setStatus(trWeb("msgOfflineQueued"), "error");
+  setStatus(trWeb("msgNoInternet"), "error");
   setSyncInfo("offline", "error");
   updateDiagnosticsPanel();
 });
