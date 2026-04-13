@@ -11,6 +11,7 @@ import subprocess
 import threading
 import traceback
 import tkinter as tk
+import webbrowser
 from datetime import date, datetime, timezone
 from tkinter import font as tkfont
 from tkinter import simpledialog
@@ -1421,6 +1422,73 @@ class DesktopApp:
         found = shutil.which("msedge") or shutil.which("msedge.exe")
         return str(found or "")
 
+    def _open_checker_in_system_browser(self, checker_url: str) -> bool:
+        target = (checker_url or "").strip()
+        if not target:
+            return False
+
+        launched = False
+        edge_exe = ""
+        try:
+            edge_exe = self._detect_edge_browser_executable_path()
+        except Exception:
+            edge_exe = ""
+
+        if edge_exe:
+            edge_commands: list[list[str]] = [
+                [edge_exe, "--new-window", target],
+                [edge_exe, "--new-tab", target],
+                [edge_exe, target],
+            ]
+            for cmd in edge_commands:
+                try:
+                    subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    launched = True
+                except Exception:
+                    continue
+
+        # In managed Edge setups, protocol launch can open URL even when first process starts on corporate page.
+        try:
+            if os.name == "nt":
+                os.startfile(f"microsoft-edge:{target}")  # type: ignore[attr-defined]
+                launched = True
+        except Exception:
+            pass
+
+        if launched:
+            return True
+
+        try:
+            subprocess.Popen(
+                ["explorer.exe", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except Exception:
+            pass
+
+        try:
+            return bool(webbrowser.open_new_tab(target))
+        except Exception:
+            return False
+
+    def _copy_to_clipboard(self, text: str) -> bool:
+        token = (text or "").strip()
+        if not token:
+            return False
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(token)
+            self.root.update_idletasks()
+            return True
+        except Exception:
+            return False
+
     def _detect_edge_browser_version(self) -> str:
         edge_exe = self._detect_edge_browser_executable_path()
         if not edge_exe:
@@ -1961,6 +2029,12 @@ class DesktopApp:
                 reason = str(result.get("reason") or "not_found")
                 marker = self._build_web_warranty_not_found_marker(make=make, serial=serial, checker_url=checker_url)
                 self.comment_var.set(f"{base_comment} | {marker}" if base_comment else marker)
+                opened_manual_checker = False
+                copied_checker_url = False
+                if checker_url and reason not in {"make_not_supported", "checker_not_configured"}:
+                    opened_manual_checker = self._open_checker_in_system_browser(checker_url)
+                    if not opened_manual_checker:
+                        copied_checker_url = self._copy_to_clipboard(checker_url)
 
                 if reason == "make_not_supported":
                     info = self.tr("desktop_warranty_unsupported_make", make=make)
@@ -1969,11 +2043,16 @@ class DesktopApp:
                 elif reason == "browser_launch_failed":
                     info = self.tr("desktop_warranty_driver_missing")
                 elif reason == "browser_policy_blocked":
-                    info = self.tr("desktop_warranty_browser_policy_blocked")
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url) if opened_manual_checker else self.tr("desktop_warranty_browser_policy_blocked")
                 elif reason == "dynamic_page_requires_browser":
-                    info = self.tr("desktop_warranty_dynamic_page")
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url) if opened_manual_checker else self.tr("desktop_warranty_dynamic_page")
                 else:
                     info = self.tr("desktop_warranty_not_found")
+
+                if opened_manual_checker and checker_url:
+                    info = self.tr("desktop_warranty_opened_checker_manual", url=checker_url)
+                elif copied_checker_url and checker_url:
+                    info = self.tr("desktop_warranty_checker_url_copied", url=checker_url)
 
                 self._write_result(
                     {
