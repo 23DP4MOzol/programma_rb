@@ -12,6 +12,9 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.WindowManager;
@@ -45,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_CAMERA_PERMISSION = 7002;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String LOCAL_WEB_URL = "file:///android_asset/web/index.html";
+    private static final long WEB_REMOTE_TIMEOUT_MS = 7000;
     private static final long DISCOVERY_TIMEOUT_MS = 9000;
     private static final long DISCOVERY_LIST_TIMEOUT_MS = 5500;
     private static final long BOND_TIMEOUT_MS = 9000;
@@ -55,8 +59,10 @@ public class MainActivity extends AppCompatActivity {
     private final Object printerLock = new Object();
     private WebView appWebView;
     private boolean localWebFallbackLoaded = false;
+    private boolean mainFrameLoaded = false;
     private boolean printerAclReceiverRegistered = false;
     private PermissionRequest pendingWebPermissionRequest;
+    private final Runnable remoteLoadTimeoutFallback = this::loadLocalWebFallback;
     private final ActivityResultLauncher<ScanOptions> qrScanLauncher =
             registerForActivityResult(new ScanContract(), result -> {
                 String contents = result != null ? result.getContents() : null;
@@ -150,7 +156,18 @@ public class MainActivity extends AppCompatActivity {
         if (appWebView == null) {
             return;
         }
+
+        localWebFallbackLoaded = false;
+        mainFrameLoaded = false;
+        appWebView.removeCallbacks(remoteLoadTimeoutFallback);
+
+        if (!hasInternetConnection()) {
+            loadLocalWebFallback();
+            return;
+        }
+
         String cacheBust = String.valueOf(System.currentTimeMillis());
+        appWebView.postDelayed(remoteLoadTimeoutFallback, WEB_REMOTE_TIMEOUT_MS);
         appWebView.loadUrl(getString(R.string.web_app_url) + "?v=" + cacheBust);
     }
 
@@ -159,11 +176,39 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         localWebFallbackLoaded = true;
+        mainFrameLoaded = true;
+        appWebView.removeCallbacks(remoteLoadTimeoutFallback);
         String cacheBust = String.valueOf(System.currentTimeMillis());
         appWebView.loadUrl(LOCAL_WEB_URL + "?v=" + cacheBust);
     }
 
+    private boolean hasInternetConnection() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                return false;
+            }
+            Network activeNetwork = cm.getActiveNetwork();
+            if (activeNetwork == null) {
+                return false;
+            }
+            NetworkCapabilities caps = cm.getNetworkCapabilities(activeNetwork);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private final class InventoryWebViewClient extends WebViewClient {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (view != null) {
+                mainFrameLoaded = true;
+                view.removeCallbacks(remoteLoadTimeoutFallback);
+            }
+        }
+
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
