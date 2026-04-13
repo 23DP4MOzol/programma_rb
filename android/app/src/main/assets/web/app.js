@@ -107,19 +107,15 @@ const WEB_APP_VERSION = "web-2026.04.07";
 
 const WARRANTY_MARKER = "[WARRANTY]";
 const WARRANTY_STRICT_MODE = true;
-const WARRANTY_CHECKER_URL_BY_MAKE = {
-  hp: "https://support.hp.com/us-en/check-warranty",
-  lenovo: "https://pcsupport.lenovo.com/warrantylookup",
-  zebra: "https://www.zebra.com/us/en/support-downloads/warranty.html",
-  samsung: "https://www.samsung.com/us/support/warranty/",
-  apple: "https://checkcoverage.apple.com/",
-};
-const WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE = {
-  hp: "serialnumber",
-  lenovo: "serialNumber",
-  zebra: "serial",
-  samsung: "serialNumber",
-  apple: "sn",
+const WARRANTY_PUBLIC_API_ONLY = true;
+const WARRANTY_PUBLIC_API_TIMEOUT_MS = 9000;
+const WARRANTY_PUBLIC_API_CACHE_TTL_MS = 10 * 60 * 1000;
+const WARRANTY_PUBLIC_API_BY_MAKE = {
+  hp: { endpoint: "", serialParam: "serialNumber" },
+  lenovo: { endpoint: "", serialParam: "serialNumber" },
+  zebra: { endpoint: "", serialParam: "serial" },
+  samsung: { endpoint: "", serialParam: "serialNumber" },
+  apple: { endpoint: "", serialParam: "serialNumber" },
 };
 const WARRANTY_MONTHS_BY_PREFIX = {
   "5CG32": 36,
@@ -624,6 +620,7 @@ let qrScanAnimationId = 0;
 let qrDetector = null;
 const loadedCreatedAtBySerial = new Map();
 const loadedWarrantyBySerial = new Map();
+const warrantyApiResultByKey = new Map();
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -2290,7 +2287,7 @@ function splitCommentAndWarrantySegment(comment) {
   return { base, warranty };
 }
 
-function normalizeMakeForChecker(make) {
+function normalizeMakeForPublicApi(make) {
   return String(make || "")
     .trim()
     .toLowerCase()
@@ -2298,49 +2295,188 @@ function normalizeMakeForChecker(make) {
     .trim();
 }
 
-function warrantyCheckerUrlForMake(make) {
-  const normalized = normalizeMakeForChecker(make);
-  if (!normalized) return "";
+function getWarrantyPublicApiProvider(make) {
+  const normalized = normalizeMakeForPublicApi(make);
+  if (!normalized) return null;
 
-  if (WARRANTY_CHECKER_URL_BY_MAKE[normalized]) {
-    return WARRANTY_CHECKER_URL_BY_MAKE[normalized];
+  if (WARRANTY_PUBLIC_API_BY_MAKE[normalized]) {
+    return { key: normalized, ...WARRANTY_PUBLIC_API_BY_MAKE[normalized] };
   }
 
   const firstWord = normalized.split(" ")[0];
-  return WARRANTY_CHECKER_URL_BY_MAKE[firstWord] || "";
+  const provider = WARRANTY_PUBLIC_API_BY_MAKE[firstWord];
+  return provider ? { key: firstWord, ...provider } : null;
 }
 
-function warrantyCheckerSerialParamForMake(make) {
-  const normalized = normalizeMakeForChecker(make);
-  if (!normalized) return "";
+function readWarrantyApiField(payload, fieldSpec) {
+  if (!payload || !fieldSpec) return undefined;
 
-  if (WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized]) {
-    return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized];
+  const paths = Array.isArray(fieldSpec) ? fieldSpec : [fieldSpec];
+  for (const path of paths) {
+    const parts = String(path || "")
+      .split(".")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (!parts.length) continue;
+
+    let value = payload;
+    let ok = true;
+    for (const part of parts) {
+      if (value && typeof value === "object" && part in value) {
+        value = value[part];
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return value;
   }
-
-  const firstWord = normalized.split(" ")[0];
-  return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[firstWord] || "";
+  return undefined;
 }
 
-function buildWarrantyAutomationUrl(make, serial) {
-  const baseUrl = warrantyCheckerUrlForMake(make);
-  if (!baseUrl) return "";
+function buildWarrantyPublicApiQueryUrl(make, serial) {
+  const provider = getWarrantyPublicApiProvider(make);
+  const endpoint = String(provider?.endpoint || "").trim();
+  if (!endpoint) return "";
 
   const cleaned = cleanToken(serial);
-  if (!cleaned) return baseUrl;
-
-  const serialParam = warrantyCheckerSerialParamForMake(make);
-  if (!serialParam) return baseUrl;
+  const serialParam = String(provider?.serialParam || "serial").trim() || "serial";
+  if (!cleaned) return endpoint;
 
   try {
-    const url = new URL(baseUrl);
+    const url = new URL(endpoint);
     if (!url.searchParams.has(serialParam)) {
       url.searchParams.set(serialParam, cleaned);
     }
     return url.toString();
   } catch {
-    return baseUrl;
+    return endpoint;
   }
+}
+
+function getWarrantyApiCacheKey(make, serial) {
+  const normalizedMake = normalizeMakeForPublicApi(make);
+  const cleaned = cleanToken(serial);
+  return `${normalizedMake}::${cleaned}`;
+}
+
+function boolFromApi(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const text = String(value || "").trim().toLowerCase();
+  return text === "true" || text === "1" || text === "yes" || text === "verified" || text === "active";
+}
+
+function normalizeWarrantyApiDate(value) {
+  const parsed = parseIsoDateOnly(value);
+  return parsed ? parsed.toISOString().slice(0, 10) : "";
+}
+
+function normalizeWarrantyApiStatus(value) {
+  const text = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9 _-]/g, "")
+    .replace(/\s+/g, " ");
+  return text || "VERIFIED";
+}
+
+function buildVerifiedWarrantySegmentFromApi(make, serial, result) {
+  const cleaned = cleanToken(serial);
+  const resolvedMake = String(make || "").trim() || "manufacturer";
+  const status = normalizeWarrantyApiStatus(result?.status);
+  const endDate = normalizeWarrantyApiDate(result?.warrantyEndDate);
+  const sourceUrl = String(result?.sourceUrl || result?.queryUrl || "").trim();
+  const endText = endDate ? ` until ${endDate}` : "";
+  const sourceText = sourceUrl ? ` ${sourceUrl}` : "";
+  return `${WARRANTY_MARKER} VERIFIED via PUBLIC API (${resolvedMake}) ${status}${endText} (serial ${cleaned})${sourceText}`;
+}
+
+async function fetchWarrantyFromPublicApi(make, serial) {
+  const provider = getWarrantyPublicApiProvider(make);
+  const queryUrl = buildWarrantyPublicApiQueryUrl(make, serial);
+
+  if (!provider || !queryUrl) {
+    return { ok: false, reason: "api_not_configured", queryUrl: "" };
+  }
+
+  const cacheKey = getWarrantyApiCacheKey(make, serial);
+  const cached = warrantyApiResultByKey.get(cacheKey);
+  if (cached && Date.now() - cached.checkedAt < WARRANTY_PUBLIC_API_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  const headers = { Accept: "application/json" };
+  const timeoutMs = Number(provider.timeoutMs || WARRANTY_PUBLIC_API_TIMEOUT_MS) || WARRANTY_PUBLIC_API_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let result;
+  try {
+    const response = await fetch(queryUrl, {
+      method: String(provider.method || "GET").toUpperCase(),
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      result = {
+        ok: false,
+        reason: `http_${response.status}`,
+        queryUrl,
+      };
+    } else {
+      const payload = await response.json();
+      const verifiedRaw = readWarrantyApiField(payload, provider.verifiedField || ["verified", "data.verified", "warranty.verified"]);
+      const statusRaw = readWarrantyApiField(payload, provider.statusField || ["status", "data.status", "warranty.status"]);
+      const endDateRaw = readWarrantyApiField(payload, provider.endDateField || ["warrantyEndDate", "data.warrantyEndDate", "warranty.endDate"]);
+      const sourceRaw = readWarrantyApiField(payload, provider.sourceField || ["sourceUrl", "data.sourceUrl", "meta.sourceUrl"]);
+
+      if (boolFromApi(verifiedRaw)) {
+        result = {
+          ok: true,
+          status: statusRaw,
+          warrantyEndDate: endDateRaw,
+          sourceUrl: String(sourceRaw || queryUrl || ""),
+          queryUrl,
+        };
+      } else {
+        result = {
+          ok: false,
+          reason: "not_found",
+          queryUrl,
+        };
+      }
+    }
+  } catch (error) {
+    const text = String(error?.name || error?.message || "error").toLowerCase();
+    result = {
+      ok: false,
+      reason: text.includes("abort") ? "timeout" : "request_error",
+      queryUrl,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  warrantyApiResultByKey.set(cacheKey, {
+    checkedAt: Date.now(),
+    result,
+  });
+  return result;
+}
+
+async function resolveVerifiedWarrantySegmentForPersist({ serial, make } = {}) {
+  if (!WARRANTY_STRICT_MODE || !WARRANTY_PUBLIC_API_ONLY) return "";
+
+  const cleaned = cleanToken(serial);
+  const resolvedMake = String(make || "").trim();
+  if (!cleaned || !resolvedMake) return "";
+
+  const result = await fetchWarrantyFromPublicApi(resolvedMake, cleaned);
+  if (!result.ok) return "";
+
+  return buildVerifiedWarrantySegmentFromApi(resolvedMake, cleaned, result);
 }
 
 function isVerifiedWarrantySegment(segment) {
@@ -2353,10 +2489,11 @@ function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt, make })
 
   if (WARRANTY_STRICT_MODE) {
     const resolvedMake = String(make || "").trim() || "manufacturer";
-    const checkerUrl = buildWarrantyAutomationUrl(resolvedMake, cleaned);
-    return checkerUrl
-      ? `${WARRANTY_MARKER} AUTO-CHECK: couldn't find it in official ${resolvedMake} warranty checker (serial ${cleaned}) ${checkerUrl}`
-      : `${WARRANTY_MARKER} AUTO-CHECK: couldn't find it in official ${resolvedMake} warranty checker (serial ${cleaned})`;
+    const queryUrl = buildWarrantyPublicApiQueryUrl(resolvedMake, cleaned);
+    if (queryUrl) {
+      return `${WARRANTY_MARKER} PUBLIC-API AUTO-CHECK: couldn't find it for ${resolvedMake} (serial ${cleaned}) ${queryUrl}`;
+    }
+    return `${WARRANTY_MARKER} PUBLIC-API AUTO-CHECK: couldn't find it for ${resolvedMake} (serial ${cleaned}); public API is not configured`;
   }
 
   const { months, source } = warrantyMonthsForSerial(cleaned, deviceType);
@@ -2377,7 +2514,7 @@ function prepareCommentForPersist(
   { serial, deviceType, createdAt, make, allowAdminOverride = false, existingWarrantySegment = "" } = {}
 ) {
   const text = String(rawComment || "").trim();
-  if (allowAdminOverride) {
+  if (allowAdminOverride && !WARRANTY_PUBLIC_API_ONLY) {
     return text;
   }
 
@@ -2948,7 +3085,12 @@ async function processQueuedSaves() {
         const createdAtForComment = String(op.created_at || existing?.created_at || getKnownCreatedAtForToken(serialForComment) || "").trim();
         const modelForComment = String(op.model || existing?.model || "").trim();
         const makeForComment = String(op.make || splitModel(modelForComment)[0] || "").trim();
+        const apiVerifiedWarrantySegment = await resolveVerifiedWarrantySegmentForPersist({
+          serial: serialForComment,
+          make: makeForComment,
+        });
         const existingWarrantySegment = String(
+          apiVerifiedWarrantySegment ||
           splitCommentAndWarrantySegment(existing?.comment || "").warranty ||
             op.existing_warranty ||
             getKnownWarrantySegmentForToken(serialForComment) ||
@@ -3146,10 +3288,15 @@ async function saveDevice() {
   }
 
   els.serial.value = cleaned;
+  const firstMake = String(els.make.value || "").trim();
+  const apiVerifiedFromForm = await resolveVerifiedWarrantySegmentForPersist({
+    serial: cleaned,
+    make: firstMake,
+  });
   let queuedOperation = buildSaveOperation(cleaned, {
-    make: String(els.make.value || "").trim(),
+    make: firstMake,
     model: composeModel(els.make.value, els.model.value),
-    existingWarrantySegment: getKnownWarrantySegmentForToken(cleaned),
+    existingWarrantySegment: apiVerifiedFromForm || getKnownWarrantySegmentForToken(cleaned),
   });
   els.comment.value = queuedOperation.comment || "";
   saveDraft();
@@ -3166,11 +3313,16 @@ async function saveDevice() {
       rememberWarrantySegmentForToken(existing.serial, existingWarrantySegment);
     }
     rememberWarrantySegmentForToken(cleaned, existingWarrantySegment);
+    const resolvedMakeForApi = String(els.make.value || splitModel(existing?.model || "")[0] || "").trim();
+    const apiVerifiedFromLookup = await resolveVerifiedWarrantySegmentForPersist({
+      serial: cleaned,
+      make: resolvedMakeForApi,
+    });
     queuedOperation = buildSaveOperation(cleaned, {
       existingDevice: existing,
-      make: String(els.make.value || splitModel(existing?.model || "")[0] || "").trim(),
+      make: resolvedMakeForApi,
       model: composeModel(els.make.value, els.model.value) || String(existing?.model || "").trim(),
-      existingWarrantySegment,
+      existingWarrantySegment: apiVerifiedFromLookup || existingWarrantySegment,
     });
     els.comment.value = queuedOperation.comment || "";
     saveDraft();
