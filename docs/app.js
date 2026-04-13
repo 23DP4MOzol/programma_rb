@@ -106,6 +106,21 @@ const SAVE_DEBOUNCE_MS = 1400;
 const WEB_APP_VERSION = "web-2026.04.07";
 
 const WARRANTY_MARKER = "[WARRANTY]";
+const WARRANTY_STRICT_MODE = true;
+const WARRANTY_CHECKER_URL_BY_MAKE = {
+  hp: "https://support.hp.com/us-en/check-warranty",
+  lenovo: "https://pcsupport.lenovo.com/warrantylookup",
+  zebra: "https://www.zebra.com/us/en/support-downloads/warranty.html",
+  samsung: "https://www.samsung.com/us/support/warranty/",
+  apple: "https://checkcoverage.apple.com/",
+};
+const WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE = {
+  hp: "serialnumber",
+  lenovo: "serialNumber",
+  zebra: "serial",
+  samsung: "serialNumber",
+  apple: "sn",
+};
 const WARRANTY_MONTHS_BY_PREFIX = {
   "5CG32": 36,
   "5CG21": 36,
@@ -608,6 +623,7 @@ let qrScanActive = false;
 let qrScanAnimationId = 0;
 let qrDetector = null;
 const loadedCreatedAtBySerial = new Map();
+const loadedWarrantyBySerial = new Map();
 
 function setStatus(message, tone = "info") {
   els.statusText.textContent = message;
@@ -2274,9 +2290,74 @@ function splitCommentAndWarrantySegment(comment) {
   return { base, warranty };
 }
 
-function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt }) {
+function normalizeMakeForChecker(make) {
+  return String(make || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function warrantyCheckerUrlForMake(make) {
+  const normalized = normalizeMakeForChecker(make);
+  if (!normalized) return "";
+
+  if (WARRANTY_CHECKER_URL_BY_MAKE[normalized]) {
+    return WARRANTY_CHECKER_URL_BY_MAKE[normalized];
+  }
+
+  const firstWord = normalized.split(" ")[0];
+  return WARRANTY_CHECKER_URL_BY_MAKE[firstWord] || "";
+}
+
+function warrantyCheckerSerialParamForMake(make) {
+  const normalized = normalizeMakeForChecker(make);
+  if (!normalized) return "";
+
+  if (WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized]) {
+    return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[normalized];
+  }
+
+  const firstWord = normalized.split(" ")[0];
+  return WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE[firstWord] || "";
+}
+
+function buildWarrantyAutomationUrl(make, serial) {
+  const baseUrl = warrantyCheckerUrlForMake(make);
+  if (!baseUrl) return "";
+
+  const cleaned = cleanToken(serial);
+  if (!cleaned) return baseUrl;
+
+  const serialParam = warrantyCheckerSerialParamForMake(make);
+  if (!serialParam) return baseUrl;
+
+  try {
+    const url = new URL(baseUrl);
+    if (!url.searchParams.has(serialParam)) {
+      url.searchParams.set(serialParam, cleaned);
+    }
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+function isVerifiedWarrantySegment(segment) {
+  return /\[WARRANTY\]\s+VERIFIED\b/i.test(String(segment || ""));
+}
+
+function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt, make }) {
   const cleaned = cleanToken(serial);
   if (!cleaned) return "";
+
+  if (WARRANTY_STRICT_MODE) {
+    const resolvedMake = String(make || "").trim() || "manufacturer";
+    const checkerUrl = buildWarrantyAutomationUrl(resolvedMake, cleaned);
+    return checkerUrl
+      ? `${WARRANTY_MARKER} AUTO-CHECK: couldn't find it in official ${resolvedMake} warranty checker (serial ${cleaned}) ${checkerUrl}`
+      : `${WARRANTY_MARKER} AUTO-CHECK: couldn't find it in official ${resolvedMake} warranty checker (serial ${cleaned})`;
+  }
 
   const { months, source } = warrantyMonthsForSerial(cleaned, deviceType);
   if (!months || months <= 0) return "";
@@ -2291,23 +2372,33 @@ function buildWarrantyMarkerFromContext({ serial, deviceType, createdAt }) {
   return `${WARRANTY_MARKER} ${status} until ${endText} (${months}m; ${source})`;
 }
 
-function prepareCommentForPersist(rawComment, { serial, deviceType, createdAt, allowAdminOverride = false } = {}) {
+function prepareCommentForPersist(
+  rawComment,
+  { serial, deviceType, createdAt, make, allowAdminOverride = false, existingWarrantySegment = "" } = {}
+) {
   const text = String(rawComment || "").trim();
   if (allowAdminOverride) {
     return text;
   }
 
   const { base } = splitCommentAndWarrantySegment(text);
-  const marker = buildWarrantyMarkerFromContext({ serial, deviceType, createdAt });
+  const trustedWarranty = isVerifiedWarrantySegment(existingWarrantySegment) ? String(existingWarrantySegment).trim() : "";
+  if (trustedWarranty) {
+    return base ? `${base} | ${trustedWarranty}` : trustedWarranty;
+  }
+
+  const marker = buildWarrantyMarkerFromContext({ serial, deviceType, createdAt, make });
   if (!marker) return base;
   return base ? `${base} | ${marker}` : marker;
 }
 
-function commentWithWarrantyPreview(comment, { serial, deviceType, createdAt } = {}) {
+function commentWithWarrantyPreview(comment, { serial, deviceType, createdAt, make, existingWarrantySegment = "" } = {}) {
   return prepareCommentForPersist(comment, {
     serial,
     deviceType,
     createdAt,
+    make,
+    existingWarrantySegment,
     allowAdminOverride: false,
   });
 }
@@ -2328,6 +2419,24 @@ function getKnownCreatedAtForToken(token) {
   return "";
 }
 
+function rememberWarrantySegmentForToken(token, segment) {
+  const value = String(segment || "").trim();
+  if (!isVerifiedWarrantySegment(value)) {
+    return;
+  }
+  for (const variant of serialVariants(token)) {
+    loadedWarrantyBySerial.set(variant, value);
+  }
+}
+
+function getKnownWarrantySegmentForToken(token) {
+  for (const variant of serialVariants(token)) {
+    const segment = loadedWarrantyBySerial.get(variant);
+    if (segment) return segment;
+  }
+  return "";
+}
+
 function resolveCreatedAtForSave(cleanedToken, existingDevice = null) {
   const direct = String(existingDevice?.created_at || "").trim();
   if (direct) return direct;
@@ -2340,13 +2449,17 @@ function refreshWarrantyCommentPreview({ serial, deviceType, createdAt } = {}) {
   if (!cleaned) return;
 
   const resolvedType = String(deviceType || els.type.value || "scanner").trim().toLowerCase() || "scanner";
+  const resolvedMake = String(els.make.value || "").trim();
   const resolvedCreatedAt =
     createdAt !== undefined ? String(createdAt || "").trim() : resolveCreatedAtForSave(cleaned, null);
+  const existingWarrantySegment = getKnownWarrantySegmentForToken(cleaned);
 
   els.comment.value = commentWithWarrantyPreview(els.comment.value, {
     serial: cleaned,
     deviceType: resolvedType,
     createdAt: resolvedCreatedAt,
+    make: resolvedMake,
+    existingWarrantySegment,
   });
   saveDraft();
 }
@@ -2385,26 +2498,36 @@ function composeModel(make, model) {
   return `${mk} ${md}`;
 }
 
-function buildSaveOperation(cleanedToken) {
+function buildSaveOperation(cleanedToken, options = {}) {
   const expected = getKnownRevisionForToken(cleanedToken);
-  const resolvedType = (els.type.value || "scanner").trim() || "scanner";
-  const resolvedCreatedAt = resolveCreatedAtForSave(cleanedToken, null);
+  const resolvedType = String(options.deviceType || els.type.value || "scanner").trim() || "scanner";
+  const resolvedModel = String(options.model || composeModel(els.make.value, els.model.value)).trim();
+  const modelMake = splitModel(resolvedModel)[0] || "";
+  const resolvedMake = String(options.make || els.make.value || modelMake).trim();
+  const resolvedCreatedAt = resolveCreatedAtForSave(cleanedToken, options.existingDevice || null);
+  const resolvedExistingWarranty = String(
+    options.existingWarrantySegment || getKnownWarrantySegmentForToken(cleanedToken) || ""
+  ).trim();
   const comment = prepareCommentForPersist(els.comment.value, {
     serial: cleanedToken,
     deviceType: resolvedType,
     createdAt: resolvedCreatedAt,
+    make: resolvedMake,
+    existingWarrantySegment: resolvedExistingWarranty,
     allowAdminOverride: Boolean(authContext?.isAdmin),
   });
 
   return {
     serial: normalizeForStore(cleanedToken),
     device_type: resolvedType,
-    model: composeModel(els.make.value, els.model.value),
+    model: resolvedModel,
+    make: resolvedMake,
     from_store: els.fromStore.value.trim(),
     to_store: els.toStore.value.trim(),
     status: els.statusSelect.value,
     comment,
     created_at: resolvedCreatedAt || null,
+    existing_warranty: resolvedExistingWarranty || "",
     allow_admin_override: Boolean(authContext?.isAdmin),
     expected_updated_at: expected || null,
   };
@@ -2669,9 +2792,12 @@ function fillFormFromDevice(device) {
     serial: device.serial || els.serial.value || "",
     deviceType: device.device_type || "scanner",
     createdAt: device.created_at || "",
+    make,
+    existingWarrantySegment: splitCommentAndWarrantySegment(device.comment || "").warranty || "",
   });
   els.comment.value = authContext?.isAdmin ? String(device.comment || "") : preview;
   rememberCreatedAtForToken(device.serial || "", device.created_at || "");
+  rememberWarrantySegmentForToken(device.serial || "", splitCommentAndWarrantySegment(device.comment || "").warranty || "");
   setIdentityEditable(false);
   refreshInlineSuggestions();
   saveDraft();
@@ -2820,10 +2946,20 @@ async function processQueuedSaves() {
         const serialForComment = String(op.serial || existing?.serial || "").trim();
         const deviceTypeForComment = String(op.device_type || existing?.device_type || "scanner").trim() || "scanner";
         const createdAtForComment = String(op.created_at || existing?.created_at || getKnownCreatedAtForToken(serialForComment) || "").trim();
+        const modelForComment = String(op.model || existing?.model || "").trim();
+        const makeForComment = String(op.make || splitModel(modelForComment)[0] || "").trim();
+        const existingWarrantySegment = String(
+          splitCommentAndWarrantySegment(existing?.comment || "").warranty ||
+            op.existing_warranty ||
+            getKnownWarrantySegmentForToken(serialForComment) ||
+            ""
+        ).trim();
         const commentForPersist = prepareCommentForPersist(op.comment, {
           serial: serialForComment,
           deviceType: deviceTypeForComment,
           createdAt: createdAtForComment,
+          make: makeForComment,
+          existingWarrantySegment,
           allowAdminOverride: Boolean(op.allow_admin_override),
         });
         const editPayload = {
@@ -2849,6 +2985,10 @@ async function processQueuedSaves() {
             rememberRevisionForToken(op.serial || "", rows[0].updated_at);
           }
           rememberCreatedAtForToken(op.serial || "", existing.created_at || createdAtForComment || rows?.[0]?.created_at || "");
+          rememberWarrantySegmentForToken(
+            op.serial || "",
+            splitCommentAndWarrantySegment(rows?.[0]?.comment || existing?.comment || commentForPersist || "").warranty || ""
+          );
         } else {
           const rows = await restRequest("devices", {
             method: "POST",
@@ -2865,6 +3005,12 @@ async function processQueuedSaves() {
           }
           if (Array.isArray(rows) && rows[0]?.created_at) {
             rememberCreatedAtForToken(op.serial || "", rows[0].created_at);
+          }
+          if (Array.isArray(rows) && rows[0]?.comment) {
+            rememberWarrantySegmentForToken(
+              op.serial || "",
+              splitCommentAndWarrantySegment(rows[0].comment || "").warranty || ""
+            );
           }
         }
         synced += 1;
@@ -2943,8 +3089,10 @@ async function loadByScannedValue(rawValue, options = {}) {
     if (device.serial) {
       rememberRevisionForToken(device.serial, device.updated_at || "");
       rememberCreatedAtForToken(device.serial, device.created_at || "");
+      rememberWarrantySegmentForToken(device.serial, splitCommentAndWarrantySegment(device.comment || "").warranty || "");
     }
     rememberCreatedAtForToken(cleaned, device.created_at || "");
+    rememberWarrantySegmentForToken(cleaned, splitCommentAndWarrantySegment(device.comment || "").warranty || "");
     fillFormFromDevice(device);
     setStatus(trWeb("scanFoundDbStatus"), "ok");
     showScanPopup(trWeb("scanFoundDbPopup"));
@@ -2956,6 +3104,7 @@ async function loadByScannedValue(rawValue, options = {}) {
   for (const variant of serialVariants(cleaned)) {
     loadedRevisionBySerial.delete(variant);
     loadedCreatedAtBySerial.delete(variant);
+    loadedWarrantyBySerial.delete(variant);
   }
 
   resetIdentityFields();
@@ -2997,7 +3146,11 @@ async function saveDevice() {
   }
 
   els.serial.value = cleaned;
-  let queuedOperation = buildSaveOperation(cleaned);
+  let queuedOperation = buildSaveOperation(cleaned, {
+    make: String(els.make.value || "").trim(),
+    model: composeModel(els.make.value, els.model.value),
+    existingWarrantySegment: getKnownWarrantySegmentForToken(cleaned),
+  });
   els.comment.value = queuedOperation.comment || "";
   saveDraft();
 
@@ -3008,7 +3161,17 @@ async function saveDevice() {
       rememberCreatedAtForToken(cleaned, existing.created_at);
       rememberCreatedAtForToken(existing.serial || cleaned, existing.created_at);
     }
-    queuedOperation = buildSaveOperation(cleaned);
+    const existingWarrantySegment = splitCommentAndWarrantySegment(existing?.comment || "").warranty || "";
+    if (existing?.serial) {
+      rememberWarrantySegmentForToken(existing.serial, existingWarrantySegment);
+    }
+    rememberWarrantySegmentForToken(cleaned, existingWarrantySegment);
+    queuedOperation = buildSaveOperation(cleaned, {
+      existingDevice: existing,
+      make: String(els.make.value || splitModel(existing?.model || "")[0] || "").trim(),
+      model: composeModel(els.make.value, els.model.value) || String(existing?.model || "").trim(),
+      existingWarrantySegment,
+    });
     els.comment.value = queuedOperation.comment || "";
     saveDraft();
   } catch (error) {
@@ -3050,6 +3213,12 @@ async function saveDevice() {
           if (Array.isArray(overwriteRows) && overwriteRows[0]?.created_at) {
             rememberCreatedAtForToken(cleaned, overwriteRows[0].created_at);
           }
+          if (Array.isArray(overwriteRows) && overwriteRows[0]?.comment) {
+            rememberWarrantySegmentForToken(
+              cleaned,
+              splitCommentAndWarrantySegment(overwriteRows[0].comment || "").warranty || ""
+            );
+          }
           setStatus(trWeb("conflictOverwrittenStatus"), "ok");
           markSave(cleaned);
         } else if (decision === "reload") {
@@ -3067,6 +3236,9 @@ async function saveDevice() {
         if (Array.isArray(rows) && rows[0]?.created_at) {
           rememberCreatedAtForToken(cleaned, rows[0].created_at);
         }
+        if (Array.isArray(rows) && rows[0]?.comment) {
+          rememberWarrantySegmentForToken(cleaned, splitCommentAndWarrantySegment(rows[0].comment || "").warranty || "");
+        }
         setStatus("Updated existing device", "ok");
         markSave(cleaned);
       }
@@ -3083,6 +3255,9 @@ async function saveDevice() {
       }
       if (Array.isArray(rows) && rows[0]?.created_at) {
         rememberCreatedAtForToken(cleaned, rows[0].created_at);
+      }
+      if (Array.isArray(rows) && rows[0]?.comment) {
+        rememberWarrantySegmentForToken(cleaned, splitCommentAndWarrantySegment(rows[0].comment || "").warranty || "");
       }
       setStatus("Added new device", "ok");
       markSave(cleaned);
