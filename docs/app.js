@@ -802,13 +802,17 @@ async function refreshPrinterCandidates({ silent = false } = {}) {
   }
 
   const previouslySelected = String(els.printerPicker?.value || "").trim();
-  const result = callPrinterBridge("listLikelyPrinters");
+  let result = callPrinterBridge("refreshOnlinePrinters");
+  const unsupportedRefreshMethod = !result.ok && /not available/i.test(String(result.message || ""));
+  if (unsupportedRefreshMethod) {
+    result = callPrinterBridge("listLikelyPrinters");
+  }
   const candidates = Array.isArray(result.printers) ? result.printers : [];
   renderPrinterPicker(candidates, previouslySelected);
 
   if (!silent) {
     if (result.ok) {
-      setStatus(`Found ${candidates.length} printer(s)`, "ok");
+      setStatus(`Found ${candidates.length} powered printer(s)`, "ok");
     } else {
       setStatus(`Printer scan failed: ${result.message || "unknown error"}`, "error");
     }

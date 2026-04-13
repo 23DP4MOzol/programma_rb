@@ -938,6 +938,39 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @SuppressLint("MissingPermission")
+    private String refreshOnlinePrintersInternal() {
+        List<PrinterCandidate> candidates = new ArrayList<>();
+
+        if (bluetoothAdapter == null) {
+            return toJsonPrinters(false, "Bluetooth not available on this device", candidates);
+        }
+        if (!bluetoothAdapter.isEnabled()) {
+            return toJsonPrinters(false, "Enable Bluetooth first", candidates);
+        }
+        if (!ensureBluetoothPermission()) {
+            return toJsonPrinters(false, "Bluetooth permission requested. Allow Nearby devices, then tap Find printers again.", candidates);
+        }
+
+        synchronized (printerLock) {
+            closeSocketLocked();
+        }
+
+        try {
+            if (bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+        } catch (SecurityException ignored) {
+            // Ignore discovery cleanup failures.
+        }
+
+        for (BluetoothDevice device : discoverNearbyPrinters(DISCOVERY_LIST_TIMEOUT_MS)) {
+            addPrinterCandidate(candidates, device);
+        }
+
+        return toJsonPrinters(true, candidates.isEmpty() ? "No powered printers found" : "ok", candidates);
+    }
+
+    @SuppressLint("MissingPermission")
     private String describeBondedDevices() {
         if (bluetoothAdapter == null) {
             return "Bluetooth unavailable";
@@ -1244,6 +1277,11 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public String listLikelyPrinters() {
             return listLikelyPrintersInternal();
+        }
+
+        @JavascriptInterface
+        public String refreshOnlinePrinters() {
+            return refreshOnlinePrintersInternal();
         }
 
         @JavascriptInterface
