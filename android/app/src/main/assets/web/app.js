@@ -1149,7 +1149,7 @@ async function handleQrDetected(rawValue) {
   els.lookupSerial.value = cleaned;
   saveDraft();
   setStatus(trWebFmt("scanQrDetected", { serial: cleaned }), "ok");
-  await loadByScannedValue(raw, { allowGenericSingle: true });
+  await loadByScannedValue(cleaned, { allowGenericSingle: true });
 }
 
 function scheduleQrFrame() {
@@ -1966,7 +1966,7 @@ function cleanToken(value) {
 function tokenizeScan(rawValue) {
   return String(rawValue || "")
     .toUpperCase()
-    .split(/[\s,;|]+/)
+    .split(/[\s,;|+]+/)
     .map((x) => cleanToken(x))
     .filter(Boolean);
 }
@@ -2437,7 +2437,14 @@ async function restRequest(path, { method = "GET", body = null, prefer = "" } = 
   });
 
   const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
+    }
+  }
   if (!response.ok) {
     const msg = (json && (json.message || json.error || json.error_description)) || text || response.statusText;
     throw new Error(msg);
