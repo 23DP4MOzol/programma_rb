@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from tkinter import font as tkfont
 from tkinter import simpledialog
 import re
+import ssl
 from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox
@@ -1148,6 +1149,21 @@ class DesktopApp:
                 continue
         return 25
 
+    def _remote_warranty_allow_insecure_tls(self) -> bool:
+        raw_env = str(os.environ.get("WARRANTY_REMOTE_API_ALLOW_INSECURE_TLS", "")).strip().lower()
+        if raw_env in {"1", "true", "yes", "on"}:
+            return True
+        if raw_env in {"0", "false", "no", "off"}:
+            return False
+
+        raw_cfg = str((self.config or {}).get("warranty_remote_api_allow_insecure_tls") or "").strip().lower()
+        if raw_cfg in {"1", "true", "yes", "on"}:
+            return True
+        if raw_cfg in {"0", "false", "no", "off"}:
+            return False
+
+        return False
+
     def _lookup_warranty_via_remote_worker(
         self,
         *,
@@ -1177,9 +1193,16 @@ class DesktopApp:
             headers["X-API-Key"] = api_key
 
         timeout_sec = self._remote_warranty_api_timeout_sec()
-        try:
+        endpoint_host = urlparse.urlparse(endpoint).netloc.lower()
+        allow_insecure_tls = self._remote_warranty_allow_insecure_tls() or endpoint_host.endswith("workers.dev")
+
+        def _execute_remote_request(*, insecure_tls: bool) -> dict[str, object]:
             req = urlrequest.Request(endpoint, data=payload, headers=headers, method="POST")
-            with urlrequest.urlopen(req, timeout=timeout_sec) as response:
+            open_kwargs: dict[str, object] = {"timeout": timeout_sec}
+            if insecure_tls:
+                open_kwargs["context"] = ssl._create_unverified_context()
+
+            with urlrequest.urlopen(req, **open_kwargs) as response:
                 charset = "utf-8"
                 content_type = response.headers.get("Content-Type", "")
                 match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
@@ -1200,7 +1223,23 @@ class DesktopApp:
             parsed.setdefault("checker_url", checker_url)
             parsed["source_mode"] = "remote"
             return parsed
+
+        try:
+            return _execute_remote_request(insecure_tls=False)
         except Exception as exc:
+            exc_text = str(exc)
+            if allow_insecure_tls and "CERTIFICATE_VERIFY_FAILED" in exc_text.upper():
+                try:
+                    return _execute_remote_request(insecure_tls=True)
+                except Exception as retry_exc:
+                    return {
+                        "ok": False,
+                        "reason": "remote_worker_unavailable",
+                        "details": f"{exc} | retry_insecure_tls_failed: {retry_exc}",
+                        "checker_url": checker_url,
+                        "source_mode": "remote",
+                    }
+
             return {
                 "ok": False,
                 "reason": "remote_worker_unavailable",
