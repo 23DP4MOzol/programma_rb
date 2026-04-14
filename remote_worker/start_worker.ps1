@@ -2,7 +2,9 @@
 param(
     [string]$ApiKey = "",
     [int]$Port = 8787,
-    [switch]$AllowInsecureTls
+    [switch]$AllowInsecureTls,
+    [switch]$SkipInstall,
+    [switch]$ExitIfPortBusy
 )
 
 Set-StrictMode -Version Latest
@@ -54,6 +56,23 @@ function Read-ApiKeyFromConfig {
     }
 }
 
+function Test-WorkerHealthy {
+    param(
+        [string]$Address,
+        [int]$TcpPort,
+        [int]$TimeoutSec = 2
+    )
+
+    $url = "http://$Address`:$TcpPort/health"
+    try {
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri $url -Method GET -TimeoutSec $TimeoutSec -ErrorAction Stop
+        return [int]$resp.StatusCode -eq 200
+    }
+    catch {
+        return $false
+    }
+}
+
 $pythonCmd = Get-PythonCommand
 $pythonExe = [string]$pythonCmd.Exe
 $pythonBaseArgs = @($pythonCmd.BaseArgs)
@@ -68,7 +87,14 @@ function Invoke-Python {
 
 Push-Location $scriptDir
 try {
-    Invoke-Python -m pip install -r requirements.txt
+    if ($ExitIfPortBusy -and (Test-WorkerHealthy -Address "127.0.0.1" -TcpPort $Port)) {
+        Write-Host "Local worker already listening on 127.0.0.1:$Port. Exiting." -ForegroundColor Yellow
+        return
+    }
+
+    if (-not $SkipInstall) {
+        Invoke-Python -m pip install -r requirements.txt
+    }
 
     $finalApiKey = ($ApiKey -as [string])
     if (-not $finalApiKey) {

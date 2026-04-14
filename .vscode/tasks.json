@@ -1,0 +1,65 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "run-worker-boot-helper",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\start_worker_boot.ps1",
+				"-Port",
+				"8787"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "startup-helper-status-post-boot",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\install_startup_helper.ps1",
+				"-Mode",
+				"status"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "startup-helper-status-final",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\install_startup_helper.ps1",
+				"-Mode",
+				"status"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "startup-helper-status-accurate",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\install_startup_helper.ps1",
+				"-Mode",
+				"status"
+			],
+			"isBackground": false
+		}
+	]
+}

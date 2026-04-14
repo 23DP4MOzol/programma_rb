@@ -32,6 +32,29 @@ Set-Location .\remote_worker
 .\start_worker.ps1
 ```
 
+If desktop `warranty_remote_api_url` is set to `http://127.0.0.1:<port>/warranty/lookup`,
+`desktop_app.py` now auto-starts the local worker boot helper when the app launches.
+No Windows login startup is required.
+
+Auto-start at Windows login (per-user Startup folder helper):
+
+```powershell
+Set-Location .\remote_worker
+.\install_startup_helper.ps1 -Mode install -StartNow
+```
+
+Check status:
+
+```powershell
+.\install_startup_helper.ps1 -Mode status
+```
+
+Remove auto-start:
+
+```powershell
+.\install_startup_helper.ps1 -Mode remove
+```
+
 Optional:
 
 - `WARRANTY_REMOTE_ALLOW_INSECURE_TLS=1` to bypass TLS validation (only for constrained corporate environments).

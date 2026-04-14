@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from tkinter import font as tkfont
 from tkinter import simpledialog
 import re
+import socket
 import ssl
 from dataclasses import asdict
 from pathlib import Path
@@ -760,6 +761,8 @@ class DesktopApp:
         self._last_sync_at: str | None = None
         self._warranty_lookup_in_progress = False
 
+        self._ensure_local_remote_worker_running_on_app_start()
+
         self._build_ui()
         self._schedule_scanner_focus_lock()
         self._apply_role_controls()
@@ -1164,6 +1167,75 @@ class DesktopApp:
             return False
 
         return False
+
+    def _remote_worker_local_port(self) -> int:
+        endpoint = self._remote_warranty_api_url()
+        if not endpoint:
+            return 0
+
+        try:
+            parsed = urlparse.urlparse(endpoint)
+        except Exception:
+            return 0
+
+        host = (parsed.hostname or "").strip().lower()
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            return 0
+
+        if parsed.port:
+            return int(parsed.port)
+
+        if parsed.scheme == "https":
+            return 443
+        return 80
+
+    def _is_tcp_port_listening(self, host: str, port: int, timeout_sec: float = 0.25) -> bool:
+        if port <= 0:
+            return False
+
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout_sec):
+                return True
+        except Exception:
+            return False
+
+    def _ensure_local_remote_worker_running_on_app_start(self) -> None:
+        local_port = self._remote_worker_local_port()
+        if local_port <= 0:
+            return
+
+        if self._is_tcp_port_listening("127.0.0.1", local_port):
+            return
+
+        boot_script = Path(__file__).resolve().parent / "remote_worker" / "start_worker_boot.ps1"
+        if not boot_script.is_file():
+            return
+
+        args = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+            str(boot_script),
+            "-Port",
+            str(local_port),
+        ]
+
+        if self._remote_warranty_allow_insecure_tls():
+            args.append("-AllowInsecureTls")
+
+        try:
+            subprocess.Popen(
+                args,
+                cwd=str(boot_script.parent),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
 
     def _lookup_warranty_via_remote_worker(
         self,
