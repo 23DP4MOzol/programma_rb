@@ -119,6 +119,12 @@ Vai pievieno šīs vērtības `app_config.json`:
 - `warranty_remote_api_key`
 - `warranty_remote_api_timeout_sec`
 
+Cloudflare variants:
+
+- `cloudflare_worker/` satur gatavu Worker projektu (`/health`, `/warranty/lookup`)
+- konfigurācija: `cloudflare_worker/wrangler.toml`
+- soļi: `cloudflare_worker/README.md`
+
 ### CLI (opcioniāli)
 
 ```powershell
@@ -256,6 +262,12 @@ Or set these keys in `app_config.json`:
 - `warranty_remote_api_url`
 - `warranty_remote_api_key`
 - `warranty_remote_api_timeout_sec`
+
+Cloudflare option:
+
+- `cloudflare_worker/` contains a ready Worker project (`/health`, `/warranty/lookup`)
+- config: `cloudflare_worker/wrangler.toml`
+- setup steps: `cloudflare_worker/README.md`
 
 ### CLI (optional)
 
