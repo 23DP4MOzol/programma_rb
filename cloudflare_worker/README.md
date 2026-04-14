@@ -1,4 +1,4 @@
-# Cloudflare Worker Setup (Automatic HP Warranty)
+# Cloudflare Worker Setup (Automatic HP Warranty) EN
 
 This worker exposes the same API contract as the desktop app expects:
 
