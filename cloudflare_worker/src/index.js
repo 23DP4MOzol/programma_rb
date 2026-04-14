@@ -125,7 +125,7 @@ async function lookupHpWarranty({ serial, checkerUrl, env }) {
 
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await dismissCookieButtons(page);
-    await page.waitForTimeout(2200);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
 
     const bodyText = await page.evaluate(() => (document.body ? document.body.innerText || "" : ""));
     const normalized = String(bodyText || "").replace(/\s+/g, " ").trim();
