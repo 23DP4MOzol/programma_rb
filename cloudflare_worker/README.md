@@ -24,11 +24,15 @@ npx wrangler login
 Use these values in the "Set up your application" form.
 
 - Project name: `programma_rb`
-- Build command: `npm ci`
+- Build command: leave empty
 - Deploy command: `npx wrangler deploy`
 - Non-production branch deploy command: `npx wrangler versions upload`
 - Path: `/cloudflare_worker`
 - API token: create new (automatic is fine)
+
+If the dashboard requires a non-empty build command, use:
+
+- `npm install`
 
 Required API token permissions should include:
 
