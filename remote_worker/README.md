@@ -5,7 +5,7 @@ This service lets the desktop app run warranty checks automatically through an u
 ## What It Does
 
 - Exposes `POST /warranty/lookup`.
-- Supports HP automatic lookup with Playwright browser automation.
+- Supports HP automatic lookup with browserless HTTP flow.
 - Returns JSON that `desktop_app.py` can consume directly.
 
 ## 1. Install
@@ -15,21 +15,26 @@ cd .\remote_worker
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m playwright install
 ```
 
 ## 2. Run Worker
 
 ```powershell
 $env:WARRANTY_REMOTE_API_KEY = "change-me"
-$env:WARRANTY_REMOTE_HEADLESS = "1"
 $env:WARRANTY_REMOTE_TIMEOUT_MS = "45000"
 uvicorn hp_warranty_worker:app --host 0.0.0.0 --port 8787
 ```
 
+One-command local startup (reads API key from `app_config.json` automatically):
+
+```powershell
+Set-Location .\remote_worker
+.\start_worker.ps1
+```
+
 Optional:
 
-- `WARRANTY_REMOTE_BROWSER_CHANNEL=msedge` to force Edge channel.
+- `WARRANTY_REMOTE_ALLOW_INSECURE_TLS=1` to bypass TLS validation (only for constrained corporate environments).
 
 ## 3. Point Desktop App to Worker
 
@@ -55,4 +60,4 @@ Invoke-WebRequest -UseBasicParsing -Uri "http://<worker-host>:8787/health"
 ## Notes
 
 - If worker returns `remote_access_denied`, your worker machine/network is also blocked by HP/Akamai.
-- If worker returns `remote_blocked_by_captcha`, run it on a cleaner network/IP or with a browser profile that passes HP checks.
+- If worker returns `remote_blocked_by_captcha`, run it on a cleaner network/IP.

@@ -18,6 +18,30 @@ npm install
 npx wrangler login
 ```
 
+If `npm`/`npx` are not available on your machine, use the one-command helper:
+
+```powershell
+Set-Location .\cloudflare_worker
+.\deploy_worker.ps1
+```
+
+What it does automatically:
+
+- Downloads portable Node.js to `./.tools` when Node is missing.
+- Runs `npm install` via `node.exe + npm-cli.js` (works when `npm.cmd`/`npx.cmd` are blocked by group policy).
+- Runs `npx wrangler login` (interactive unless `-SkipLogin` is used).
+- Reads `warranty_remote_api_key` from `app_config.json` and updates Cloudflare secret `WARRANTY_REMOTE_API_KEY`.
+- Runs `npx wrangler deploy`.
+- Calls your configured `/health` endpoint for quick verification.
+
+Optional flags:
+
+```powershell
+.\deploy_worker.ps1 -NodeVersion 20.19.5
+.\deploy_worker.ps1 -SkipLogin
+.\deploy_worker.ps1 -WorkerApiKey "<override-api-key>"
+```
+
 ## Cloudflare Dashboard Form Values (Git Deploy)
 
 Use these values in the "Set up your application" form.
@@ -60,7 +84,7 @@ npm run deploy
 
 After deploy, you get a URL like:
 
-- `https://programma-rb-warranty-worker.<your-subdomain>.workers.dev`
+- `https://programmarb1.<your-subdomain>.workers.dev`
 
 ## 5. Verify
 
@@ -134,7 +158,7 @@ This message is also common when a **Pages** project URL is used instead of a **
 ### Fix from Cloudflare Dashboard
 
 1. Open **Workers & Pages**.
-2. Open Worker named exactly: `programma-rb-warranty-worker`.
+2. Open Worker named exactly: `programmarb1`.
 3. Ensure latest version is deployed to **production**.
 4. In **Settings -> Variables and Secrets**, set:
   - `WARRANTY_REMOTE_API_KEY` (secret)
@@ -145,7 +169,7 @@ This message is also common when a **Pages** project URL is used instead of a **
 
 The following must return HTTP 200 with JSON:
 
-- `https://programma-rb-warranty-worker.<your-subdomain>.workers.dev/health`
+- `https://programmarb1.<your-subdomain>.workers.dev/health`
 
 Depending on your Cloudflare setup, the deployed Worker may instead use an account-assigned workers.dev domain such as:
 
@@ -153,7 +177,7 @@ Depending on your Cloudflare setup, the deployed Worker may instead use an accou
 
 Desktop config should use:
 
-- `warranty_remote_api_url = https://programma-rb-warranty-worker.<your-subdomain>.workers.dev/warranty/lookup`
+- `warranty_remote_api_url = https://programmarb1.<your-subdomain>.workers.dev/warranty/lookup`
 - `warranty_remote_api_key = <same secret as Cloudflare WARRANTY_REMOTE_API_KEY>`
 
 If `/health` is still 404 after successful deploy, you are likely opening a different hostname than the one shown in the Worker's production deployment details.

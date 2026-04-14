@@ -1,4 +1,4 @@
-name = "programma-rb-warranty-worker"
+name = "programmarb1"
 main = "src/index.js"
 compatibility_date = "2026-04-14"
 compatibility_flags = ["nodejs_compat"]
