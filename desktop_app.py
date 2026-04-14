@@ -151,6 +151,10 @@ WARRANTY_WEB_CHECKER_BY_MAKE: dict[str, dict[str, str]] = {
     "zebra": {"url": "https://support.zebra.com/warrantycheck"},
     "samsung": {"url": "https://www.samsung.com/us/support/warranty/"},
     "apple": {"url": "https://checkcoverage.apple.com/"},
+    "dell": {"url": "https://www.dell.com/support/home/en-us/product-support/servicetag/"},
+    "acer": {"url": "https://www.acer.com/us-en/support/warranty"},
+    "asus": {"url": "https://www.asus.com/support/warranty-status-inquiry/"},
+    "microsoft": {"url": "https://support.microsoft.com/devices"},
 }
 WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE: dict[str, str] = {
     "hp": "serialnumber",
@@ -158,6 +162,10 @@ WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE: dict[str, str] = {
     "zebra": "serial",
     "samsung": "serialNumber",
     "apple": "sn",
+    "dell": "servicetag",
+    "acer": "sn",
+    "asus": "sn",
+    "microsoft": "serialNumber",
 }
 WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC = 25
 WARRANTY_WEB_AUTOMATION_HEADLESS = False
@@ -1882,10 +1890,9 @@ class DesktopApp:
                 "remote_worker_unauthorized",
                 "remote_worker_http_error",
             }
-            if make_key == "hp":
-                if not remote_allows_local_fallback:
-                    remote_result.setdefault("checker_url", checker_url)
-                    return remote_result
+            if not remote_allows_local_fallback:
+                remote_result.setdefault("checker_url", checker_url)
+                return remote_result
 
         direct_result = self._lookup_warranty_via_http_checker(
             make=make,
@@ -2391,6 +2398,10 @@ class DesktopApp:
 
                 if reason == "make_not_supported":
                     info = self.tr("desktop_warranty_unsupported_make", make=make)
+                elif reason == "remote_make_not_supported":
+                    info = self.tr("desktop_warranty_unsupported_make", make=make)
+                elif reason == "remote_checker_not_configured":
+                    info = self.tr("desktop_warranty_unsupported_make", make=make)
                 elif reason == "selenium_missing":
                     info = self.tr("desktop_warranty_selenium_missing")
                 elif reason == "browser_launch_failed":
@@ -2407,6 +2418,8 @@ class DesktopApp:
                     info = self.tr("desktop_warranty_remote_worker_http_error")
                 elif reason == "remote_worker_unavailable":
                     info = self.tr("desktop_warranty_remote_worker_unavailable")
+                elif reason == "remote_browser_policy_blocked":
+                    info = self.tr("desktop_warranty_browser_policy_blocked")
                 else:
                     info = self.tr("desktop_warranty_not_found")
 

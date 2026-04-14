@@ -94,6 +94,18 @@ try {
 
     if (-not $SkipInstall) {
         Invoke-Python -m pip install -r requirements.txt
+
+        $playwrightRoot = Join-Path $env:LOCALAPPDATA "ms-playwright"
+        $chromiumInstalled = $false
+        if (Test-Path $playwrightRoot) {
+            $entries = Get-ChildItem -Path $playwrightRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like "chromium-*" -or $_.Name -like "chromium_headless_shell-*" }
+            $chromiumInstalled = ($entries.Count -gt 0)
+        }
+
+        if (-not $chromiumInstalled) {
+            Invoke-Python -m playwright install chromium
+        }
     }
 
     $finalApiKey = ($ApiKey -as [string])
@@ -105,7 +117,7 @@ try {
     if ($finalApiKey) {
         $env:WARRANTY_REMOTE_API_KEY = $finalApiKey
     }
-    $env:WARRANTY_REMOTE_TIMEOUT_MS = "45000"
+    $env:WARRANTY_REMOTE_TIMEOUT_MS = "20000"
     if ($AllowInsecureTls) {
         $env:WARRANTY_REMOTE_ALLOW_INSECURE_TLS = "1"
     }

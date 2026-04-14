@@ -1,11 +1,12 @@
-# Remote Warranty Worker (HP Auto Mode)
+# Remote Warranty Worker (Multi-Make Auto Mode)
 
 This service lets the desktop app run warranty checks automatically through an unrestricted machine.
 
 ## What It Does
 
 - Exposes `POST /warranty/lookup`.
-- Supports HP automatic lookup with browserless HTTP flow.
+- Supports HP, Lenovo, Zebra, Samsung, Apple, Dell, Acer, ASUS, and Microsoft lookup flows.
+- Uses a combined HTTP-first plus Playwright fallback strategy for JS-rendered checker pages.
 - Returns JSON that `desktop_app.py` can consume directly.
 
 ## 1. Install
@@ -21,7 +22,7 @@ pip install -r requirements.txt
 
 ```powershell
 $env:WARRANTY_REMOTE_API_KEY = "change-me"
-$env:WARRANTY_REMOTE_TIMEOUT_MS = "45000"
+$env:WARRANTY_REMOTE_TIMEOUT_MS = "20000"
 uvicorn hp_warranty_worker:app --host 0.0.0.0 --port 8787
 ```
 
@@ -82,5 +83,6 @@ Invoke-WebRequest -UseBasicParsing -Uri "http://<worker-host>:8787/health"
 
 ## Notes
 
-- If worker returns `remote_access_denied`, your worker machine/network is also blocked by HP/Akamai.
-- If worker returns `remote_blocked_by_captcha`, run it on a cleaner network/IP.
+- If worker returns `remote_access_denied`, your worker machine/network is blocked by the vendor edge firewall.
+- If worker returns `remote_blocked_by_captcha`, run it on a cleaner network/IP or use manual checker flow.
+- `start_worker.ps1` now auto-installs Playwright Chromium if missing (when not using `-SkipInstall`).
