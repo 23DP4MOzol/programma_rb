@@ -21,6 +21,7 @@ from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox
 from tkinter import ttk
+from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 import zipfile
@@ -1202,13 +1203,33 @@ class DesktopApp:
             if insecure_tls:
                 open_kwargs["context"] = ssl._create_unverified_context()
 
-            with urlrequest.urlopen(req, **open_kwargs) as response:
-                charset = "utf-8"
-                content_type = response.headers.get("Content-Type", "")
-                match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
-                if match:
-                    charset = match.group(1)
-                raw_text = (response.read() or b"").decode(charset, errors="ignore")
+            try:
+                with urlrequest.urlopen(req, **open_kwargs) as response:
+                    charset = "utf-8"
+                    content_type = response.headers.get("Content-Type", "")
+                    match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
+                    if match:
+                        charset = match.group(1)
+                    raw_text = (response.read() or b"").decode(charset, errors="ignore")
+            except urlerror.HTTPError as http_exc:
+                http_code = int(getattr(http_exc, "code", 0) or 0)
+                if http_code == 404:
+                    reason = "remote_worker_route_not_found"
+                    details = f"HTTP 404 from remote endpoint: {endpoint}"
+                elif http_code in {401, 403}:
+                    reason = "remote_worker_unauthorized"
+                    details = "Remote worker rejected API key (HTTP 401/403)"
+                else:
+                    reason = "remote_worker_http_error"
+                    details = f"Remote worker returned HTTP {http_code}"
+
+                return {
+                    "ok": False,
+                    "reason": reason,
+                    "details": details,
+                    "checker_url": checker_url,
+                    "source_mode": "remote",
+                }
 
             parsed = json.loads(raw_text)
             if not isinstance(parsed, dict):
@@ -1732,13 +1753,23 @@ class DesktopApp:
             checker_url=checker_url,
         )
         remote_details = ""
+        remote_reason = ""
+        remote_allows_local_fallback = False
         if remote_result is not None:
             if bool(remote_result.get("ok")):
                 return remote_result
+            remote_reason = str(remote_result.get("reason") or "").strip()
             remote_details = str(remote_result.get("details") or "").strip()
+            remote_allows_local_fallback = remote_reason in {
+                "remote_worker_unavailable",
+                "remote_worker_route_not_found",
+                "remote_worker_unauthorized",
+                "remote_worker_http_error",
+            }
             if make_key == "hp":
-                remote_result.setdefault("checker_url", checker_url)
-                return remote_result
+                if not remote_allows_local_fallback:
+                    remote_result.setdefault("checker_url", checker_url)
+                    return remote_result
 
         direct_result = self._lookup_warranty_via_http_checker(
             make=make,
@@ -1755,10 +1786,20 @@ class DesktopApp:
             if merged_details:
                 direct_result["details"] = merged_details
 
-        # HP pages are heavily JS/captcha/session-gated and frequently blocked in managed environments.
+        # HP pages are heavily JS/captcha/session-gated. We still try local browser automation
+        # if remote worker failed due deployment/auth/connectivity issues.
         if make_key == "hp":
-            direct_result.setdefault("checker_url", checker_url)
-            return direct_result
+            direct_reason = str(direct_result.get("reason") or "").strip()
+            should_try_local_browser = remote_allows_local_fallback and direct_reason in {
+                "dynamic_page_requires_browser",
+                "http_fetch_failed",
+                "empty_page",
+                "no_warranty_text_found",
+                "ambiguous_result",
+            }
+            if not should_try_local_browser:
+                direct_result.setdefault("checker_url", checker_url)
+                return direct_result
 
         try:
             from selenium import webdriver  # type: ignore
@@ -2204,6 +2245,9 @@ class DesktopApp:
                     "make_not_supported",
                     "checker_not_configured",
                     "remote_worker_unavailable",
+                    "remote_worker_route_not_found",
+                    "remote_worker_unauthorized",
+                    "remote_worker_http_error",
                 }:
                     copied_checker_url = self._copy_to_clipboard(manual_checker_url)
                     if make_key != "hp":
@@ -2219,6 +2263,12 @@ class DesktopApp:
                     info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url) if opened_manual_checker else self.tr("desktop_warranty_browser_policy_blocked")
                 elif reason == "dynamic_page_requires_browser":
                     info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url) if opened_manual_checker else self.tr("desktop_warranty_dynamic_page")
+                elif reason == "remote_worker_route_not_found":
+                    info = self.tr("desktop_warranty_remote_worker_route_not_found")
+                elif reason == "remote_worker_unauthorized":
+                    info = self.tr("desktop_warranty_remote_worker_unauthorized")
+                elif reason == "remote_worker_http_error":
+                    info = self.tr("desktop_warranty_remote_worker_http_error")
                 elif reason == "remote_worker_unavailable":
                     info = self.tr("desktop_warranty_remote_worker_unavailable")
                 else:
