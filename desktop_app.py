@@ -1030,6 +1030,37 @@ class DesktopApp:
             return end_date
         return self._extract_first_normalized_date(text)
 
+    def _derive_start_date_from_text(self, text: str, make_key: str) -> str:
+        keyword_map: dict[str, tuple[str, ...]] = {
+            "hp": ("warranty start", "service start", "coverage start", "start date"),
+            "lenovo": ("warranty start", "start date", "coverage start"),
+            "zebra": ("warranty start", "start date", "service start"),
+            "samsung": ("warranty start", "start date", "coverage start"),
+            "apple": ("purchase date", "coverage start", "start date"),
+        }
+
+        keywords = keyword_map.get(make_key, ())
+        return self._extract_date_near_keywords(text, keywords)
+
+    def _build_time_remaining_from_end_date(self, end_date: str | None) -> tuple[int | None, str]:
+        token = str(end_date or "").strip()
+        if not token:
+            return None, ""
+
+        try:
+            end_obj = datetime.strptime(token, "%Y-%m-%d").date()
+        except Exception:
+            return None, ""
+
+        today = datetime.now(timezone.utc).date()
+        days = int((end_obj - today).days)
+
+        if days > 0:
+            return days, f"{days} day(s) remaining"
+        if days == 0:
+            return days, "expires today"
+        return days, f"expired {-days} day(s) ago"
+
     def _is_trusted_warranty_segment(self, segment: str | None) -> bool:
         text = (segment or "").strip()
         if not text:
@@ -1048,14 +1079,22 @@ class DesktopApp:
         make: str,
         serial: str,
         status: str,
+        start_date: str | None,
         end_date: str | None,
+        time_remaining: str | None,
         checker_url: str,
     ) -> str:
         status_text = (status or "UNKNOWN").strip().upper()
-        until_text = f" until {end_date}" if (end_date or "").strip() else ""
+        timeline_parts: list[str] = []
+        if (start_date or "").strip():
+            timeline_parts.append(f"from {start_date}")
+        if (end_date or "").strip():
+            timeline_parts.append(f"until {end_date}")
+        timeline_text = f" {' '.join(timeline_parts)}" if timeline_parts else ""
+        remaining_text = f" ({time_remaining})" if (time_remaining or "").strip() else ""
         return (
             f"{WARRANTY_MARKER} VERIFIED via WEB CHECKER ({make}) "
-            f"{status_text}{until_text} (serial {serial}) {checker_url}"
+            f"{status_text}{timeline_text}{remaining_text} (serial {serial}) {checker_url}"
         )
 
     def _build_web_warranty_not_found_marker(self, *, make: str, serial: str, checker_url: str) -> str:
@@ -1082,7 +1121,9 @@ class DesktopApp:
         summary = interesting_lines[0] if interesting_lines else ""
 
         status = self._derive_status_from_text(normalized_text, make_key)
+        start_date = self._derive_start_date_from_text(normalized_text, make_key)
         end_date = self._derive_end_date_from_text(normalized_text, make_key)
+        remaining_days, remaining_text = self._build_time_remaining_from_end_date(end_date)
 
         if not summary and lines:
             summary = lines[0][:220]
@@ -1095,7 +1136,10 @@ class DesktopApp:
         return {
             "ok": True,
             "status": status,
+            "start_date": start_date,
             "end_date": end_date,
+            "remaining_days": remaining_days,
+            "remaining_text": remaining_text,
             "summary": summary,
         }
 
@@ -2286,12 +2330,29 @@ class DesktopApp:
 
                 if bool(result.get("ok")):
                     status = str(result.get("status") or "UNKNOWN")
+                    start_date = str(result.get("start_date") or "").strip() or None
                     end_date = str(result.get("end_date") or "").strip() or None
+                    remaining_text = str(result.get("remaining_text") or "").strip()
+                    remaining_days_raw = result.get("remaining_days")
+                    remaining_days: int | None = None
+                    if isinstance(remaining_days_raw, int):
+                        remaining_days = remaining_days_raw
+                    elif isinstance(remaining_days_raw, str):
+                        try:
+                            remaining_days = int(remaining_days_raw.strip())
+                        except Exception:
+                            remaining_days = None
+
+                    if not remaining_text:
+                        _, remaining_text = self._build_time_remaining_from_end_date(end_date)
+
                     marker = self._build_web_warranty_verified_marker(
                         make=make,
                         serial=serial,
                         status=status,
+                        start_date=start_date,
                         end_date=end_date,
+                        time_remaining=remaining_text,
                         checker_url=checker_url,
                     )
                     self.comment_var.set(f"{base_comment} | {marker}" if base_comment else marker)
@@ -2301,7 +2362,10 @@ class DesktopApp:
                             "info": self.tr("desktop_warranty_found", status=status),
                             "serial": serial,
                             "make": make,
+                            "start_date": start_date,
                             "end_date": end_date,
+                            "remaining_days": remaining_days,
+                            "time_remaining": remaining_text,
                             "summary": str(result.get("summary") or ""),
                             "source": checker_url,
                         }
@@ -4827,7 +4891,15 @@ class DesktopApp:
         self._apply_non_ttk_theme()
         self.result_txt.configure(state="normal")
         self.result_txt.delete("1.0", tk.END)
-        self.result_txt.insert("1.0", str(payload))
+        if isinstance(payload, (dict, list)):
+            try:
+                pretty = json.dumps(payload, indent=2, ensure_ascii=False)
+            except Exception:
+                pretty = str(payload)
+        else:
+            pretty = str(payload)
+
+        self.result_txt.insert("1.0", pretty)
         self.result_txt.configure(state="disabled")
         if (self.theme or "light") == "dark":
             ok_fg = "#7ee787"

@@ -60,6 +60,85 @@
 				"status"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "stop-worker-8787",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$c = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue; if ($c) { $pids = $c | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } }"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "start-worker-new-code",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\start_worker_boot.ps1",
+				"-Port",
+				"8787"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "kill-port-8787-netstat",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$lines = netstat -ano | Select-String ':8787' | Select-String 'LISTENING'; $pids = @(); foreach ($l in $lines) { $parts = ($l.ToString().Trim() -split '\\s+'); if ($parts.Length -ge 5) { $pids += $parts[4] } }; $pids = $pids | Sort-Object -Unique; foreach ($p in $pids) { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }; if ($pids.Count -eq 0) { Write-Output 'Killed PIDs: none' } else { Write-Output ('Killed PIDs: ' + ($pids -join ',')) }"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "restart-worker-boot",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"remote_worker\\start_worker_boot.ps1",
+				"-Port",
+				"8787"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "kill-port-8787-cmd",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :8787 ^| findstr LISTENING') do taskkill /PID %a /F"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "remove-remote-worker-pycache",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"if (Test-Path .\\remote_worker\\__pycache__) { Remove-Item -Recurse -Force .\\remote_worker\\__pycache__ }; if (Test-Path .\\remote_worker\\__pycache__) { Write-Output 'pycache-still-present' } else { Write-Output 'pycache-removed' }"
+			],
+			"isBackground": false
 		}
 	]
 }

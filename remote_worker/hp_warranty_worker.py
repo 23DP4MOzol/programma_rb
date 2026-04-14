@@ -7,7 +7,7 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
@@ -96,6 +96,8 @@ def _normalize_date(raw_value: str | None) -> str:
 
     formats = (
         "%Y-%m-%d",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
         "%m/%d/%Y",
         "%m/%d/%y",
         "%d/%m/%Y",
@@ -111,23 +113,66 @@ def _normalize_date(raw_value: str | None) -> str:
             return parsed.date().isoformat()
         except Exception:
             continue
+
+    try:
+        parsed_iso = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        return parsed_iso.date().isoformat()
+    except Exception:
+        pass
+
     return ""
 
 
-def _extract_all_end_dates(text: str) -> list[str]:
+def _extract_dates_near_keywords(text: str, keywords: tuple[str, ...]) -> list[str]:
+    if not text or not keywords:
+        return []
+
     source = str(text or "")
-    pattern = re.compile(
-        r"end\s*date\s*(?:[:\-])?\s*"
-        r"(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}\.\d{2}\.\d{2}|"
-        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})",
-        flags=re.IGNORECASE,
-    )
+    date_pattern = r"(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}\.\d{2}\.\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})"
     found: list[str] = []
-    for match in pattern.finditer(source):
-        normalized = _normalize_date(match.group(1))
-        if normalized:
-            found.append(normalized)
+
+    for keyword in keywords:
+        key = re.escape(str(keyword or ""))
+        if not key:
+            continue
+
+        patterns = (
+            rf"{key}.{{0,56}}?{date_pattern}",
+            rf"{date_pattern}.{{0,56}}?{key}",
+        )
+        for pattern in patterns:
+            for match in re.finditer(pattern, source, flags=re.IGNORECASE):
+                for group in match.groups():
+                    normalized = _normalize_date(group)
+                    if normalized:
+                        found.append(normalized)
+
     return sorted(set(found))
+
+
+def _parse_iso_date(token: str | None):
+    raw = str(token or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _build_remaining_from_end_date(end_date: str | None) -> tuple[int | None, str]:
+    end_obj = _parse_iso_date(end_date)
+    if end_obj is None:
+        return None, ""
+
+    today = datetime.now(timezone.utc).date()
+    days = int((end_obj - today).days)
+
+    if days > 0:
+        return days, f"{days} day(s) remaining"
+    if days == 0:
+        return days, "expires today"
+    return days, f"expired {-days} day(s) ago"
 
 
 def _summary_from_text(text: str) -> str:
@@ -139,6 +184,178 @@ def _summary_from_text(text: str) -> str:
         if any(h in candidate.lower() for h in hints):
             return candidate[:220]
     return (text or "").strip().replace("\n", " ")[:220]
+
+
+def _normalize_status_from_specs(raw_status: str | None, fallback_text: str = "") -> str:
+    token = str(raw_status or "").strip().lower()
+    if token:
+        if token in {"active", "inwarranty", "in_warranty", "valid", "current"}:
+            return "ACTIVE"
+        if token in {"expired", "outofwarranty", "out_of_warranty", "ended"}:
+            return "EXPIRED"
+    return _derive_status(fallback_text)
+
+
+def _extract_from_specs_payload(payload: dict[str, Any], checker_url: str) -> dict[str, Any] | None:
+    devices = ((payload.get("data") or {}).get("devices") or [])
+    if not isinstance(devices, list) or not devices:
+        return None
+
+    first_device = devices[0] if isinstance(devices[0], dict) else {}
+    warranty_node = first_device.get("warranty") or {}
+    warranty_data = (warranty_node.get("data") if isinstance(warranty_node, dict) else {}) or {}
+    if not isinstance(warranty_data, dict):
+        return None
+
+    start_date = _normalize_date(warranty_data.get("warrantyStartDate") or warranty_data.get("startDate") or "")
+    end_date = _normalize_date(
+        warranty_data.get("warrantyEndDate")
+        or warranty_data.get("hardwareCarePackEndDate")
+        or warranty_data.get("endDate")
+        or ""
+    )
+    status = _normalize_status_from_specs(
+        warranty_data.get("status") or warranty_data.get("state") or "",
+        " ".join(
+            str(v or "")
+            for v in (
+                warranty_data.get("caption"),
+                warranty_data.get("tooltip"),
+                warranty_data.get("statusDetail"),
+            )
+        ),
+    )
+    if status == "UNKNOWN" and end_date:
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        status = "ACTIVE" if end_date >= today_iso else "EXPIRED"
+
+    remaining_days, remaining_text = _build_remaining_from_end_date(end_date)
+    summary = _summary_from_text(
+        " ".join(
+            str(v or "")
+            for v in (
+                warranty_data.get("caption"),
+                warranty_data.get("tooltip"),
+                warranty_data.get("serviceType"),
+                warranty_data.get("statusDetail"),
+            )
+        )
+    )
+
+    if status == "UNKNOWN" and not end_date:
+        return None
+
+    return {
+        "ok": True,
+        "status": status,
+        "start_date": start_date,
+        "end_date": end_date,
+        "remaining_days": remaining_days,
+        "remaining_text": remaining_text,
+        "summary": summary,
+        "checker_url": checker_url,
+    }
+
+
+def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) -> dict[str, Any]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return {
+            "ok": False,
+            "reason": "browser_fallback_unavailable",
+            "details": "Playwright is not installed",
+            "checker_url": warranty_url,
+        }
+
+    browser_name = str(os.environ.get("WARRANTY_REMOTE_BROWSER", "chromium")).strip().lower() or "chromium"
+    channel = str(os.environ.get("WARRANTY_REMOTE_BROWSER_CHANNEL", "")).strip()
+    if not channel and os.name == "nt" and browser_name == "chromium":
+        channel = "msedge"
+
+    try:
+        with sync_playwright() as p:
+            if browser_name == "firefox":
+                browser_type = p.firefox
+            elif browser_name == "webkit":
+                browser_type = p.webkit
+            else:
+                browser_type = p.chromium
+
+            launch_kwargs: dict[str, Any] = {
+                "headless": True,
+                "timeout": max(8000, int(min(timeout_sec, 20.0) * 1000)),
+            }
+            if channel and browser_name == "chromium":
+                launch_kwargs["channel"] = channel
+
+            browser = browser_type.launch(**launch_kwargs)
+            try:
+                context = browser.new_context(
+                    locale="en-US",
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    ),
+                )
+                page = context.new_page()
+
+                nav_timeout_ms = max(12000, int(min(timeout_sec, 25.0) * 1000))
+                page.goto(warranty_url, wait_until="domcontentloaded", timeout=nav_timeout_ms)
+
+                response = page.wait_for_response(
+                    lambda r: "/wcc-services/profile/devices/warranty/specs" in (r.url or "")
+                    and (r.request.method or "").upper() == "POST",
+                    timeout=max(12000, int(min(timeout_sec, 25.0) * 1000)),
+                )
+
+                status_code = int(response.status or 0)
+                body_text = ""
+                try:
+                    body_text = response.text() or ""
+                except Exception:
+                    body_text = ""
+            finally:
+                browser.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": "browser_fallback_error",
+            "details": str(exc),
+            "checker_url": warranty_url,
+        }
+
+    if not body_text:
+        return {
+            "ok": False,
+            "reason": "browser_fallback_no_specs_response",
+            "details": "No warranty specs response captured",
+            "checker_url": warranty_url,
+        }
+
+    if status_code != 200:
+        return {
+            "ok": False,
+            "reason": "browser_fallback_specs_http_error",
+            "details": f"Warranty specs request returned HTTP {status_code}",
+            "checker_url": warranty_url,
+        }
+
+    try:
+        parsed = json.loads(body_text)
+    except Exception:
+        parsed = {}
+    extracted = _extract_from_specs_payload(parsed, warranty_url)
+    if extracted:
+        return extracted
+
+    return {
+        "ok": False,
+        "reason": "browser_fallback_specs_not_parseable",
+        "details": "Warranty specs response was captured but not parseable",
+        "checker_url": warranty_url,
+    }
 
 
 def _allow_insecure_tls() -> bool:
@@ -239,6 +456,8 @@ def _lookup_hp_warranty(serial: str, checker_url: str | None) -> dict[str, Any]:
     model_oid = str(verify_data.get("productNameOID") or verify_data.get("productNamOID") or "").strip()
     sku = _normalize_sku(str(verify_data.get("altProductNumber") or verify_data.get("productNumber") or ""))
     serial_out = str(verify_data.get("serialNumber") or serial_token).strip() or serial_token
+    start_date_hint = _normalize_date(verify_data.get("warrantyStartDate") or verify_data.get("startDate") or "")
+    end_date_hint = _normalize_date(verify_data.get("warrantyEndDate") or verify_data.get("endDate") or "")
 
     if not (seo_name and series_oid and model_oid):
         return {
@@ -296,34 +515,71 @@ def _lookup_hp_warranty(serial: str, checker_url: str | None) -> dict[str, Any]:
             "summary": summary,
         }
     if "captcha" in lower_text or "verify you are human" in lower_text or "recaptcha" in lower_text:
+        browser_result = _lookup_hp_warranty_via_browser(warranty_url=warranty_url, timeout_sec=timeout_sec)
+        if browser_result.get("ok"):
+            return browser_result
         return {
             "ok": False,
             "reason": "remote_blocked_by_captcha",
             "details": "HP page requires captcha or human verification",
             "checker_url": warranty_url,
             "summary": summary,
+            "browser_fallback": browser_result,
         }
 
     status = _derive_status(normalized)
-    end_dates = _extract_all_end_dates(normalized)
-    end_date = end_dates[-1] if end_dates else ""
+    start_dates = _extract_dates_near_keywords(
+        normalized,
+        (
+            "start date",
+            "warranty start",
+            "coverage start",
+            "service start",
+            "warranty begins",
+        ),
+    )
+    end_dates = _extract_dates_near_keywords(
+        normalized,
+        (
+            "end date",
+            "warranty end",
+            "coverage end",
+            "service end",
+            "expiration date",
+            "expires",
+            "valid through",
+            "care pack end",
+        ),
+    )
+
+    start_date = start_dates[0] if start_dates else start_date_hint
+    end_date = end_dates[-1] if end_dates else end_date_hint
     if status == "UNKNOWN" and end_date:
-        today = datetime.utcnow().date().isoformat()
+        today = datetime.now(timezone.utc).date().isoformat()
         status = "ACTIVE" if end_date >= today else "EXPIRED"
 
+    remaining_days, remaining_text = _build_remaining_from_end_date(end_date)
+
     if status == "UNKNOWN" and not end_date:
+        browser_result = _lookup_hp_warranty_via_browser(warranty_url=warranty_url, timeout_sec=timeout_sec)
+        if browser_result.get("ok"):
+            return browser_result
         return {
             "ok": False,
             "reason": "remote_no_warranty_text_found",
             "details": "Remote worker could not detect warranty fields",
             "checker_url": warranty_url,
             "summary": summary,
+            "browser_fallback": browser_result,
         }
 
     return {
         "ok": True,
         "status": status,
+        "start_date": start_date,
         "end_date": end_date,
+        "remaining_days": remaining_days,
+        "remaining_text": remaining_text,
         "summary": summary,
         "checker_url": warranty_url,
     }

@@ -84,16 +84,55 @@ function normalizeDateToken(rawValue) {
   return "";
 }
 
-function extractAllEndDates(text) {
+function extractDatesNearKeywords(text, keywords) {
   const source = String(text || "");
   const dates = [];
-  const pattern = /end\s*date\s*(?:[:\-])?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}\.\d{2}\.\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})/gi;
-  let match;
-  while ((match = pattern.exec(source)) !== null) {
-    const normalized = normalizeDateToken(match[1]);
-    if (normalized) dates.push(normalized);
+  const datePattern = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}|\\d{4}\\.\\d{2}\\.\\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{4})";
+
+  for (const keyword of keywords || []) {
+    const escaped = String(keyword || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!escaped) continue;
+
+    const patterns = [
+      new RegExp(`${escaped}.{0,56}?${datePattern}`, "gi"),
+      new RegExp(`${datePattern}.{0,56}?${escaped}`, "gi"),
+    ];
+
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(source)) !== null) {
+        for (const group of match.slice(1)) {
+          const normalized = normalizeDateToken(group);
+          if (normalized) dates.push(normalized);
+        }
+      }
+    }
   }
-  return [...new Set(dates)];
+
+  return [...new Set(dates)].sort();
+}
+
+function buildRemainingFromEndDate(endDate) {
+  const token = String(endDate || "").trim();
+  if (!token) return { remaining_days: null, remaining_text: "" };
+
+  const end = new Date(`${token}T00:00:00Z`);
+  if (Number.isNaN(end.getTime())) {
+    return { remaining_days: null, remaining_text: "" };
+  }
+
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffMs = end.getTime() - today.getTime();
+  const days = Math.round(diffMs / 86400000);
+
+  if (days > 0) {
+    return { remaining_days: days, remaining_text: `${days} day(s) remaining` };
+  }
+  if (days === 0) {
+    return { remaining_days: days, remaining_text: "expires today" };
+  }
+  return { remaining_days: days, remaining_text: `expired ${Math.abs(days)} day(s) ago` };
 }
 
 function summaryFromText(text) {
@@ -189,6 +228,8 @@ async function lookupHpWarranty({ serial, checkerUrl, env }) {
     const modelOid = String(verifyData.productNameOID || "").trim();
     const sku = normalizeSku(verifyData.altProductNumber || verifyData.productNumber || "");
     const serialOut = String(verifyData.serialNumber || serialToken).trim() || serialToken;
+    const startDateHint = normalizeDateToken(verifyData.warrantyStartDate || verifyData.startDate || "");
+    const endDateHint = normalizeDateToken(verifyData.warrantyEndDate || verifyData.endDate || "");
 
     if (!seoName || !seriesOid || !modelOid) {
       return {
@@ -249,8 +290,25 @@ async function lookupHpWarranty({ serial, checkerUrl, env }) {
     }
 
     let status = deriveStatus(normalized);
-    const endDates = extractAllEndDates(normalized);
-    const endDate = endDates.length ? [...endDates].sort().reverse()[0] : "";
+    const startDates = extractDatesNearKeywords(normalized, [
+      "start date",
+      "warranty start",
+      "coverage start",
+      "service start",
+      "warranty begins",
+    ]);
+    const endDates = extractDatesNearKeywords(normalized, [
+      "end date",
+      "warranty end",
+      "coverage end",
+      "service end",
+      "expiration date",
+      "expires",
+      "valid through",
+      "care pack end",
+    ]);
+    const startDate = startDates.length ? startDates[0] : startDateHint;
+    const endDate = endDates.length ? endDates[endDates.length - 1] : endDateHint;
     const summary = summaryFromText(normalized);
 
     if (status === "UNKNOWN" && endDate) {
@@ -268,10 +326,15 @@ async function lookupHpWarranty({ serial, checkerUrl, env }) {
       };
     }
 
+    const remaining = buildRemainingFromEndDate(endDate);
+
     return {
       ok: true,
       status,
+      start_date: startDate,
       end_date: endDate,
+      remaining_days: remaining.remaining_days,
+      remaining_text: remaining.remaining_text,
       summary,
       checker_url: warrantyUrl.toString(),
     };
