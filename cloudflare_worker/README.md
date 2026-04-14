@@ -8,7 +8,6 @@ This worker exposes the same API contract as the desktop app expects:
 ## 1. Prerequisites
 
 - Cloudflare account
-- Browser Rendering enabled in your Cloudflare account
 - Node.js 18+
 
 ## 2. Install and Login
@@ -117,8 +116,8 @@ Failure response example:
 
 ## Important Limitations
 
-- Cloudflare Browser Rendering uses cloud IPs; HP may still block with `Access Denied` or captcha.
-- If that happens, the worker is deployed correctly, but HP anti-bot policy blocked the source network.
+- Worker is browserless, but requests still originate from Cloudflare network IP ranges.
+- HP may still block requests with `Access Denied` or captcha depending on anti-bot policy.
 
 ## Troubleshooting (404 / "There is nothing here yet")
 
@@ -140,9 +139,7 @@ This message is also common when a **Pages** project URL is used instead of a **
 4. In **Settings -> Variables and Secrets**, set:
   - `WARRANTY_REMOTE_API_KEY` (secret)
   - `WARRANTY_REMOTE_TIMEOUT_MS=45000` (optional variable)
-5. In **Settings -> Bindings**, ensure Browser Rendering binding exists:
-  - name: `BROWSER`
-6. Re-deploy and wait until deploy status is successful.
+5. Re-deploy and wait until deploy status is successful.
 
 ### Expected Verification
 
@@ -160,3 +157,15 @@ Desktop config should use:
 - `warranty_remote_api_key = <same secret as Cloudflare WARRANTY_REMOTE_API_KEY>`
 
 If `/health` is still 404 after successful deploy, you are likely opening a different hostname than the one shown in the Worker's production deployment details.
+
+## Implementation Notes (Browserless)
+
+Worker lookup is now fully browserless:
+
+1. Call HP search endpoint:
+  - `/wcc-services/searchresult/<cc-lc>?q=<serial>&context=pdp&navigation=true`
+2. Build warranty URL from `verifyResponse.data` metadata:
+  - `/<cc-lc>/warrantyresult/<SEOFriendlyName>/<productSeriesOID>/model/<productNameOID>?sku=<sku>&serialnumber=<serial>`
+3. Fetch warranty page HTML and parse `End date` + status.
+
+This removes Cloudflare Browser Rendering/Chromium dependency and keeps the worker fully automatic for HP serials.
