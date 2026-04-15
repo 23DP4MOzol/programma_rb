@@ -12,9 +12,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(title="programma_rb remote warranty worker", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class WarrantyLookupRequest(BaseModel):
@@ -1329,6 +1338,17 @@ def _lookup_hp_warranty(serial: str, checker_url: str | None) -> dict[str, Any]:
 def health() -> dict[str, Any]:
     return {"ok": True, "service": "warranty-worker"}
 
+
+@app.get("/warranty/lookup")
+def warranty_lookup_get(
+    make: str,
+    serial: str,
+    checker_url: str | None = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    payload = WarrantyLookupRequest(make=make, serial=serial, checker_url=checker_url)
+    return warranty_lookup(payload, x_api_key, authorization)
 
 @app.post("/warranty/lookup")
 def warranty_lookup(

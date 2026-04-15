@@ -123,7 +123,7 @@ try {
     }
 
     Write-Host "Starting local worker on http://127.0.0.1:$Port" -ForegroundColor Green
-    & $pythonExe @pythonBaseArgs -m uvicorn hp_warranty_worker:app --host 127.0.0.1 --port $Port
+    & $pythonExe @pythonBaseArgs -m uvicorn hp_warranty_worker:app --host 0.0.0.0 --port $Port
 }
 finally {
     Pop-Location

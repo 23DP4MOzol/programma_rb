@@ -111,11 +111,11 @@ const WARRANTY_PUBLIC_API_ONLY = true;
 const WARRANTY_PUBLIC_API_TIMEOUT_MS = 9000;
 const WARRANTY_PUBLIC_API_CACHE_TTL_MS = 10 * 60 * 1000;
 const WARRANTY_PUBLIC_API_BY_MAKE = {
-  hp: { endpoint: "", serialParam: "serialNumber" },
-  lenovo: { endpoint: "", serialParam: "serialNumber" },
-  zebra: { endpoint: "", serialParam: "serial" },
-  samsung: { endpoint: "", serialParam: "serialNumber" },
-  apple: { endpoint: "", serialParam: "serialNumber" },
+  hp: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
+  lenovo: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
+  zebra: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
+  samsung: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
+  apple: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
 };
 const WARRANTY_CHECKER_URL_BY_MAKE = {
   hp: "https://support.hp.com/us-en/check-warranty",
