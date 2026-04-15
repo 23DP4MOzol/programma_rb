@@ -111,11 +111,11 @@ const WARRANTY_PUBLIC_API_ONLY = true;
 const WARRANTY_PUBLIC_API_TIMEOUT_MS = 9000;
 const WARRANTY_PUBLIC_API_CACHE_TTL_MS = 10 * 60 * 1000;
 const WARRANTY_PUBLIC_API_BY_MAKE = {
-  hp: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
-  lenovo: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
-  zebra: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
-  samsung: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
-  apple: { endpoint: "http://10.76.0.234:8787/warranty/lookup", serialParam: "serial", method: "GET" },
+  hp: { endpoint: "http://10.76.0.234:8787/warranty/lookup?make=hp", serialParam: "serial", method: "GET", verifiedField: "ok", endDateField: "end_date", sourceField: "checker_url" },
+  lenovo: { endpoint: "http://10.76.0.234:8787/warranty/lookup?make=lenovo", serialParam: "serial", method: "GET", verifiedField: "ok", endDateField: "end_date", sourceField: "checker_url" },
+  zebra: { endpoint: "http://10.76.0.234:8787/warranty/lookup?make=zebra", serialParam: "serial", method: "GET", verifiedField: "ok", endDateField: "end_date", sourceField: "checker_url" },
+  samsung: { endpoint: "http://10.76.0.234:8787/warranty/lookup?make=samsung", serialParam: "serial", method: "GET", verifiedField: "ok", endDateField: "end_date", sourceField: "checker_url" },
+  apple: { endpoint: "http://10.76.0.234:8787/warranty/lookup?make=apple", serialParam: "serial", method: "GET", verifiedField: "ok", endDateField: "end_date", sourceField: "checker_url" },
 };
 const WARRANTY_CHECKER_URL_BY_MAKE = {
   hp: "https://support.hp.com/us-en/check-warranty",
