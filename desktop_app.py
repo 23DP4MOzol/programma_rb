@@ -168,7 +168,7 @@ WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE: dict[str, str] = {
     "microsoft": "serialNumber",
 }
 WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC = 25
-WARRANTY_WEB_AUTOMATION_HEADLESS = False
+WARRANTY_WEB_AUTOMATION_HEADLESS = True
 WARRANTY_WEB_RESULT_HINTS: tuple[str, ...] = (
     "warranty",
     "coverage",
@@ -1946,17 +1946,10 @@ class DesktopApp:
         # HP pages are heavily JS/captcha/session-gated. We still try local browser automation
         # if remote worker failed due deployment/auth/connectivity issues.
         if make_key == "hp":
-            direct_reason = str(direct_result.get("reason") or "").strip()
-            should_try_local_browser = remote_allows_local_fallback and direct_reason in {
-                "dynamic_page_requires_browser",
-                "http_fetch_failed",
-                "empty_page",
-                "no_warranty_text_found",
-                "ambiguous_result",
-            }
-            if not should_try_local_browser:
-                direct_result.setdefault("checker_url", checker_url)
-                return direct_result
+            # FAST FAIL: HP requires Captcha/Cloudflare, local headless browser will always fail.
+            # Skip the 20 second wait and jump straight to the OS manual browser.
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
 
         try:
             from selenium import webdriver  # type: ignore

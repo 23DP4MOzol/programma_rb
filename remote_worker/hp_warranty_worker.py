@@ -658,7 +658,7 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                 browser_type = p.chromium
 
             launch_kwargs: dict[str, Any] = {
-                "headless": False,
+                "headless": True,
                 "timeout": _remaining_ms(3000),
             }
             exe_path = str(os.environ.get("WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH") or "").strip()
@@ -913,12 +913,10 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                 if configured_channel:
                     launch_variants.append({"headless": True, "channel": configured_channel})
                 launch_variants.append({"headless": True})
-                launch_variants.append({"headless": False})
                 if os.name == "nt" and _allow_edge_channel() and configured_channel.lower() != "msedge":
                     launch_variants.append({"headless": True, "channel": "msedge"})
             else:
                 launch_variants.append({"headless": True})
-                launch_variants.append({"headless": False})
 
             browser = None
             last_launch_error = ""
