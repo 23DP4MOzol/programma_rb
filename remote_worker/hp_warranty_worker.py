@@ -707,13 +707,15 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                         # Wait for the form element to appear
                         input_box = page.locator("input[id*='Wgt-input'], input[id*='serial'], input[name*='serial'], input[placeholder*='Serial']").first
                         if input_box:
-                            input_box.wait_for(state="visible", timeout=3000)
-                            # Fill the serial number
+                            input_box.wait_for(state="visible", timeout=10000) # Increased timeout to wait for React to render
+                            
+                            # Sometimes inputs need a click before filling works, or a clear
+                            input_box.click(timeout=2000)
                             input_box.fill(serial)
 
                             # Handle potential cookie banners that might block the submit button
                             try:
-                                cookie_btn = page.locator("button[id*='accept-cookies'], button:has-text('Accept')").first
+                                cookie_btn = page.locator("button[id*='accept-cookies'], button.banner-close-button, button:has-text('Accept')").first
                                 if cookie_btn and cookie_btn.is_visible():
                                     cookie_btn.click(timeout=2000)
                             except Exception:
@@ -725,11 +727,12 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                                 with page.expect_response(
                                     lambda r: "/wcc-services/profile/devices/warranty/specs" in (r.url or "")
                                     and (r.request.method or "").upper() == "POST",
-                                    timeout=_remaining_ms(4000)
+                                    timeout=_remaining_ms(6000)
                                 ) as response_info:
                                     submit_btn.click(timeout=3000)
                                 response = response_info.value
-                    except Exception:
+                    except Exception as loop_e:
+                        print("Worker UI filling error:", loop_e)
                         pass # Ignore and continue if form filling fails, maybe it already fired
                 
                 # If we haven't successfully obtained the response yet (meaning the form click failed or wasn't tried)

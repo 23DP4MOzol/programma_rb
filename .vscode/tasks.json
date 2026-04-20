@@ -139,6 +139,71 @@
 				"if (Test-Path .\\remote_worker\\__pycache__) { Remove-Item -Recurse -Force .\\remote_worker\\__pycache__ }; if (Test-Path .\\remote_worker\\__pycache__) { Write-Output 'pycache-still-present' } else { Write-Output 'pycache-removed' }"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Test Warranty API",
+			"type": "shell",
+			"command": "Invoke-RestMethod -Uri \"http://127.0.0.1:8787/warranty/lookup\" -Method POST -ContentType \"application/json\" -Body '{\"serial\": \"5CD107H905\", \"make\": \"hp\"}'"
+		},
+		{
+			"label": "Test Warranty API 2",
+			"type": "shell",
+			"command": "Invoke-RestMethod -Uri \"http://127.0.0.1:8787/warranty/lookup\" -Method POST -ContentType \"application/json\" -Body \"{`\"serial`\": `\"5CD107H905`\", `\"make`\": `\"hp`\"}\""
+		},
+		{
+			"label": "Test Python API",
+			"type": "shell",
+			"command": "python3.13 test_api.py"
+		},
+		{
+			"label": "Read test_api",
+			"type": "shell",
+			"command": "type test_api.py"
+		},
+		{
+			"label": "Run test api",
+			"type": "shell",
+			"command": "python3.13 test_api.py"
+		},
+		{
+			"label": "Read file",
+			"type": "shell",
+			"command": "type c:\\Users\\LV02XVY\\AppData\\Roaming\\Code\\User\\workspaceStorage\\918072d02ea4215141ce22fba58e66b0\\GitHub.copilot-chat\\chat-session-resources\\768d083f-18b7-4196-b31a-e5fd1c59e899\\call_MHxXd0V5azRRSWs5c21UTUFPVjA__vscode-1776676894748\\content.txt"
+		},
+		{
+			"label": "Check start_worker",
+			"type": "shell",
+			"command": "Get-Content remote_worker/start_worker.ps1 | Select-String \"webView2\" -Context 3,10"
+		},
+		{
+			"label": "Type start_worker",
+			"type": "shell",
+			"command": "type remote_worker\\start_worker.ps1"
+		},
+		{
+			"label": "Kill uvicorn",
+			"type": "shell",
+			"command": "Get-Process | Where-Object { $_.CommandLine -match \"uvicorn\" -and $_.Id -ne $PID } | Stop-Process -Force"
+		},
+		{
+			"label": "Kill uvicorn 2",
+			"type": "shell",
+			"command": "Get-WmiObject Win32_Process -Filter \"CommandLine LIKE '%uvicorn%'\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+		},
+		{
+			"label": "Kill by psutil",
+			"type": "shell",
+			"command": "python3.13 -c \"import os, signal, psutil; [p.kill() for p in psutil.process_iter(['cmdline']) if p.info['cmdline'] and 'uvicorn' in ' '.join(p.info['cmdline'])]\""
+		},
+		{
+			"label": "Kill python",
+			"type": "shell",
+			"command": "Stop-Process -Name python3.13 -Force; Stop-Process -Name python -Force"
+		},
+		{
+			"label": "check queries",
+			"type": "shell",
+			"command": "python3.13 -c \"import urllib.parse; print(list(urllib.parse.urlparse('https://support.hp.com/us-en/check-warranty').query))\""
 		}
 	]
 }
