@@ -1727,41 +1727,24 @@ class DesktopApp:
         except Exception:
             pass
 
-        # Try explicitly launching Edge to bypass sign-in/corporate page interceptors
-        explicit_edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
-        if os.path.exists(explicit_edge):
-            try:
-                subprocess.Popen(
-                    [explicit_edge, target],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                return True
-            except Exception:
-                pass
-                
-        edge_exe = ""
-        try:
-            edge_exe = self._detect_edge_browser_executable_path()
-        except Exception:
-            pass
-
-        if edge_exe:
-            edge_commands: list[list[str]] = [
-                [edge_exe, "--new-tab", target],
-                [edge_exe, target],
-            ]
-            for cmd in edge_commands:
+        # Try explicitly launching Firefox first if requested by user
+        firefox_paths = [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
+        ]
+        for ff in firefox_paths:
+            if os.path.exists(ff):
                 try:
                     subprocess.Popen(
-                        cmd,
+                        [ff, target],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
                     return True
                 except Exception:
-                    continue
+                    pass
 
+        # Native fallback to OS default browser (e.g. Chrome, Firefox, Edge whatever is default)
         if os.name == "nt":
             try:
                 os.startfile(target)  # type: ignore[attr-defined]
