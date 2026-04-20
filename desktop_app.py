@@ -579,6 +579,7 @@ class DeviceEditor(tk.Toplevel):
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
         btns.columnconfigure(2, weight=1)
+        btns.columnconfigure(3, weight=1)
 
         self.save_btn = ttk.Button(btns, command=self._on_save, style="Primary.TButton")
         self.save_btn.grid(row=0, column=0, sticky="ew")
@@ -590,6 +591,9 @@ class DeviceEditor(tk.Toplevel):
 
         self.close_btn = ttk.Button(btns, command=self.destroy, style="Secondary.TButton")
         self.close_btn.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        self.warranty_btn = ttk.Button(btns, command=self._on_check_warranty, style="Secondary.TButton")
+        self.warranty_btn.grid(row=0, column=3, sticky="ew", padx=(8, 0))
 
         self._apply_i18n()
 
@@ -611,12 +615,29 @@ class DeviceEditor(tk.Toplevel):
         self.save_btn.config(text=self.app.tr("desktop_save"))
         self.delete_btn.config(text=self.app.tr("web_delete"))
         self.close_btn.config(text=self.app.tr("desktop_close"))
+        self.warranty_btn.config(text=self.app.tr("desktop_warranty_check_button"))
 
         self.type_combo.configure(values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES])
         self.status_combo.configure(values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)])
 
         self.type_var.set(self.app._display_value(type_code, kind="type"))
         self.status_var.set(self.app._display_value(status_code, kind="status"))
+
+    def _on_check_warranty(self) -> None:
+        serial = self.serial.strip()
+        model_val = self.model_var.get().strip()
+        
+        make = self.app._normalize_make_for_warranty_checker(model_val)
+        if not make or make == "other":
+            make = "hp"
+
+        self.app.serial_var.set(serial)
+        self.app.make_var.set(make)
+        type_code = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        self.app.type_var.set(type_code)
+        
+        self.app.check_warranty_from_web_checker()
+        self.destroy()
 
     def _load_device(self) -> None:
         d = self.app.db.get_device(self.serial)

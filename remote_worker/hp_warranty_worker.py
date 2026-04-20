@@ -674,9 +674,9 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                 ]
 
             try:
-                profile_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "WARRANTY_REMOTE_PROFILE")
+                base_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), f"WARRANTY_REMOTE_PROFILE_{browser_name.upper()}")
                 browser_context = browser_type.launch_persistent_context(
-                    user_data_dir=profile_dir,
+                    user_data_dir=base_dir,
                     **launch_kwargs,
                     ignore_https_errors=True,
                     locale="en-US",
@@ -893,9 +893,9 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                     ]
                 
                 try:
-                    profile_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "WARRANTY_REMOTE_PROFILE")
+                    base_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), f"WARRANTY_REMOTE_PROFILE_{browser_name.upper()}")
                     browser_context = browser_type.launch_persistent_context(
-                        user_data_dir=profile_dir,
+                        user_data_dir=base_dir,
                         **launch_kwargs,
                         ignore_https_errors=True,
                         locale="en-US",
