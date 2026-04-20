@@ -671,22 +671,22 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                     "--disable-gpu",
                     "--no-first-run",
                     "--no-default-browser-check",
-                    "--guest",
-                    "-inprivate",
                 ]
 
-            browser = browser_type.launch(**launch_kwargs)
             try:
-                context = browser.new_context(
+                profile_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "WARRANTY_REMOTE_PROFILE")
+                browser_context = browser_type.launch_persistent_context(
+                    user_data_dir=profile_dir,
+                    **launch_kwargs,
                     ignore_https_errors=True,
                     locale="en-US",
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         "AppleWebKit/537.36 (KHTML, like Gecko) "
                         "Chrome/124.0.0.0 Safari/537.36"
-                    ),
+                    )
                 )
-                page = context.new_page()
+                page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
 
                 nav_timeout_ms = _remaining_ms(3000)
                 page.goto(warranty_url, wait_until="domcontentloaded", timeout=nav_timeout_ms)
@@ -704,7 +704,8 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                 except Exception:
                     body_text = ""
             finally:
-                browser.close()
+                if 'browser_context' in locals():
+                    browser_context.close()
     except Exception as exc:
         return {
             "ok": False,
@@ -888,36 +889,28 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                 if browser_name == "chromium":
                     launch_kwargs["args"] = [
                         "--disable-gpu",
-                        "--no-first-run",
                         "--no-default-browser-check",
                     ]
-
+                
                 try:
-                    browser = browser_type.launch(**launch_kwargs)
-                    break
+                    profile_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "WARRANTY_REMOTE_PROFILE")
+                    browser_context = browser_type.launch_persistent_context(
+                        user_data_dir=profile_dir,
+                        **launch_kwargs,
+                        ignore_https_errors=True,
+                        locale="en-US",
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        )
+                    )
+                    page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
                 except Exception as launch_exc:
                     last_launch_error = str(launch_exc)
                     launch_errors.append(last_launch_error)
+                    continue
 
-            if browser is None:
-                return {
-                    "ok": False,
-                    "reason": "browser_fallback_error",
-                    "details": last_launch_error or "Browser failed to launch",
-                    "checker_url": checker_url,
-                }
-
-            try:
-                context = browser.new_context(
-                    ignore_https_errors=True,
-                    locale="en-US",
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
-                    ),
-                )
-                page = context.new_page()
                 target_url = _build_checker_url_with_serial(make_key=make_key, serial=token, checker_url=checker_url) or checker_url
                 page.goto(target_url, wait_until="domcontentloaded", timeout=_remaining_ms(4000))
 
@@ -963,8 +956,16 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                     body_text = (page.inner_text("body", timeout=_remaining_ms(1000)) or "").strip()
                 except Exception:
                     body_text = ""
-            finally:
-                browser.close()
+
+                if 'browser_context' in locals():
+                    try:
+                        browser_context.close()
+                    except Exception:
+                        pass
+                
+                if body_text:
+                    break
+
     except Exception as exc:
         return {
             "ok": False,

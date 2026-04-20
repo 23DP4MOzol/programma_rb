@@ -123,8 +123,15 @@ try {
 
     $env:WARRANTY_REMOTE_ALLOW_EDGE_CHANNEL = "1"
     $env:WARRANTY_REMOTE_BROWSER = "chromium"
-    $env:WARRANTY_REMOTE_BROWSER_CHANNEL = "msedge"
-    $env:WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH = ""
+    $env:WARRANTY_REMOTE_BROWSER_CHANNEL = ""
+    
+    $webView2Paths = @(Get-ChildItem -Path "C:\Program Files (x86)\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+    if ($webView2Paths.Count -gt 0) {
+        $env:WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH = $webView2Paths[0].FullName
+    } else {
+        $env:WARRANTY_REMOTE_BROWSER_CHANNEL = "msedge"
+        $env:WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH = ""
+    }
 
     Write-Host "Starting local worker on http://0.0.0.0:$Port" -ForegroundColor Green
     & $pythonExe @pythonBaseArgs -m uvicorn hp_warranty_worker:app --host 0.0.0.0 --port $Port

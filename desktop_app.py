@@ -1706,18 +1706,24 @@ class DesktopApp:
         except Exception:
             pass
 
-        if os.name == "nt":
+        # Try explicitly launching Edge to bypass sign-in/corporate page interceptors
+        explicit_edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        if os.path.exists(explicit_edge):
             try:
-                os.startfile(target)  # type: ignore[attr-defined]
+                subprocess.Popen(
+                    [explicit_edge, target],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 return True
             except Exception:
                 pass
-
+                
         edge_exe = ""
         try:
             edge_exe = self._detect_edge_browser_executable_path()
         except Exception:
-            edge_exe = ""
+            pass
 
         if edge_exe:
             edge_commands: list[list[str]] = [
@@ -1734,6 +1740,13 @@ class DesktopApp:
                     return True
                 except Exception:
                     continue
+
+        if os.name == "nt":
+            try:
+                os.startfile(target)  # type: ignore[attr-defined]
+                return True
+            except Exception:
+                pass
 
         try:
             subprocess.Popen(
@@ -2393,8 +2406,7 @@ class DesktopApp:
                     "remote_worker_http_error",
                 }:
                     copied_checker_url = self._copy_to_clipboard(manual_checker_url)
-                    if make_key != "hp":
-                        opened_manual_checker = self._open_checker_in_system_browser(manual_checker_url)
+                    opened_manual_checker = self._open_checker_in_system_browser(manual_checker_url)
 
                 if reason == "make_not_supported":
                     info = self.tr("desktop_warranty_unsupported_make", make=make)
