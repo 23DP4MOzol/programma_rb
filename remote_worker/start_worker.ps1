@@ -96,15 +96,14 @@ try {
         Invoke-Python -m pip install -r requirements.txt
 
         $playwrightRoot = Join-Path $env:LOCALAPPDATA "ms-playwright"
-        $chromiumInstalled = $false
+        $firefoxInstalled = $false
         if (Test-Path $playwrightRoot) {
-            $entries = Get-ChildItem -Path $playwrightRoot -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -like "chromium-*" -or $_.Name -like "chromium_headless_shell-*" }
-            $chromiumInstalled = ($entries.Count -gt 0)
+            $entries = @(Get-ChildItem -Path $playwrightRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "firefox-*" })
+            $firefoxInstalled = ($entries.Count -gt 0)
         }
 
-        if (-not $chromiumInstalled) {
-            Invoke-Python -m playwright install chromium
+        if (-not $firefoxInstalled) {
+            Invoke-Python -m playwright install firefox
         }
     }
 
@@ -122,7 +121,12 @@ try {
         $env:WARRANTY_REMOTE_ALLOW_INSECURE_TLS = "1"
     }
 
-    Write-Host "Starting local worker on http://127.0.0.1:$Port" -ForegroundColor Green
+    $env:WARRANTY_REMOTE_ALLOW_EDGE_CHANNEL = "1"
+    $env:WARRANTY_REMOTE_BROWSER = "chromium"
+    $env:WARRANTY_REMOTE_BROWSER_CHANNEL = "msedge"
+    $env:WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH = ""
+
+    Write-Host "Starting local worker on http://0.0.0.0:$Port" -ForegroundColor Green
     & $pythonExe @pythonBaseArgs -m uvicorn hp_warranty_worker:app --host 0.0.0.0 --port $Port
 }
 finally {

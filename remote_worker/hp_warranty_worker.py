@@ -658,21 +658,27 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                 browser_type = p.chromium
 
             launch_kwargs: dict[str, Any] = {
-                "headless": True,
+                "headless": False,
                 "timeout": _remaining_ms(3000),
             }
-            if channel and browser_name == "chromium":
+            exe_path = str(os.environ.get("WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH") or "").strip()
+            if exe_path:
+                launch_kwargs["executable_path"] = exe_path
+            elif channel and browser_name == "chromium":
                 launch_kwargs["channel"] = channel
             if browser_name == "chromium":
                 launch_kwargs["args"] = [
                     "--disable-gpu",
                     "--no-first-run",
                     "--no-default-browser-check",
+                    "--guest",
+                    "-inprivate",
                 ]
 
             browser = browser_type.launch(**launch_kwargs)
             try:
                 context = browser.new_context(
+                    ignore_https_errors=True,
                     locale="en-US",
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -865,6 +871,7 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                     launch_variants.append({"headless": True, "channel": "msedge"})
             else:
                 launch_variants.append({"headless": True})
+                launch_variants.append({"headless": False})
 
             browser = None
             last_launch_error = ""
@@ -873,7 +880,10 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
                     "headless": bool(variant.get("headless", True)),
                     "timeout": _remaining_ms(3000),
                 }
-                if variant.get("channel"):
+                exe_path = str(os.environ.get("WARRANTY_REMOTE_BROWSER_EXECUTABLE_PATH") or "").strip()
+                if exe_path:
+                    launch_kwargs["executable_path"] = exe_path
+                elif variant.get("channel"):
                     launch_kwargs["channel"] = str(variant.get("channel"))
                 if browser_name == "chromium":
                     launch_kwargs["args"] = [
@@ -899,6 +909,7 @@ def _lookup_generic_warranty_via_browser(*, make_key: str, serial: str, checker_
 
             try:
                 context = browser.new_context(
+                    ignore_https_errors=True,
                     locale="en-US",
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
