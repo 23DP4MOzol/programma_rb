@@ -2426,7 +2426,8 @@ class DesktopApp:
                     "remote_worker_unauthorized",
                     "remote_worker_http_error",
                 }:
-                    copied_checker_url = self._copy_to_clipboard(manual_checker_url)
+                    # Change: Copy SERIAL instead of URL to clipboard since the URL auto-opens
+                    copied_checker_url = self._copy_to_clipboard(serial)
                     opened_manual_checker = self._open_checker_in_system_browser(manual_checker_url)
 
                 if reason == "make_not_supported":
@@ -2457,7 +2458,7 @@ class DesktopApp:
                     info = self.tr("desktop_warranty_not_found")
 
                 if copied_checker_url and manual_checker_url:
-                    info = self.tr("desktop_warranty_checker_url_copied", url=manual_checker_url)
+                    info = f"Opened HP site natively. SERIAL COPIED TO CLIPBOARD! Press Ctrl+V."
                 elif opened_manual_checker and manual_checker_url:
                     info = self.tr("desktop_warranty_opened_checker_manual", url=manual_checker_url)
 

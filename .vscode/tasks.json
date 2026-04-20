@@ -204,6 +204,21 @@
 			"label": "check queries",
 			"type": "shell",
 			"command": "python3.13 -c \"import urllib.parse; print(list(urllib.parse.urlparse('https://support.hp.com/us-en/check-warranty').query))\""
+		},
+		{
+			"label": "Check desktop app",
+			"type": "shell",
+			"command": "Get-Content desktop_app.py | Select-String \"def _lookup_warranty_via_web_checker\" -Context 3,10"
+		},
+		{
+			"label": "Read output",
+			"type": "shell",
+			"command": "type c:\\Users\\LV02XVY\\AppData\\Roaming\\Code\\User\\workspaceStorage\\918072d02ea4215141ce22fba58e66b0\\GitHub.copilot-chat\\chat-session-resources\\768d083f-18b7-4196-b31a-e5fd1c59e899\\call_MHxSVlpYcmtiODB3em9hek93R0U__vscode-1776676894773\\content.txt"
+		},
+		{
+			"label": "Test HP Session",
+			"type": "shell",
+			"command": "python3.13 -c \"import requests; s=requests.Session(); r=s.get('https://support.hp.com/us-en/check-warranty'); print('Cookies:', s.cookies.get_dict())\""
 		}
 	]
 }
