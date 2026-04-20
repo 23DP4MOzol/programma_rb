@@ -691,11 +691,54 @@ def _lookup_hp_warranty_via_browser(*, warranty_url: str, timeout_sec: float) ->
                 nav_timeout_ms = _remaining_ms(3000)
                 page.goto(warranty_url, wait_until="domcontentloaded", timeout=nav_timeout_ms)
 
-                response = page.wait_for_response(
-                    lambda r: "/wcc-services/profile/devices/warranty/specs" in (r.url or "")
-                    and (r.request.method or "").upper() == "POST",
-                    timeout=_remaining_ms(3000),
-                )
+                # Try to extract the serial number from the URL
+                serial = ""
+                try:
+                    parsed = urllib.parse.urlparse(warranty_url)
+                    query = urllib.parse.parse_qs(parsed.query)
+                    if "serialnumber" in query:
+                        serial = query["serialnumber"][0]
+                except Exception:
+                    pass
+
+                # If HP didn't auto-fetch, try filling the inputs and clicking Check
+                if serial:
+                    try:
+                        # Wait for the form element to appear
+                        input_box = page.locator("input[id*='Wgt-input'], input[id*='serial'], input[name*='serial'], input[placeholder*='Serial']").first
+                        if input_box:
+                            input_box.wait_for(state="visible", timeout=3000)
+                            # Fill the serial number
+                            input_box.fill(serial)
+
+                            # Handle potential cookie banners that might block the submit button
+                            try:
+                                cookie_btn = page.locator("button[id*='accept-cookies'], button:has-text('Accept')").first
+                                if cookie_btn and cookie_btn.is_visible():
+                                    cookie_btn.click(timeout=2000)
+                            except Exception:
+                                pass
+
+                            # Click the Check / Submit button and await the response 
+                            submit_btn = page.locator("button[id*='Wgt-Submit'], button[type='submit'], button[id*='check'], button:has-text('Check warranty')").first
+                            if submit_btn:
+                                with page.expect_response(
+                                    lambda r: "/wcc-services/profile/devices/warranty/specs" in (r.url or "")
+                                    and (r.request.method or "").upper() == "POST",
+                                    timeout=_remaining_ms(4000)
+                                ) as response_info:
+                                    submit_btn.click(timeout=3000)
+                                response = response_info.value
+                    except Exception:
+                        pass # Ignore and continue if form filling fails, maybe it already fired
+                
+                # If we haven't successfully obtained the response yet (meaning the form click failed or wasn't tried)
+                if 'response' not in locals() or not response:
+                    response = page.wait_for_response(
+                        lambda r: "/wcc-services/profile/devices/warranty/specs" in (r.url or "")
+                        and (r.request.method or "").upper() == "POST",
+                        timeout=_remaining_ms(3000),
+                    )
 
                 status_code = int(response.status or 0)
                 body_text = ""
