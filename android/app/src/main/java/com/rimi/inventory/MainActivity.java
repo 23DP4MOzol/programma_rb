@@ -220,58 +220,44 @@ public class MainActivity extends AppCompatActivity {
                 view.removeCallbacks(remoteLoadTimeoutFallback);
 
                 if (url != null) {
-                    if (url.contains("samsung.com/us/support/warranty/")) {
-                        view.evaluateJavascript(
-                                "setTimeout(function(){" +
-                                        "  var urlParams = new URL(window.location.href).searchParams;" +
-                                        "  var sn = urlParams.get('serialNumber');" +
-                                        "  if (sn) {" +
-                                        "    var input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber');" +
-                                        "    if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
-                                        "    var btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
-                                        "    if (btn && !btn.disabled) { btn.click(); }" +
-                                        "  }" +
-                                        "}, 2000);", null);
-                    } else if (url.contains("support.zebra.com/warrantycheck")) {
-                        view.evaluateJavascript(
-                                "setTimeout(function(){" +
-                                        "  var urlParams = new URL(window.location.href).searchParams;" +
-                                        "  var sn = urlParams.get('serial');" +
-                                        "  if (sn) {" +
-                                        "    var input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
-                                        "    if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
-                                        "    var btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
-                                        "    if (btn && !btn.disabled) { btn.click(); }" +
-                                        "  }" +
-                                        "}, 2000);", null);
-                    } else if (url.contains("pcsupport.lenovo.com/us/en/warrantylookup")) {
-                        view.evaluateJavascript(
-                                "setTimeout(function(){" +
-                                        "  var urlParams = new URL(window.location.href).searchParams;" +
-                                        "  var sn = urlParams.get('serial');" +
-                                        "  if (sn) {" +
-                                        "  var input = document.querySelector('input[name=\"search-text\"], .search-input');" +
-                                        "  if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
-                                        "  var btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
-                                        "  if (btn && !btn.disabled) { btn.click(); }" +
-                                        "  }" +
-                                        "}, 2000);", null);
-                    } else if (url.contains("support.hp.com")) {
-                        view.evaluateJavascript(
-                                "setTimeout(function(){" +
-                                        "  var sn = new URL(window.location.href).searchParams.get('serialnumber');" +
-                                        "  if (sn) {" +
-                                        "    var input = document.querySelector('input[name*=\"serial\"], input#wcc-serial-number, .js-wcc-serial-number');" +
-                                        "    if (input) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
-                                        "  }" +
-                                        "}, 3000);", null);
-                    }
-                }
-            }
-        }
-
-        @Override
-        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                    if (url.contains("samsung.com") || url.contains("support.zebra.com") || 
+                        url.contains("lenovo.com") || url.contains("support.hp.com")) {
+                        String js = "(function() {" +
+                                "  var urlParams = new URL(window.location.href).searchParams;" +
+                                "  var sn = urlParams.get('serial') || urlParams.get('serialNumber') || urlParams.get('serialnumber');" +
+                                "  if (!sn) return;" +
+                                "  var attempt = 0;" +
+                                "  var poll = setInterval(function() {" +
+                                "    attempt++;" +
+                                "    if (attempt > 20) { clearInterval(poll); return; }" +
+                                "    var input = null; var btn = null;" +
+                                "    if (window.location.href.indexOf('samsung') > -1) {" +
+                                "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber');" +
+                                "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
+                                "    } else if (window.location.href.indexOf('zebra') > -1) {" +
+                                "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
+                                "      btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
+                                "    } else if (window.location.href.indexOf('lenovo') > -1) {" +
+                                "      input = document.querySelector('input[name=\"search-text\"], .search-input');" +
+                                "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
+                                "    } else if (window.location.href.indexOf('hp.com') > -1) {" +
+                                "      input = document.querySelector('input[name*=\"serial\"], input#wcc-serial-number, .js-wcc-serial-number');" +
+                                "      btn = null;" +
+                                "    }" +
+                                "    if (input) {" +
+                                "      if (input.value !== sn) {" +
+                                "        input.value = sn;" +
+                                "        input.dispatchEvent(new Event('input', {bubbles: true}));" +
+                                "        input.dispatchEvent(new Event('change', {bubbles: true}));" +
+                                "      }" +
+                                "      if (btn && !btn.disabled) {" +
+                                "        btn.click();" +
+                                "        clearInterval(poll);" +
+                                "      }" +
+                                "    }" +
+                                "  }, 500);" +
+                                "})();";
+                        view.evaluateJavascript(js, null);
             super.onReceivedError(view, request, error);
             if (request != null && request.isForMainFrame()) {
                 loadLocalWebFallback();
