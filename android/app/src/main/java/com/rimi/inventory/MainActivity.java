@@ -223,21 +223,21 @@ public class MainActivity extends AppCompatActivity {
                     if (url.contains("samsung.com") || url.contains("support.zebra.com") || 
                         url.contains("lenovo.com") || url.contains("support.hp.com")) {
                         String safeUrl = url.replace("'", "\\'");
-                        String js = "(function() {" +
-                                "  var getSn = function(u) { try { return new URL(u).searchParams.get('serial') || new URL(u).searchParams.get('serialNumber') || new URL(u).searchParams.get('serialnumber'); } catch(e){return null;} };" +
+                        String js = "try { (function() {" +
+                                "  var getSn = function(u) { try { var p = u.split('?')[1]; if(!p) return null; var vars = p.split('&'); for(var i=0;i<vars.length;i++){var pair = vars[i].split('='); if(pair[0].toLowerCase().indexOf('serial') > -1) return decodeURIComponent(pair[1]); } return null; } catch(e){return null;} };" +
                                 "  var sn = getSn(window.location.href) || getSn('" + safeUrl + "');" +
                                 "  if (!sn) return;" +
                                 "  var attempt = 0;" +
                                 "  var poll = setInterval(function() {" +
                                 "    attempt++;" +
-                                "    if (attempt > 40) { clearInterval(poll); return; }" +
+                                "    if (attempt > 60) { clearInterval(poll); return; }" +
                                 "    var input = null; var btn = null;" +
                                 "    var currUrl = window.location.href + '" + safeUrl + "';" +
                                 "    if (currUrl.indexOf('samsung') > -1) {" +
                                 "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
                                 "    } else if (currUrl.indexOf('zebra') > -1) {" +
-                                "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
+                                "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
                                 "    } else if (currUrl.indexOf('lenovo') > -1) {" +
                                 "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
@@ -252,20 +252,23 @@ public class MainActivity extends AppCompatActivity {
                                 "    }" +
                                 "    if (input) {" +
                                 "      if (input.value !== sn) {" +
-                                "        input.focus();" +
-                                "        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');" +
-                                "        if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }" +
-                                "        input.dispatchEvent(new Event('input', {bubbles: true}));" +
-                                "        input.dispatchEvent(new Event('change', {bubbles: true}));" +
-                                "        input.blur();" +
-                                "      }" +
-                                "      if (btn && !btn.disabled) {" +
-                                "        setTimeout(function(){ btn.click(); }, 600);" +
-                                "        clearInterval(poll);" +
+                                "        try { input.focus(); } catch(e){}" +
+                                "        try {" +
+                                "          var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');" +
+                                "          if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }" +
+                                "        } catch(e) { input.value = sn; }" +
+                                "        try { input.dispatchEvent(new Event('input', {bubbles: true})); } catch(e){}" +
+                                "        try { input.dispatchEvent(new Event('change', {bubbles: true})); } catch(e){}" +
+                                "        var isSet = false;" +
+                                "        try { isSet = (input.value === sn); } catch(e){}" +
+                                "        if (isSet && btn && !btn.disabled) {" +
+                                "          setTimeout(function(){ try { btn.click(); } catch(e){} }, 800);" +
+                                "          clearInterval(poll);" +
+                                "        }" +
                                 "      }" +
                                 "    }" +
                                 "  }, 500);" +
-                                "})();";
+                                "})(); } catch(e) {}";
                         view.evaluateJavascript(js, null);
                     }
                 }
