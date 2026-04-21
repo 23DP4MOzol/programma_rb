@@ -234,27 +234,33 @@ public class MainActivity extends AppCompatActivity {
                                 "    var input = null; var btn = null;" +
                                 "    var currUrl = window.location.href + '" + safeUrl + "';" +
                                 "    if (currUrl.indexOf('samsung') > -1) {" +
-                                "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber');" +
+                                "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
                                 "    } else if (currUrl.indexOf('zebra') > -1) {" +
                                 "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
                                 "      btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
                                 "    } else if (currUrl.indexOf('lenovo') > -1) {" +
-                                "      input = document.querySelector('input[name=\"search-text\"], .search-input');" +
+                                "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
                                 "    } else if (currUrl.indexOf('hp.com') > -1) {" +
-                                "      input = document.querySelector('input[name*=\"serial\"], input#wcc-serial-number, .js-wcc-serial-number');" +
-                                "      btn = document.querySelector('button#wcc-submit, .js-wcc-submit, button[type=\"submit\"]');" +
+                                "      var inputs = document.querySelectorAll('input');" +
+                                "      for(var j=0; j<inputs.length; j++) { var att = (inputs[j].id || '') + (inputs[j].name || '') + (inputs[j].placeholder || ''); if(att.toLowerCase().indexOf('serial') > -1) { input = inputs[j]; break; } }" +
+                                "      if (!input) input = document.querySelector('input[type=\"text\"]');" +
+                                "      var btns = document.querySelectorAll('button');" +
+                                "      for(var i=0; i<btns.length; i++) { if(btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('submit') > -1) { btn = btns[i]; break; } }" +
+                                "      if (!btn) btn = document.querySelector('button[type=\"submit\"]');" +
                                 "    }" +
                                 "    if (input) {" +
                                 "      if (input.value !== sn) {" +
+                                "        input.focus();" +
                                 "        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');" +
                                 "        if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }" +
                                 "        input.dispatchEvent(new Event('input', {bubbles: true}));" +
                                 "        input.dispatchEvent(new Event('change', {bubbles: true}));" +
+                                "        input.blur();" +
                                 "      }" +
                                 "      if (btn && !btn.disabled) {" +
-                                "        setTimeout(function(){ btn.click(); }, 300);" +
+                                "        setTimeout(function(){ btn.click(); }, 600);" +
                                 "        clearInterval(poll);" +
                                 "      }" +
                                 "    }" +

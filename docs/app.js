@@ -566,6 +566,10 @@ const els = {
   devicesList: document.getElementById("devicesList"),
   listStatus: document.getElementById("listStatus"),
   listFilter: document.getElementById("listFilter"),
+  itemsPerPage: document.getElementById("itemsPerPage"),
+  paginationInfo: document.getElementById("paginationInfo"),
+  prevPage: document.getElementById("prevPage"),
+  nextPage: document.getElementById("nextPage"),
   listClear: document.getElementById("listClear"),
   refreshList: document.getElementById("refreshList"),
   syncNow: document.getElementById("syncNow"),
@@ -619,6 +623,8 @@ const els = {
 
 let devicesCache = [];
 let scanTimer = null;
+let currentPage = 1;
+let itemsPerPage = 10;
 let queueSyncInProgress = false;
 let lastLoadedSerial = "";
 let lastLoadedAt = 0;
@@ -3539,10 +3545,24 @@ async function saveDevice() {
 }
 
 function renderDevicesList() {
-  const rows = getFilteredRows();
+  const allRows = getFilteredRows();
   const hasFilter = String(els.listFilter.value || "").trim().length > 0;
 
-  els.listStatus.textContent = trWebFmt("msgShowing", { count: rows.length });
+  const totalItems = allRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const rows = allRows.slice(startIndex, endIndex);
+
+  els.listStatus.textContent = trWebFmt("msgShowing", { count: totalItems });
+  if (els.paginationInfo) {
+    els.paginationInfo.textContent = totalItems > 0 ? `${startIndex + 1}-${endIndex} / ${totalItems} showing, page ${currentPage}` : `0 / 0 showing, page 1`;
+  }
+  if (els.prevPage) els.prevPage.disabled = currentPage === 1;
+  if (els.nextPage) els.nextPage.disabled = currentPage === totalPages || totalItems === 0;
 
   if (!rows.length) {
     const helper = hasFilter ? trWeb("msgNoRowsMatchFilter") : trWeb("msgCheckPolicy");
@@ -3946,7 +3966,30 @@ els.clear.addEventListener("click", () => {
   els.serial.focus();
 });
 els.refreshList.addEventListener("click", loadDevicesList);
-els.listFilter.addEventListener("input", renderDevicesList);
+
+els.itemsPerPage.addEventListener("change", (e) => {
+  itemsPerPage = parseInt(e.target.value, 10) || 10;
+  currentPage = 1;
+  renderDevicesList();
+});
+
+els.prevPage.addEventListener("click", () => {
+  if (currentPage > 1) {
+    currentPage--;
+    renderDevicesList();
+  }
+});
+
+els.nextPage.addEventListener("click", () => {
+  currentPage++;
+  renderDevicesList();
+});
+
+els.listFilter.addEventListener("input", () => {
+  currentPage = 1;
+  renderDevicesList();
+});
+
 if (els.listClear) {
   els.listClear.addEventListener("click", clearDevicesListTools);
 }

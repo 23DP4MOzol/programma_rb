@@ -138,43 +138,6 @@
         </div>
       </section>
 
-      <section class="card" id="devicesCard">
-        <div class="card__head">
-          <div>
-            <div class="card__title">Devices</div>
-            <div class="card__subtitle">Read-only list from database</div>
-          </div>
-          <div class="card__head-actions">
-            <div class="card__status" id="listStatus"></div>
-            <button id="syncNow" class="btn btn--small">Sync now</button>
-            <button id="refreshList" class="btn btn--small">Refresh</button>
-            <button id="exportCsv" class="btn btn--small">Export CSV</button>
-          </div>
-        </div>
-        <div class="list-tools">
-          <div class="lookup-row">
-            <input id="lookupSerial" class="input" type="text" maxlength="80" placeholder="Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)" />
-            <button id="lookupLoad" class="btn btn--small">Load</button>
-          </div>
-          <div class="lookup-row">
-            <input id="listFilter" class="input" type="text" placeholder="Filter by serial/model/status" />
-            <button id="listClear" class="btn btn--small">Clear filters</button>
-          </div>
-        </div>
-        <div class="table">
-          <div class="row row--head">
-            <span>Serial</span>
-            <span>Type</span>
-            <span>Model</span>
-            <span>Status</span>
-            <span>From</span>
-            <span>To</span>
-            <span>Comment</span>
-          </div>
-          <div id="devicesList" class="rows"></div>
-        </div>
-      </section>
-
       <section class="card" id="diagnosticsCard">
         <div class="card__head">
           <div>
@@ -192,6 +155,57 @@
           <div class="diag-item"><span>Role</span><strong id="diagRole">-</strong></div>
           <div class="diag-item"><span>Last sync</span><strong id="diagLastSync">-</strong></div>
           <div class="diag-item diag-item--wide"><span>API</span><strong id="diagApi">-</strong></div>
+        </div>
+      </section>
+
+      
+        <section class="card" id="devicesCard">
+        <div class="card__head">
+          <div>
+            <div class="card__title">Devices</div>
+            <div class="card__subtitle">Read-only list from database</div>
+          </div>
+          <div class="card__head-actions">
+            <div class="card__status" id="listStatus"></div>
+            <button id="syncNow" class="btn btn--small">Sync now</button>
+            <button id="refreshList" class="btn btn--small">Refresh</button>
+            <button id="exportCsv" class="btn btn--small">Export CSV</button>
+          </div>
+        </div>
+        <div class="list-tools">
+          <div class="lookup-row">
+            <input id="lookupSerial" class="input" type="text" maxlength="80" placeholder="Find exact serial (S18167522504743 / 18167522504743 / 5CG3285C9K)" />
+            <button id="lookupLoad" class="btn btn--small">Load</button>
+          </div>
+          <div class="lookup-row" style="display: flex; gap: 8px;">
+              <input id="listFilter" class="input" style="flex:1;" type="text" placeholder="Filter by serial/model/status" />
+              <select id="itemsPerPage" class="input" style="width: auto;">
+                <option value="10" selected>10 per page</option>
+                <option value="20">20 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+              </select>
+              <button id="listClear" class="btn btn--small">Clear filters</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 14px; font-weight: 500;">
+              <div id="paginationInfo">Showing 0, page 1</div>
+              <div style="display: flex; gap: 4px;">
+                <button id="prevPage" class="btn btn--small">Prev</button>
+                <button id="nextPage" class="btn btn--small">Next</button>
+              </div>
+            </div>
+        </div>
+        <div class="table">
+          <div class="row row--head">
+            <span>Serial</span>
+            <span>Type</span>
+            <span>Model</span>
+            <span>Status</span>
+            <span>From</span>
+            <span>To</span>
+            <span>Comment</span>
+          </div>
+          <div id="devicesList" class="rows"></div>
         </div>
       </section>
 
