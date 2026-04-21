@@ -258,6 +258,13 @@ public class MainActivity extends AppCompatActivity {
                                 "  }, 500);" +
                                 "})();";
                         view.evaluateJavascript(js, null);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
             if (request != null && request.isForMainFrame()) {
                 loadLocalWebFallback();
