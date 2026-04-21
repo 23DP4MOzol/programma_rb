@@ -243,14 +243,11 @@ public class MainActivity extends AppCompatActivity {
                                 "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
                                 "    } else if (currUrl.indexOf('hp.com') > -1) {" +
-                                "      var inputs = document.querySelectorAll('input');" +
-                                "      for(var j=0; j<inputs.length; j++) { var att = (inputs[j].id || '') + (inputs[j].name || '') + (inputs[j].placeholder || ''); if(att.toLowerCase().indexOf('serial') > -1) { input = inputs[j]; break; } }" +
-                                "      if (!input) input = document.querySelector('input[type=\"text\"]');" +
-                                "      var btns = document.querySelectorAll('button');" +
-                                "      for(var i=0; i<btns.length; i++) { if(btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('submit') > -1) { btn = btns[i]; break; } }" +
-                                "      if (!btn) btn = document.querySelector('button[type=\"submit\"]');" +
+                                "      input = document.querySelector('input#inputtextpfinder, input[formcontrolname=\"serialNumber\"], input.hp-text-input');" +
+                                "      btn = document.querySelector('button#FindMyProduct, button.submitBtn');" +
                                 "    }" +
                                 "    if (input) {" +
+                                "      var isSet = false;" +
                                 "      if (input.value !== sn) {" +
                                 "        try { input.focus(); } catch(e){}" +
                                 "        try {" +
@@ -259,12 +256,12 @@ public class MainActivity extends AppCompatActivity {
                                 "        } catch(e) { input.value = sn; }" +
                                 "        try { input.dispatchEvent(new Event('input', {bubbles: true})); } catch(e){}" +
                                 "        try { input.dispatchEvent(new Event('change', {bubbles: true})); } catch(e){}" +
-                                "        var isSet = false;" +
-                                "        try { isSet = (input.value === sn); } catch(e){}" +
-                                "        if (isSet && btn && !btn.disabled) {" +
-                                "          setTimeout(function(){ try { btn.click(); } catch(e){} }, 800);" +
-                                "          clearInterval(poll);" +
-                                "        }" +
+                                "      }" +
+                                "      try { isSet = (input.value === sn); } catch(e){}" +
+                                "      if (isSet && btn) {" +
+                                "        try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}" +
+                                "        setTimeout(function(){ try { btn.click(); } catch(e){} }, 800);" +
+                                "        clearInterval(poll);" +
                                 "      }" +
                                 "    }" +
                                 "  }, 500);" +
