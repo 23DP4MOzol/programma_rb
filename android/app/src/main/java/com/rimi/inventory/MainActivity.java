@@ -149,6 +149,18 @@ public class MainActivity extends AppCompatActivity {
         appWebView.clearCache(true);
         appWebView.clearHistory();
         registerPrinterAclReceiver();
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (appWebView != null && appWebView.canGoBack()) {
+                    appWebView.goBack();
+                } else {
+                    setEnabled(false);
+                    getOnBackPressedDispatcher().onBackPressed();
+                }
+            }
+        });
+
         loadRemoteWebApp();
     }
 
@@ -206,6 +218,55 @@ public class MainActivity extends AppCompatActivity {
             if (view != null) {
                 mainFrameLoaded = true;
                 view.removeCallbacks(remoteLoadTimeoutFallback);
+
+                if (url != null) {
+                    if (url.contains("samsung.com/us/support/warranty/")) {
+                        view.evaluateJavascript(
+                                "setTimeout(function(){" +
+                                        "  var urlParams = new URL(window.location.href).searchParams;" +
+                                        "  var sn = urlParams.get('serialNumber');" +
+                                        "  if (sn) {" +
+                                        "    var input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber');" +
+                                        "    if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
+                                        "    var btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
+                                        "    if (btn && !btn.disabled) { btn.click(); }" +
+                                        "  }" +
+                                        "}, 2000);", null);
+                    } else if (url.contains("support.zebra.com/warrantycheck")) {
+                        view.evaluateJavascript(
+                                "setTimeout(function(){" +
+                                        "  var urlParams = new URL(window.location.href).searchParams;" +
+                                        "  var sn = urlParams.get('serial');" +
+                                        "  if (sn) {" +
+                                        "    var input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
+                                        "    if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
+                                        "    var btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
+                                        "    if (btn && !btn.disabled) { btn.click(); }" +
+                                        "  }" +
+                                        "}, 2000);", null);
+                    } else if (url.contains("pcsupport.lenovo.com/us/en/warrantylookup")) {
+                        view.evaluateJavascript(
+                                "setTimeout(function(){" +
+                                        "  var urlParams = new URL(window.location.href).searchParams;" +
+                                        "  var sn = urlParams.get('serial');" +
+                                        "  if (sn) {" +
+                                        "  var input = document.querySelector('input[name=\"search-text\"], .search-input');" +
+                                        "  if (input && input.value !== sn) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
+                                        "  var btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
+                                        "  if (btn && !btn.disabled) { btn.click(); }" +
+                                        "  }" +
+                                        "}, 2000);", null);
+                    } else if (url.contains("support.hp.com")) {
+                        view.evaluateJavascript(
+                                "setTimeout(function(){" +
+                                        "  var sn = new URL(window.location.href).searchParams.get('serialnumber');" +
+                                        "  if (sn) {" +
+                                        "    var input = document.querySelector('input[name*=\"serial\"], input#wcc-serial-number, .js-wcc-serial-number');" +
+                                        "    if (input) { input.value = sn; input.dispatchEvent(new Event('input', {bubbles: true})); }" +
+                                        "  }" +
+                                        "}, 3000);", null);
+                    }
+                }
             }
         }
 
