@@ -125,11 +125,18 @@ public class MainActivity extends AppCompatActivity {
         WebSettings settings = appWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setAppCacheEnabled(true);
+        settings.setAppCachePath(getApplicationContext().getCacheDir().getAbsolutePath());
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
+        
+        // Speed up rendering
+        appWebView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
+        settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
 
         appWebView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -146,8 +153,6 @@ public class MainActivity extends AppCompatActivity {
         });
         appWebView.setWebViewClient(new InventoryWebViewClient());
         appWebView.addJavascriptInterface(new AndroidPrinterBridge(), "AndroidPrinter");
-        appWebView.clearCache(true);
-        appWebView.clearHistory();
         registerPrinterAclReceiver();
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override
@@ -193,9 +198,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        String cacheBust = String.valueOf(System.currentTimeMillis());
         appWebView.postDelayed(remoteLoadTimeoutFallback, WEB_REMOTE_TIMEOUT_MS);
-        appWebView.loadUrl(getString(R.string.web_app_url) + "?v=" + cacheBust);
+        appWebView.loadUrl(getString(R.string.web_app_url));
     }
 
     private void loadLocalWebFallback() {
@@ -205,8 +209,7 @@ public class MainActivity extends AppCompatActivity {
         localWebFallbackLoaded = true;
         mainFrameLoaded = true;
         appWebView.removeCallbacks(remoteLoadTimeoutFallback);
-        String cacheBust = String.valueOf(System.currentTimeMillis());
-        appWebView.loadUrl(LOCAL_WEB_URL + "?v=" + cacheBust);
+        appWebView.loadUrl(LOCAL_WEB_URL);
     }
 
     private boolean hasInternetConnection() {
