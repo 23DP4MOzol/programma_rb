@@ -242,6 +242,7 @@ public class MainActivity extends AppCompatActivity {
                                 "  var getSn = function(u) { try { var p = u.split('?')[1]; if(!p) return null; var vars = p.split('&'); for(var i=0;i<vars.length;i++){var pair = vars[i].split('='); if(pair[0].toLowerCase().indexOf('serial') > -1) return decodeURIComponent(pair[1]); } return null; } catch(e){return null;} };" +
                                 "  var sn = getSn(window.location.href) || getSn('" + safeUrl + "');" +
                                 "  if (!sn) return;" +
+                                "  var deepQuery = function(s, r) { root = r || document; var n = root.querySelector(s); if (n) return n; var els = root.querySelectorAll('*'); for (var i=0; i<els.length; i++) { if (els[i].shadowRoot) { var deep = deepQuery(s, els[i].shadowRoot); if (deep) return deep; } } return null; };" +
                                 "  var attempt = 0;" +
                                 "  var poll = setInterval(function() {" +
                                 "    attempt++;" +
@@ -252,10 +253,11 @@ public class MainActivity extends AppCompatActivity {
                                 "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
                                 "    } else if (currUrl.indexOf('zebra') > -1) {" +
-                                "      input = document.querySelector('input[placeholder=\"Serial Number\"], input.slds-input, input[name=\"serial\"], input#serial, input.form-control, input[type=\"text\"]');" +
-                                "      var btns = document.querySelectorAll('button.slds-button_brand, button.slds-button, button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
-                                "      for (var i = 0; i < btns.length; i++) { if (btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('search') > -1) { btn = btns[i]; break; } }" +
-                                "      if (!btn && btns.length > 0) btn = btns[0];" +
+                                "      input = deepQuery('input.slds-input[placeholder=\"Serial Number\"], input.slds-input, input[name=\"serial\"]');" +
+                                "      var btns = document.querySelectorAll('button.slds-button_brand, button.slds-button');" +
+                                "      if (!btns || btns.length === 0) { btn = deepQuery('button.slds-button_brand, button.slds-button'); }" +
+                                "      if (!btn && btns) { for (var i = 0; i < btns.length; i++) { if (btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('search') > -1) { btn = btns[i]; break; } } }" +
+                                "      if (!btn && btns && btns.length > 0) btn = btns[0];" +
                                 "    } else if (currUrl.indexOf('lenovo') > -1) {" +
                                 "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +

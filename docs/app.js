@@ -2442,25 +2442,37 @@ function openWarrantyCheckerUrl(url) {
     return false;
   }
 
-  try {
-    const popup = window.open(parsed.toString(), "_blank", "noopener,noreferrer");
-    if (popup) {
-      try {
-        popup.opener = null;
-      } catch {
-        // ignore opener assignment failures
-      }
-      return true;
-    }
-  } catch {
-    // ignore and try same-tab fallback
-  }
+  // Detect if running inside Android WebView
+  const isWebView = window.navigator.userAgent.toLowerCase().includes('wv') || (window.external && window.external.notify) || window.android;
 
-  try {
-    window.location.assign(parsed.toString());
-    return true;
-  } catch {
-    return false;
+  if (isWebView) {
+    try {
+      window.location.assign(parsed.toString());
+      return true;
+    } catch {
+      return false;
+    }
+  } else {
+    try {
+      const popup = window.open(parsed.toString(), "_blank", "noopener,noreferrer");
+      if (popup) {
+        try {
+          popup.opener = null;
+        } catch {
+          // ignore opener assignment failures
+        }
+        return true;
+      }
+    } catch {
+      // ignore and try same-tab fallback
+    }
+
+    try {
+      window.location.assign(parsed.toString());
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
