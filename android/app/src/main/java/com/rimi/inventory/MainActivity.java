@@ -222,36 +222,39 @@ public class MainActivity extends AppCompatActivity {
                 if (url != null) {
                     if (url.contains("samsung.com") || url.contains("support.zebra.com") || 
                         url.contains("lenovo.com") || url.contains("support.hp.com")) {
+                        String safeUrl = url.replace("'", "\\'");
                         String js = "(function() {" +
-                                "  var urlParams = new URL(window.location.href).searchParams;" +
-                                "  var sn = urlParams.get('serial') || urlParams.get('serialNumber') || urlParams.get('serialnumber');" +
+                                "  var getSn = function(u) { try { return new URL(u).searchParams.get('serial') || new URL(u).searchParams.get('serialNumber') || new URL(u).searchParams.get('serialnumber'); } catch(e){return null;} };" +
+                                "  var sn = getSn(window.location.href) || getSn('" + safeUrl + "');" +
                                 "  if (!sn) return;" +
                                 "  var attempt = 0;" +
                                 "  var poll = setInterval(function() {" +
                                 "    attempt++;" +
-                                "    if (attempt > 20) { clearInterval(poll); return; }" +
+                                "    if (attempt > 40) { clearInterval(poll); return; }" +
                                 "    var input = null; var btn = null;" +
-                                "    if (window.location.href.indexOf('samsung') > -1) {" +
+                                "    var currUrl = window.location.href + '" + safeUrl + "';" +
+                                "    if (currUrl.indexOf('samsung') > -1) {" +
                                 "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber');" +
                                 "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
-                                "    } else if (window.location.href.indexOf('zebra') > -1) {" +
+                                "    } else if (currUrl.indexOf('zebra') > -1) {" +
                                 "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control');" +
                                 "      btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
-                                "    } else if (window.location.href.indexOf('lenovo') > -1) {" +
+                                "    } else if (currUrl.indexOf('lenovo') > -1) {" +
                                 "      input = document.querySelector('input[name=\"search-text\"], .search-input');" +
                                 "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
-                                "    } else if (window.location.href.indexOf('hp.com') > -1) {" +
+                                "    } else if (currUrl.indexOf('hp.com') > -1) {" +
                                 "      input = document.querySelector('input[name*=\"serial\"], input#wcc-serial-number, .js-wcc-serial-number');" +
-                                "      btn = null;" +
+                                "      btn = document.querySelector('button#wcc-submit, .js-wcc-submit, button[type=\"submit\"]');" +
                                 "    }" +
                                 "    if (input) {" +
                                 "      if (input.value !== sn) {" +
-                                "        input.value = sn;" +
+                                "        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');" +
+                                "        if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }" +
                                 "        input.dispatchEvent(new Event('input', {bubbles: true}));" +
                                 "        input.dispatchEvent(new Event('change', {bubbles: true}));" +
                                 "      }" +
                                 "      if (btn && !btn.disabled) {" +
-                                "        btn.click();" +
+                                "        setTimeout(function(){ btn.click(); }, 300);" +
                                 "        clearInterval(poll);" +
                                 "      }" +
                                 "    }" +
