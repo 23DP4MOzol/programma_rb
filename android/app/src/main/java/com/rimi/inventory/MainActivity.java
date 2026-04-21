@@ -127,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setDomStorageEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
 
@@ -152,12 +152,27 @@ public class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (appWebView != null && appWebView.canGoBack()) {
-                    appWebView.goBack();
-                } else {
-                    setEnabled(false);
-                    getOnBackPressedDispatcher().onBackPressed();
+                if (appWebView != null) {
+                    android.webkit.WebBackForwardList history = appWebView.copyBackForwardList();
+                    int currentIndex = history.getCurrentIndex();
+                    int targetIndex = -1;
+                    for (int i = currentIndex - 1; i >= 0; i--) {
+                        String hUrl = history.getItemAtIndex(i).getUrl();
+                        if (hUrl != null && (hUrl.contains("23dp4mozol.github.io/programma_rb") || hUrl.contains("file:///android_asset/web/"))) {
+                            targetIndex = i;
+                            break;
+                        }
+                    }
+                    if (targetIndex != -1) {
+                        appWebView.goBackOrForward(targetIndex - currentIndex);
+                        return;
+                    } else if (appWebView.canGoBack()) {
+                        appWebView.goBack();
+                        return;
+                    }
                 }
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
             }
         });
 
@@ -237,8 +252,10 @@ public class MainActivity extends AppCompatActivity {
                                 "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
                                 "    } else if (currUrl.indexOf('zebra') > -1) {" +
-                                "      input = document.querySelector('input[name=\"serial\"], input#serial, input.form-control, input[type=\"text\"]');" +
-                                "      btn = document.querySelector('button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
+                                "      input = document.querySelector('input[placeholder=\"Serial Number\"], input.slds-input, input[name=\"serial\"], input#serial, input.form-control, input[type=\"text\"]');" +
+                                "      var btns = document.querySelectorAll('button.slds-button_brand, button.slds-button, button[id*=\"btn-find\"], button.btn-primary[type=\"button\"], button[type=\"submit\"]');" +
+                                "      for (var i = 0; i < btns.length; i++) { if (btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('search') > -1) { btn = btns[i]; break; } }" +
+                                "      if (!btn && btns.length > 0) btn = btns[0];" +
                                 "    } else if (currUrl.indexOf('lenovo') > -1) {" +
                                 "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
                                 "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
