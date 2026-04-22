@@ -33,6 +33,9 @@ const WEB_DEVICE_CATALOG = {
   scanner: {
     Zebra: ["DS2208", "DS2278", "DS3608", "DS3678", "DS4608", "DS4678", "DS8108", "DS8178", "DS9308", "LI2208", "LS2208", "RS5100", "RS6100", "SE4710", "TC20", "TC21", "TC22", "TC25", "TC26", "TC51", "TC52", "TC53", "TC53-HC", "TC56", "TC57", "TC58", "TC58-HC", "TC70", "TC70x", "TC72", "TC75", "TC75x", "TC77", "MC40", "MC55", "MC67", "MC92N0", "MC93", "MC2200", "MC2700", "MC3300", "MC3300x", "MC3390x", "WS50"],
     Datalogic: ["Gryphon GD4500", "Gryphon GBT4500", "Gryphon GM4500", "QuickScan QD2430", "QuickScan QD2500", "PowerScan PD9630", "PowerScan PM9600", "PowerScan PBT9600", "Memor 10", "Memor 11", "Skorpio X4", "Skorpio X5", "Falcon X4", "Joya Touch"],
+    Apple: ["MacBook Air M1", "MacBook Air M2", "MacBook Air M3", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16", "Mac Mini", "Mac Studio", "iMac", "Mac Pro"],
+    Asus: ["ZenBook 14", "ZenBook Duo", "ZenBook Pro", "VivoBook 15", "VivoBook Pro", "ROG Zephyrus", "ROG Strix", "TUF Gaming", "ExpertBook"],
+    Dell: ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15", "Alienware m15", "Alienware x14"],
   },
   laptop: {
     Lenovo: ["ThinkPad T14", "ThinkPad T14s", "ThinkPad T15", "ThinkPad X1 Carbon", "ThinkPad X1 Yoga", "ThinkPad L14", "ThinkPad L15", "ThinkPad E14", "ThinkPad E15", "ThinkBook 14", "ThinkBook 15", "Yoga 7", "Yoga 9", "V15"],
