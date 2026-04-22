@@ -132,10 +132,6 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         
-        // Speed up rendering
-        appWebView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
-        settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
-
         appWebView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
@@ -167,10 +163,15 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                     if (targetIndex != -1) {
+                        appWebView.stopLoading();
+                        appWebView.evaluateJavascript("window.onbeforeunload = null; window.onunload = null;", null);
                         appWebView.goBackOrForward(targetIndex - currentIndex);
                         return;
-                    } else if (appWebView.canGoBack()) {
-                        appWebView.goBack();
+                    } else {
+                        appWebView.stopLoading();
+                        appWebView.evaluateJavascript("window.onbeforeunload = null; window.onunload = null;", null);
+                        appWebView.loadUrl(LOCAL_WEB_URL);
+                        appWebView.clearHistory();
                         return;
                     }
                 }
@@ -187,17 +188,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        localWebFallbackLoaded = false;
-        mainFrameLoaded = false;
+        localWebFallbackLoaded = true;
+        mainFrameLoaded = true;
         appWebView.removeCallbacks(remoteLoadTimeoutFallback);
-
-        if (!hasInternetConnection()) {
-            loadLocalWebFallback();
-            return;
-        }
-
-        appWebView.postDelayed(remoteLoadTimeoutFallback, WEB_REMOTE_TIMEOUT_MS);
-        appWebView.loadUrl(getString(R.string.web_app_url));
+        appWebView.loadUrl(LOCAL_WEB_URL);
     }
 
     private void loadLocalWebFallback() {
