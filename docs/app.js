@@ -32,19 +32,12 @@ const FALLBACK_PREFIX_HINTS = {
 const WEB_DEVICE_CATALOG = {
   scanner: {
     Zebra: ["DS2208", "DS2278", "DS3608", "DS3678", "DS4608", "DS4678", "DS8108", "DS8178", "DS9308", "LI2208", "LS2208", "RS5100", "RS6100", "SE4710", "TC20", "TC21", "TC22", "TC25", "TC26", "TC51", "TC52", "TC53", "TC53-HC", "TC56", "TC57", "TC58", "TC58-HC", "TC70", "TC70x", "TC72", "TC75", "TC75x", "TC77", "MC40", "MC55", "MC67", "MC92N0", "MC93", "MC2200", "MC2700", "MC3300", "MC3300x", "MC3390x", "WS50"],
-    Honeywell: ["Granit 1280i", "Granit 1910i", "Granit 1980i", "Hyperion 1300g", "Voyager 1200g", "Voyager 1250g", "Voyager 1450g", "Voyager 1470g", "Xenon 1900", "Xenon 1950g", "Xenon XP 1952g", "CT30 XP", "CT40", "CT45", "CT47", "CT60", "CT60 XP", "EDA51", "EDA52", "EDA61K", "ScanPal EDA10A", "Dolphin CK65"],
     Datalogic: ["Gryphon GD4500", "Gryphon GBT4500", "Gryphon GM4500", "QuickScan QD2430", "QuickScan QD2500", "PowerScan PD9630", "PowerScan PM9600", "PowerScan PBT9600", "Memor 10", "Memor 11", "Skorpio X4", "Skorpio X5", "Falcon X4", "Joya Touch"],
-    Unitech: ["HT330", "HT730", "EA520", "EA630", "EA660", "PA760", "MS852B", "MS926"],
-    Urovo: ["DT40", "DT50", "DT66", "RT40", "RT40S", "K319", "i6200S"],
-    Newland: ["MT90", "MT93", "MT95", "NLS-HR52", "NLS-HR3280", "NLS-FM430", "NLS-MT67"],
-    CipherLab: ["RS35", "RS36", "RK25", "RK95", "9700", "2500", "2504"],
-    Bluebird: ["EF401", "EF501", "S20", "RFR901", "BIP-1300"],
-    Chainway: ["C61", "C66", "C72", "C75", "R3", "R5"],
-    Panasonic: ["TOUGHBOOK N1", "TOUGHBOOK L1", "TOUGHBOOK A3"],
   },
   laptop: {
     Lenovo: ["ThinkPad T14", "ThinkPad T14s", "ThinkPad T15", "ThinkPad X1 Carbon", "ThinkPad X1 Yoga", "ThinkPad L14", "ThinkPad L15", "ThinkPad E14", "ThinkPad E15", "ThinkBook 14", "ThinkBook 15", "Yoga 7", "Yoga 9", "V15"],
-    Dell: ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15"],
+    Dell: ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15", "Alienware m15", "Alienware x14"],
+      Asus: ["ZenBook 14", "ZenBook Duo", "ZenBook Pro", "VivoBook 15", "VivoBook Pro", "ROG Zephyrus", "ROG Strix", "TUF Gaming", "ExpertBook"],
     HP: ["EliteBook 830 G8", "EliteBook 830 G9", "EliteBook 840 G8", "EliteBook 840 G9", "EliteBook 840 G10", "EliteBook 850 G8", "ProBook 440 G8", "ProBook 450 G8", "ProBook 440 G9", "ProBook 450 G9", "ZBook Firefly 14", "ZBook Power 15"],
     Apple: ["MacBook Air 13 M1", "MacBook Air 13 M2", "MacBook Air 15 M2", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16"],
     Acer: ["TravelMate P2", "TravelMate P4", "Aspire 5", "Swift 3", "Swift Go"],
@@ -57,9 +50,7 @@ const WEB_DEVICE_CATALOG = {
     Apple: ["iPad 9th Gen", "iPad 10th Gen", "iPad Air 5", "iPad Mini 6", "iPad Pro 11", "iPad Pro 12.9"],
     Lenovo: ["Tab M10", "Tab M11", "Tab P11", "Tab P12", "ThinkPad X12 Detachable"],
     Zebra: ["ET40", "ET45", "L10", "XSLATE L10"],
-    Honeywell: ["RT10A", "RT10W"],
     Microsoft: ["Surface Go 3", "Surface Go 4", "Surface Pro 9"],
-    Panasonic: ["TOUGHBOOK G2", "TOUGHBOOK A3", "TOUGHBOOK FZ-G1"],
     Getac: ["UX10", "K120", "F110"],
   },
   phone: {
@@ -72,7 +63,6 @@ const WEB_DEVICE_CATALOG = {
   },
   printer: {
     Zebra: ["ZD220", "ZD230", "ZD421", "ZD621", "ZT111", "ZT231", "ZT411", "ZT421", "GK420d", "GX430t", "QLn220", "QLn320", "ZQ310", "ZQ320", "ZQ511", "ZQ521", "ZR138"],
-    Honeywell: ["PC42t", "PC43d", "PD45", "PM45", "PX940", "RP2", "RP4", "MPD31D"],
     TSC: ["TE200", "TE210", "DA210", "MH241", "ML240P", "Alpha-30L"],
     SATO: ["WS2", "CL4NX Plus", "CT4-LX", "PW2NX", "PW4NX"],
     Brother: ["QL-820NWB", "QL-1110NWB", "RJ-2030", "RJ-2050", "TD-4420DN"],
@@ -119,6 +109,8 @@ const WARRANTY_PUBLIC_API_BY_MAKE = {
 };
 const WARRANTY_CHECKER_URL_BY_MAKE = {
   hp: "https://support.hp.com/us-en/check-warranty",
+    asus: "https://www.asus.com/us/support/warranty-status",
+    dell: "https://www.dell.com/support/home/en-us/?app=warranty",
   lenovo: "https://pcsupport.lenovo.com/us/en/warrantylookup#/",
   zebra: "https://support.zebra.com/warrantycheck",
   samsung: "https://www.samsung.com/us/support/warranty/",
@@ -126,6 +118,8 @@ const WARRANTY_CHECKER_URL_BY_MAKE = {
 };
 const WARRANTY_CHECKER_SERIAL_PARAM_BY_MAKE = {
   hp: "serialnumber",
+    asus: "serial",
+    dell: "serviceTag",
   lenovo: "serial",
   zebra: "serial",
   samsung: "serialNumber",

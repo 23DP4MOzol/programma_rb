@@ -152,26 +152,16 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void handleOnBackPressed() {
                 if (appWebView != null) {
-                    android.webkit.WebBackForwardList history = appWebView.copyBackForwardList();
-                    int currentIndex = history.getCurrentIndex();
-                    int targetIndex = -1;
-                    for (int i = currentIndex - 1; i >= 0; i--) {
-                        String hUrl = history.getItemAtIndex(i).getUrl();
-                        if (hUrl != null && (hUrl.contains("23dp4mozol.github.io/programma_rb") || hUrl.contains("file:///android_asset/web/"))) {
-                            targetIndex = i;
-                            break;
-                        }
-                    }
-                    if (targetIndex != -1) {
+                    String currentUrl = appWebView.getUrl();
+                    boolean isLocal = currentUrl != null && (currentUrl.contains("23dp4mozol.github.io") || currentUrl.contains("file:///android_asset/web/"));
+                    if (!isLocal) {
                         appWebView.stopLoading();
                         appWebView.evaluateJavascript("window.onbeforeunload = null; window.onunload = null;", null);
-                        appWebView.goBackOrForward(targetIndex - currentIndex);
-                        return;
-                    } else {
-                        appWebView.stopLoading();
-                        appWebView.evaluateJavascript("window.onbeforeunload = null; window.onunload = null;", null);
-                        appWebView.loadUrl(LOCAL_WEB_URL);
                         appWebView.clearHistory();
+                        appWebView.loadUrl(LOCAL_WEB_URL);
+                        return;
+                    } else if (appWebView.canGoBack()) {
+                        appWebView.goBack();
                         return;
                     }
                 }
@@ -231,56 +221,67 @@ public class MainActivity extends AppCompatActivity {
 
                 if (url != null) {
                     if (url.contains("samsung.com") || url.contains("support.zebra.com") || 
-                        url.contains("lenovo.com") || url.contains("support.hp.com")) {
+                        url.contains("lenovo.com") || url.contains("support.hp.com") || url.contains("apple.com") || url.contains("asus.com") || url.contains("dell.com")) {
                         String safeUrl = url.replace("'", "\\'");
-                        String js = "try { (function() {" +
-                                "  var getSn = function(u) { try { var p = u.split('?')[1]; if(!p) return null; var vars = p.split('&'); for(var i=0;i<vars.length;i++){var pair = vars[i].split('='); if(pair[0].toLowerCase().indexOf('serial') > -1) return decodeURIComponent(pair[1]); } return null; } catch(e){return null;} };" +
-                                "  var sn = getSn(window.location.href) || getSn('" + safeUrl + "');" +
-                                "  if (!sn) return;" +
-                                "  var deepQuery = function(s, r) { root = r || document; var n = root.querySelector(s); if (n) return n; var els = root.querySelectorAll('*'); for (var i=0; i<els.length; i++) { if (els[i].shadowRoot) { var deep = deepQuery(s, els[i].shadowRoot); if (deep) return deep; } } return null; };" +
-                                "  var attempt = 0;" +
-                                "  var poll = setInterval(function() {" +
-                                "    attempt++;" +
-                                "    if (attempt > 60) { clearInterval(poll); return; }" +
-                                "    var input = null; var btn = null;" +
-                                "    var currUrl = window.location.href + '" + safeUrl + "';" +
-                                "    if (currUrl.indexOf('samsung') > -1) {" +
-                                "      input = document.querySelector('input[name=\"serialNumber\"], input#serialNumber, input[type=\"text\"]');" +
-                                "      btn = document.querySelector('button[type=\"submit\"], .check-warranty-btn, #submit');" +
-                                "    } else if (currUrl.indexOf('zebra') > -1) {" +
-                                "      input = deepQuery('input.slds-input[placeholder=\"Serial Number\"], input.slds-input, input[name=\"serial\"]');" +
-                                "      var btns = document.querySelectorAll('button.slds-button_brand, button.slds-button');" +
-                                "      if (!btns || btns.length === 0) { btn = deepQuery('button.slds-button_brand, button.slds-button'); }" +
-                                "      if (!btn && btns) { for (var i = 0; i < btns.length; i++) { if (btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('search') > -1) { btn = btns[i]; break; } } }" +
-                                "      if (!btn && btns && btns.length > 0) btn = btns[0];" +
-                                "    } else if (currUrl.indexOf('lenovo') > -1) {" +
-                                "      input = document.querySelector('input[name=\"search-text\"], .search-input, input[type=\"text\"]');" +
-                                "      btn = document.querySelector('button[aria-label*=\"Search\"], .search-button');" +
-                                "    } else if (currUrl.indexOf('hp.com') > -1) {" +
-                                "      input = document.querySelector('input#inputtextpfinder, input[formcontrolname=\"serialNumber\"], input.hp-text-input');" +
-                                "      btn = document.querySelector('button#FindMyProduct, button.submitBtn');" +
-                                "    }" +
-                                "    if (input) {" +
-                                "      var isSet = false;" +
-                                "      if (input.value !== sn) {" +
-                                "        try { input.focus(); } catch(e){}" +
-                                "        try {" +
-                                "          var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');" +
-                                "          if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }" +
-                                "        } catch(e) { input.value = sn; }" +
-                                "        try { input.dispatchEvent(new Event('input', {bubbles: true})); } catch(e){}" +
-                                "        try { input.dispatchEvent(new Event('change', {bubbles: true})); } catch(e){}" +
-                                "      }" +
-                                "      try { isSet = (input.value === sn); } catch(e){}" +
-                                "      if (isSet && btn) {" +
-                                "        try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}" +
-                                "        setTimeout(function(){ try { btn.click(); } catch(e){} }, 800);" +
-                                "        clearInterval(poll);" +
-                                "      }" +
-                                "    }" +
-                                "  }, 500);" +
-                                "})(); } catch(e) {}";
-                        view.evaluateJavascript(js, null);
+                        String js = "try { (function() {\n" +
+                                  "  var getSn = function(u) { try { var p = u.split('?')[1]; if(!p) return null; var vars = p.split('&'); for(var i=0;i<vars.length;i++){var pair = vars[i].split('='); if(pair[0].toLowerCase().indexOf('serial') > -1) return decodeURIComponent(pair[1]); } return null; } catch(e){return null;} };\n" +
+                                  "  var sn = getSn(window.location.href) || getSn('" + safeUrl + "');\n" +
+                                  "  if (!sn) return;\n" +
+                                  "  var deepQuery = function(s, r) { root = r || document; var n = root.querySelector(s); if (n) return n; var els = root.querySelectorAll('*'); for (var i=0; i<els.length; i++) { if (els[i].shadowRoot) { var deep = deepQuery(s, els[i].shadowRoot); if (deep) return deep; } } return null; };\n" +
+                                  "  var attempt = 0;\n" +
+                                  "  var poll = setInterval(function() {\n" +
+                                  "    attempt++;\n" +
+                                  "    if (attempt > 60) { clearInterval(poll); return; }\n" +
+                                  "    var input = null; var btn = null;\n" +
+                                  "    var currUrl = window.location.href + '" + safeUrl + "';\n" +
+                                  "    if (currUrl.indexOf('samsung') > -1) {\n" +
+                                  "      input = deepQuery('input[name=\"serialNumber\"], input#serialNumber, input#imei, input[placeholder*=\"IMEI\"], input[placeholder*=\"Serial\"], input[placeholder*=\"serial\"], input[type=\"text\"]');\n" +
+                                  "      btn = deepQuery('button[type=\"submit\"], button.check-warranty-btn, button#submit, button.warranty-check-submit, button.sn-submit');\n" +
+                                  "      if (!btn) { var allBtns = document.querySelectorAll('button'); for(var i=0;i<allBtns.length;i++){ var t=allBtns[i].innerText?allBtns[i].innerText.toLowerCase():''; if(t.indexOf('check')>-1||t.indexOf('submit')>-1||t.indexOf('continue')>-1){ btn=allBtns[i]; break; } } }\n" +
+                                  "    } else if (currUrl.indexOf('zebra') > -1) {\n" +
+                                  "      input = deepQuery('input.slds-input[placeholder=\"Serial Number\"], input.slds-input, input[name=\"serial\"]');\n" +
+                                  "      var btns = document.querySelectorAll('button.slds-button_brand, button.slds-button');\n" +
+                                  "      if (!btns || btns.length === 0) { btn = deepQuery('button.slds-button_brand, button.slds-button'); }\n" +
+                                  "      if (!btn && btns) { for (var i = 0; i < btns.length; i++) { if (btns[i].innerText && btns[i].innerText.toLowerCase().indexOf('search') > -1) { btn = btns[i]; break; } } }\n" +
+                                  "      if (!btn && btns && btns.length > 0) btn = btns[0];\n" +
+                                  "    } else if (currUrl.indexOf('lenovo') > -1) {\n" +
+                                  "      input = deepQuery('input.button-placeholder__input, input[name=\"search-text\"], input#input-search, input.search-input, input.sn-search, input[placeholder*=\"Serial\"], input[type=\"text\"]');\n" +
+                                  "      btn = deepQuery('button.basic-search__suffix-btn, button[aria-label*=\"Search\"], button.search-button, button#search-btn, button[type=\"submit\"]');\n" +
+                                  "      if (!btn) { var allBtns = document.querySelectorAll('button'); for(var i=0;i<allBtns.length;i++){ var t=allBtns[i].innerText?allBtns[i].innerText.toLowerCase():''; if(t.indexOf('search')>-1||t.indexOf('submit')>-1||t.indexOf('check')>-1){ btn=allBtns[i]; break; } } }\n" +
+                                  "    } else if (currUrl.indexOf('apple.com') > -1) {\n" +
+                                  "      input = deepQuery('input[id*=\"serial\"], input[name*=\"serial\"], input[placeholder*=\"Serial\"], input[type=\"text\"]');\n" +
+                                  "      btn = deepQuery('button[id*=\"submit\"], button[type=\"submit\"], button');\n" +
+                                  "    } else if (currUrl.indexOf('asus.com') > -1) {\n" +
+                                  "      input = deepQuery('input[name=\"serialNumber\"], input[id*=\"serial\"], input[placeholder*=\"Serial\"], input[type=\"text\"]');\n" +
+                                  "      btn = deepQuery('button[type=\"submit\"], button[class*=\"search\"], button[class*=\"submit\"], button');\n" +
+                                  "    } else if (currUrl.indexOf('dell.com') > -1) {\n" +
+                                  "      input = deepQuery('input[id*=\"ServiceTag\"], input[id*=\"serial\"], input[name*=\"serial\"], input[placeholder*=\"Service Tag\"], input[placeholder*=\"Serial\"], input[type=\"text\"]');\n" +
+                                  "      btn = deepQuery('button[id*=\"submit\"], button[id*=\"search\"], button[class*=\"submit\"], button[class*=\"search\"], button');\n" +
+                                  "    } else if (currUrl.indexOf('hp.com') > -1) {\n" +
+                                  "      input = document.querySelector('input#inputtextpfinder, input[formcontrolname=\"serialNumber\"], input.hp-text-input');\n" +
+                                  "      btn = document.querySelector('button#FindMyProduct, button.submitBtn');\n" +
+                                  "    }\n" +
+                                  "    if (input) {\n" +
+                                  "      var isSet = false;\n" +
+                                  "      if (input.value !== sn) {\n" +
+                                  "        try { input.focus(); } catch(e){}\n" +
+                                  "        try {\n" +
+                                  "          var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');\n" +
+                                  "          if (nativeSetter && nativeSetter.set) { nativeSetter.set.call(input, sn); } else { input.value = sn; }\n" +
+                                  "        } catch(e) { input.value = sn; }\n" +
+                                  "        try { input.dispatchEvent(new Event('input', {bubbles: true})); } catch(e){}\n" +
+                                  "        try { input.dispatchEvent(new Event('change', {bubbles: true})); } catch(e){}\n" +
+                                  "      }\n" +
+                                  "      try { isSet = (input.value === sn); } catch(e){}\n" +
+                                  "      if (isSet && btn) {\n" +
+                                  "        try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}\n" +
+                                  "        setTimeout(function(){ try { btn.click(); } catch(e){} }, 800);\n" +
+                                  "        clearInterval(poll);\n" +
+                                  "      }\n" +
+                                  "    }\n" +
+                                  "  }, 500);\n" +
+                                  "})(); } catch(e) {}\n";
+                          view.evaluateJavascript(js, null);
                     }
                 }
             }
