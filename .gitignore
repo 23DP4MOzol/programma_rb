@@ -6,3 +6,10 @@ inventory*.db
 # Optional local branding assets (do not commit company logos)
 assets/logo.*
 assets/icon.ico
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
