@@ -44,6 +44,8 @@ SERIAL_PREFIX_MAP: dict[str, tuple[str, str, str]] = {
     "18": ("scanner", "Zebra", "Zebra TC51"),
     "21": ("scanner", "Zebra", "Zebra TC52"),
     "40": ("scanner", "Zebra", "Zebra MC3300"),
+    "PF": ("laptop",  "Lenovo", "Lenovo ThinkPad"), # Lenovo laptops usually start with PF, PC, MJ
+    "PC": ("laptop",  "Lenovo", "Lenovo ThinkPad"),
     "5CG21": ("laptop", "HP", "HP EliteBook 830 G8"),
     "5CG32": ("laptop", "HP", "HP EliteBook 840 G10"),
     "5CG": ("laptop", "HP", "HP EliteBook"),
@@ -53,35 +55,2121 @@ DEVICE_CATALOG: dict[str, dict[str, list[str]]] = {
     "scanner": {
         "Zebra": ["DS2208", "DS2278", "DS3608", "DS3678", "DS4608", "DS4678", "DS8108", "DS8178", "DS9308", "LI2208", "LS2208", "RS5100", "RS6100", "SE4710", "TC20", "TC21", "TC22", "TC25", "TC26", "TC51", "TC52", "TC53", "TC53-HC", "TC56", "TC57", "TC58", "TC58-HC", "TC70", "TC70x", "TC72", "TC75", "TC75x", "TC77", "MC40", "MC55", "MC67", "MC92N0", "MC93", "MC2200", "MC2700", "MC3300", "MC3300x", "MC3390x", "WS50"],
         "Datalogic": ["Gryphon GD4500", "Gryphon GBT4500", "Gryphon GM4500", "QuickScan QD2430", "QuickScan QD2500", "PowerScan PD9630", "PowerScan PM9600", "PowerScan PBT9600", "Memor 10", "Memor 11", "Skorpio X4", "Skorpio X5", "Falcon X4", "Joya Touch"],
-        "Apple": ["MacBook Air M1", "MacBook Air M2", "MacBook Air M3", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16", "Mac Mini", "Mac Studio", "iMac", "Mac Pro"],
-        "Asus": ["ZenBook 14", "ZenBook Duo", "ZenBook Pro", "VivoBook 15", "VivoBook Pro", "ROG Zephyrus", "ROG Strix", "TUF Gaming", "ExpertBook"],
-        "Dell": ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15", "Alienware m15", "Alienware x14"]
     },
     "laptop": {
-        "Dell": ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15", "Alienware m15", "Alienware x14"],
-        "Asus": ["ZenBook 14", "ZenBook Duo", "ZenBook Pro", "VivoBook 15", "VivoBook Pro", "ROG Zephyrus", "ROG Strix", "TUF Gaming", "ExpertBook"],
+        "Lenovo": ["ThinkPad T14", "ThinkPad T14s", "ThinkPad T15", "ThinkPad X1 Carbon", "ThinkPad X1 Yoga", "ThinkPad L14", "ThinkPad L15", "ThinkPad E14", "ThinkPad E15", "ThinkBook 14", "ThinkBook 15", "Yoga 7", "Yoga 9", "V15"],
+        "Dell": ["Latitude 3420", "Latitude 5430", "Latitude 5440", "Latitude 7330", "Latitude 7430", "Latitude 7440", "XPS 13", "XPS 15", "Precision 3570", "Precision 3580", "Vostro 3520", "Inspiron 15"],
         "HP": ["EliteBook 830 G8", "EliteBook 830 G9", "EliteBook 840 G8", "EliteBook 840 G9", "EliteBook 840 G10", "EliteBook 850 G8", "ProBook 440 G8", "ProBook 450 G8", "ProBook 440 G9", "ProBook 450 G9", "ZBook Firefly 14", "ZBook Power 15"],
-        "Apple": ["MacBook Air 13 M1", "MacBook Air 13 M2", "MacBook Air 15 M2", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16"]
+        "Apple": ["MacBook Air 13 M1", "MacBook Air 13 M2", "MacBook Air 15 M2", "MacBook Pro 13", "MacBook Pro 14", "MacBook Pro 16"],
+        "ASUS": ["ExpertBook B1", "ExpertBook B5", "ZenBook 14", "VivoBook 15", "ROG Zephyrus G14"],
     },
     "tablet": {
         "Samsung": ["Galaxy Tab A7", "Galaxy Tab A8", "Galaxy Tab S6 Lite", "Galaxy Tab S7", "Galaxy Tab S8", "Galaxy Tab S9", "Galaxy Tab Active3", "Galaxy Tab Active4 Pro", "Galaxy Tab Active5"],
         "Apple": ["iPad 9th Gen", "iPad 10th Gen", "iPad Air 5", "iPad Mini 6", "iPad Pro 11", "iPad Pro 12.9"],
-        "Zebra": ["ET40", "ET45", "L10", "XSLATE L10"]
+        "Lenovo": ["Tab M10", "Tab M11", "Tab P11", "Tab P12", "ThinkPad X12 Detachable"],
+        "Zebra": ["ET40", "ET45", "L10", "XSLATE L10"],
     },
     "phone": {
         "Samsung": ["Galaxy S21", "Galaxy S22", "Galaxy S23", "Galaxy S24", "Galaxy A54", "Galaxy A55", "Galaxy XCover 5", "Galaxy XCover 6 Pro", "Galaxy XCover 7"],
-        "Apple": ["iPhone 11", "iPhone 12", "iPhone 13", "iPhone 14", "iPhone 15", "iPhone 16", "iPhone SE"]
+        "Apple": ["iPhone 11", "iPhone 12", "iPhone 13", "iPhone 14", "iPhone 15", "iPhone 16", "iPhone SE"],
+        "Google": ["Pixel 6", "Pixel 7", "Pixel 8", "Pixel 8a", "Pixel Fold"],
+        "Xiaomi": ["Redmi Note 12", "Redmi Note 13", "Xiaomi 13T", "Xiaomi 14"],
     },
     "printer": {
-        "Zebra": ["ZD220", "ZD230", "ZD421", "ZD621", "ZT111", "ZT231", "ZT411", "ZT421", "GK420d", "GX430t", "QLn220", "QLn320", "ZQ310", "ZQ320", "ZQ511", "ZQ521", "ZR138"]
+        "Zebra": ["ZD220", "ZD230", "ZD421", "ZD621", "ZT111", "ZT231", "ZT411", "ZT421", "GK420d", "GX430t", "QLn220", "QLn320", "ZQ310", "ZQ320", "ZQ511", "ZQ521", "ZR138"],
     },
     "other": {
         "HP": ["Engage One", "Engage Flex Pro", "RP9"],
         "Datalogic": ["Magellan 1500i", "Magellan 3410VSi", "Joya Touch A6"],
-        "Zebra": ["CC600", "CC6000", "DS9308 Scale", "MP7000"]
-    }
+        "Zebra": ["CC600", "CC6000", "DS9308 Scale", "MP7000"],
+        "Other": ["POS Terminal", "Cash Drawer", "Customer Display", "Label Applicator", "Scale", "Kiosk", "RFID Reader", "Access Point", "Docking Station", "Charging Cradle"],
+    },
 }
-WARRANTY_MARKER)
+
+WARRANTY_MARKER = "[WARRANTY]"
+
+# Specific serial prefixes can override generic device-type warranty defaults.
+WARRANTY_MONTHS_BY_PREFIX: dict[str, int] = {
+    "5CG32": 36,
+    "5CG21": 36,
+    "5CG": 36,
+    "PF": 36,
+    "PC": 36,
+    "40": 36,
+    "24": 36,
+    "21": 36,
+    "20": 36,
+    "19": 36,
+    "18": 36,
+    "17": 36,
+}
+
+WARRANTY_MONTHS_BY_TYPE: dict[str, int] = {
+    "scanner": 36,
+    "laptop": 36,
+    "tablet": 24,
+    "phone": 24,
+    "printer": 24,
+    "other": 12,
+}
+
+WARRANTY_WEB_CHECKER_BY_MAKE: dict[str, dict[str, str]] = {
+    "hp": {"url": "https://support.hp.com/us-en/check-warranty"},
+    "lenovo": {"url": "https://pcsupport.lenovo.com/us/en/warrantylookup#/"},
+    "zebra": {"url": "https://support.zebra.com/warrantycheck"},
+    "samsung": {"url": "https://www.samsung.com/us/support/warranty/"},
+    "apple": {"url": "https://checkcoverage.apple.com/"},
+    "dell": {"url": "https://www.dell.com/support/home/en-us/product-support/servicetag/"},
+    "acer": {"url": "https://www.acer.com/us-en/support/warranty"},
+    "asus": {"url": "https://www.asus.com/support/warranty-status-inquiry/"},
+}
+WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE: dict[str, str] = {
+    "hp": "serialnumber",
+    "lenovo": "serial",
+    "zebra": "serial",
+    "samsung": "serialNumber",
+    "apple": "sn",
+    "dell": "servicetag",
+    "acer": "sn",
+    "asus": "sn",
+    }
+WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC = 25
+WARRANTY_WEB_AUTOMATION_HEADLESS = True
+WARRANTY_WEB_RESULT_HINTS: tuple[str, ...] = (
+    "warranty",
+    "coverage",
+    "expires",
+    "expired",
+    "in warranty",
+    "out of warranty",
+    "valid through",
+    "applecare",
+    "care pack",
+)
+WARRANTY_WEB_AUTOMATION_RULES_BY_MAKE: dict[str, dict[str, object]] = {
+    "hp": {
+        "serial_selectors": (
+            "input[id*='serial']",
+            "input[name*='serial']",
+            "input[placeholder*='Serial']",
+            "input[aria-label*='Serial']",
+        ),
+        "submit_selectors": (
+            "button[type='submit']",
+            "button[id*='submit']",
+            "button[aria-label*='check']",
+            "button[aria-label*='search']",
+        ),
+        "result_selectors": (
+            "[id*='warranty']",
+            "[class*='warranty']",
+            "[data-testid*='warranty']",
+            "[id*='result']",
+        ),
+        "wait_tokens": (
+            "warranty",
+            "care pack",
+            "expired",
+            "active",
+        ),
+    },
+    "lenovo": {
+        "serial_selectors": (
+            "input[id*='serial']",
+            "input[name*='serial']",
+            "input[placeholder*='Serial']",
+            "input[aria-label*='Serial']",
+            "input[id*='machine']",
+        ),
+        "submit_selectors": (
+            "button[type='submit']",
+            "button[id*='search']",
+            "button[aria-label*='search']",
+            "button[aria-label*='submit']",
+        ),
+        "result_selectors": (
+            "[id*='warranty']",
+            "[class*='warranty']",
+            "[class*='result']",
+            "[data-testid*='warranty']",
+        ),
+        "wait_tokens": (
+            "warranty",
+            "start date",
+            "end date",
+            "expired",
+            "active",
+        ),
+    },
+    "zebra": {
+        "serial_selectors": (
+            "input[id*='serial']",
+            "input[name*='serial']",
+            "input[placeholder*='Serial']",
+            "input[aria-label*='Serial']",
+        ),
+        "submit_selectors": (
+            "button[type='submit']",
+            "button[id*='search']",
+            "button[aria-label*='search']",
+            "button[aria-label*='check']",
+        ),
+        "result_selectors": (
+            "[id*='warranty']",
+            "[class*='warranty']",
+            "[class*='result']",
+            "[data-testid*='warranty']",
+        ),
+        "wait_tokens": (
+            "warranty",
+            "in warranty",
+            "out of warranty",
+            "expired",
+            "service",
+        ),
+    },
+    "samsung": {
+        "serial_selectors": (
+            "input[id*='serial']",
+            "input[name*='serial']",
+            "input[placeholder*='Serial']",
+            "input[aria-label*='Serial']",
+        ),
+        "submit_selectors": (
+            "button[type='submit']",
+            "button[id*='search']",
+            "button[aria-label*='search']",
+            "button[aria-label*='check']",
+        ),
+        "result_selectors": (
+            "[id*='warranty']",
+            "[class*='warranty']",
+            "[class*='result']",
+            "[data-testid*='warranty']",
+        ),
+        "wait_tokens": (
+            "warranty",
+            "coverage",
+            "parts",
+            "labor",
+            "expired",
+            "active",
+        ),
+    },
+    "apple": {
+        "serial_selectors": (
+            "input[id*='serial']",
+            "input[name*='serial']",
+            "input[placeholder*='serial']",
+            "input[aria-label*='serial']",
+        ),
+        "submit_selectors": (
+            "button[type='submit']",
+            "button[id*='submit']",
+            "button[aria-label*='continue']",
+            "button[aria-label*='check']",
+        ),
+        "result_selectors": (
+            "[id*='coverage']",
+            "[class*='coverage']",
+            "[id*='warranty']",
+            "[class*='warranty']",
+            "[data-testid*='coverage']",
+        ),
+        "wait_tokens": (
+            "coverage",
+            "applecare",
+            "repairs and service",
+            "valid",
+            "expired",
+        ),
+    },
+}
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(candidate).date()
+    except Exception:
+        return None
+
+
+def _add_months(base_date: date, months: int) -> date:
+    if months <= 0:
+        return base_date
+
+    month_index = base_date.month - 1 + months
+    year = base_date.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    day = min(base_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _claim_to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return text in {"true", "1", "yes"}
+    return False
+
+
+def _decode_jwt_claims(token: str) -> dict[str, object]:
+    parts = str(token or "").split(".")
+    if len(parts) < 2:
+        return {}
+
+    payload = parts[1].replace("-", "+").replace("_", "/")
+    padding = "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.b64decode(payload + padding)
+        parsed = json.loads(decoded.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+def _try_load_photo_image(path: Path) -> tk.PhotoImage | None:
+    try:
+        if not path.exists():
+            return None
+        return tk.PhotoImage(file=str(path))
+    except Exception:
+        return None
+
+
+def _fit_photo_image(img: tk.PhotoImage, *, max_w: int, max_h: int) -> tk.PhotoImage:
+    try:
+        w = int(img.width())
+        h = int(img.height())
+        if w <= 0 or h <= 0:
+            return img
+
+        factor_w = (w + max_w - 1) // max_w
+        factor_h = (h + max_h - 1) // max_h
+        factor = max(1, factor_w, factor_h)
+        if factor <= 1:
+            return img
+        return img.subsample(factor, factor)
+    except Exception:
+        return img
+
+
+def _try_load_logo_image(path: Path, *, max_w: int, max_h: int) -> tk.PhotoImage | None:
+    """Load logo with high-quality resize (Pillow if available).
+
+    Tk's native subsample can look jagged; Pillow resize looks much cleaner.
+    """
+
+    if not path.exists():
+        return None
+
+    try:
+        from PIL import Image, ImageTk  # type: ignore
+
+        img = Image.open(path).convert("RGBA")
+
+        # If the logo is a banner with a solid-ish background (like a red rectangle),
+        # remove that background so it looks clean on the header.
+        try:
+            alpha = img.getchannel("A")
+            mins, maxs = alpha.getextrema()
+            has_transparency = mins < 255
+
+            if not has_transparency:
+                w, h = img.size
+                # Sample corners to estimate background color.
+                corners = [
+                    img.getpixel((0, 0)),
+                    img.getpixel((w - 1, 0)),
+                    img.getpixel((0, h - 1)),
+                    img.getpixel((w - 1, h - 1)),
+                ]
+                bg_r = sum(p[0] for p in corners) // 4
+                bg_g = sum(p[1] for p in corners) // 4
+                bg_b = sum(p[2] for p in corners) // 4
+
+                def near_bg(r: int, g: int, b: int) -> bool:
+                    # Tuned for typical "red header" banners with slight gradients.
+                    return abs(r - bg_r) + abs(g - bg_g) + abs(b - bg_b) <= 80
+
+                pixels = list(img.getdata())
+                new: list[tuple[int, int, int, int]] = []
+                for r, g, b, a in pixels:
+                    if a > 240 and near_bg(r, g, b):
+                        new.append((r, g, b, 0))
+                    else:
+                        new.append((r, g, b, a))
+                img.putdata(new)
+
+                bbox = img.getchannel("A").getbbox()
+                if bbox:
+                    img = img.crop(bbox)
+        except Exception:
+            pass
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            return None
+
+        scale = min(max_w / w, max_h / h, 1.0)
+        if scale < 1.0:
+            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        img = _try_load_photo_image(path)
+        if img is None:
+            return None
+        return _fit_photo_image(img, max_w=max_w, max_h=max_h)
+
+
+def _configure_windows_dpi(root: tk.Tk) -> None:
+    """Best-effort DPI awareness for crisp rendering on Windows."""
+
+    try:
+        import ctypes
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor DPI aware
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
+        dpi = 96
+        try:
+            dpi = int(ctypes.windll.user32.GetDpiForSystem())
+        except Exception:
+            pass
+
+        # Tk scaling uses pixels per point (1 point = 1/72 inch)
+        root.tk.call("tk", "scaling", dpi / 72)
+    except Exception:
+        pass
+
+
+class DeviceEditor(tk.Toplevel):
+    def __init__(self, app: "DesktopApp", serial: str) -> None:
+        super().__init__(app.root)
+        self.app = app
+        self.serial = serial
+        self._created_at: str | None = None
+
+        self.app._register_editor(self)
+
+        self.title(app.tr("desktop_editor_title", serial=serial))
+        self.geometry("560x520")
+        self.minsize(520, 460)
+        self.transient(app.root)
+
+        self._build_ui()
+        self._load_device()
+
+    def _build_ui(self) -> None:
+        outer = ttk.Frame(self, padding=14, style="Body.TFrame")
+        outer.pack(fill=tk.BOTH, expand=True)
+        outer.columnconfigure(0, weight=1)
+
+        self.title_lbl = ttk.Label(outer, text="", style="Section.TLabel")
+        self.title_lbl.grid(row=0, column=0, sticky="w")
+
+        form = ttk.Frame(outer, padding=14, style="Card.TFrame", relief="solid", borderwidth=1)
+        form.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        form.columnconfigure(0, weight=1)
+        form.columnconfigure(1, weight=1)
+
+        self.serial_var = tk.StringVar(value=self.serial)
+        self.type_var = tk.StringVar(value=self.app._display_value("scanner", kind="type"))
+        self.model_var = tk.StringVar()
+        self.from_store_var = tk.StringVar()
+        self.to_store_var = tk.StringVar()
+        self.status_var = tk.StringVar(value=self.app._display_value("RECEIVED", kind="status"))
+        self.comment_var = tk.StringVar()
+
+        self.serial_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.serial_lbl.grid(row=0, column=0, sticky="w")
+        self.serial_entry = ttk.Entry(form, textvariable=self.serial_var, state="readonly", style="App.TEntry")
+        self.serial_entry.grid(row=1, column=0, sticky="ew")
+
+        self.type_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.type_lbl.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.type_combo = ttk.Combobox(
+            form,
+            textvariable=self.type_var,
+            values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES],
+            state="readonly",
+            style="App.TCombobox",
+        )
+        self.type_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
+        self.model_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.model_lbl.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.model_entry = ttk.Entry(form, textvariable=self.model_var, style="App.TEntry")
+        self.model_entry.grid(row=3, column=0, sticky="ew")
+
+        self.status_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.status_lbl.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self.status_combo = ttk.Combobox(
+            form,
+            textvariable=self.status_var,
+            values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)],
+            state="readonly",
+            style="App.TCombobox",
+        )
+        self.status_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+
+        self.from_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.from_lbl.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.from_entry = ttk.Entry(form, textvariable=self.from_store_var, style="App.TEntry")
+        self.from_entry.grid(row=5, column=0, sticky="ew")
+
+        self.to_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.to_lbl.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self.to_entry = ttk.Entry(form, textvariable=self.to_store_var, style="App.TEntry")
+        self.to_entry.grid(row=5, column=1, sticky="ew", padx=(8, 0))
+
+        self.comment_lbl = ttk.Label(form, text="", style="Label.TLabel")
+        self.comment_lbl.grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.comment_entry = ttk.Entry(form, textvariable=self.comment_var, style="App.TEntry")
+        self.comment_entry.grid(row=7, column=0, columnspan=2, sticky="ew")
+
+        btns = ttk.Frame(outer, style="Body.TFrame")
+        btns.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        btns.columnconfigure(2, weight=1)
+        btns.columnconfigure(3, weight=1)
+
+        self.save_btn = ttk.Button(btns, command=self._on_save, style="Primary.TButton")
+        self.save_btn.grid(row=0, column=0, sticky="ew")
+
+        self.delete_btn = ttk.Button(btns, command=self._on_delete, style="Danger.TButton")
+        self.delete_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        if not self.app._admin_login_active:
+            self.delete_btn.configure(state="disabled")
+
+        self.close_btn = ttk.Button(btns, command=self.destroy, style="Secondary.TButton")
+        self.close_btn.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        self.warranty_btn = ttk.Button(btns, command=self._on_check_warranty, style="Secondary.TButton")
+        self.warranty_btn.grid(row=0, column=3, sticky="ew", padx=(8, 0))
+
+        self._apply_i18n()
+
+    def _apply_i18n(self) -> None:
+        # Preserve current codes while updating localized display
+        type_code = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        status_code = self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED"
+
+        self.title(self.app.tr("desktop_editor_title", serial=self.serial))
+
+        self.title_lbl.config(text=self.app.tr("desktop_editor_title", serial=self.serial))
+        self.serial_lbl.config(text=self.app.tr("web_serial"))
+        self.type_lbl.config(text=self.app.tr("web_type"))
+        self.model_lbl.config(text=self.app.tr("web_model"))
+        self.status_lbl.config(text=self.app.tr("web_status"))
+        self.from_lbl.config(text=self.app.tr("web_from_store"))
+        self.to_lbl.config(text=self.app.tr("web_to_store"))
+        self.comment_lbl.config(text=self.app.tr("web_comment"))
+        self.save_btn.config(text=self.app.tr("desktop_save"))
+        self.delete_btn.config(text=self.app.tr("web_delete"))
+        self.close_btn.config(text=self.app.tr("desktop_close"))
+        self.warranty_btn.config(text=self.app.tr("desktop_warranty_check_button"))
+
+        self.type_combo.configure(values=[self.app._display_value(tp, kind="type") for tp in DEVICE_TYPES])
+        self.status_combo.configure(values=[self.app._display_value(st, kind="status") for st in sorted(ALLOWED_STATUSES)])
+
+        self.type_var.set(self.app._display_value(type_code, kind="type"))
+        self.status_var.set(self.app._display_value(status_code, kind="status"))
+
+    def _on_check_warranty(self) -> None:
+        serial = self.serial.strip()
+        model_val = self.model_var.get().strip()
+        
+        make = self.app._normalize_make_for_warranty_checker(model_val)
+        if not make or make == "other":
+            make = "hp"
+
+        self.app.serial_var.set(serial)
+        self.app.make_var.set(make)
+        type_code = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
+        self.app.type_var.set(type_code)
+        
+        self.app.check_warranty_from_web_checker()
+        self.destroy()
+
+    def _load_device(self) -> None:
+        d = self.app.db.get_device(self.serial)
+        if not d:
+            messagebox.showerror(self.app.tr("desktop_error_title"), self.app.tr("not_found"), parent=self)
+            self.destroy()
+            return
+
+        self.type_var.set(self.app._display_value(d.device_type if d.device_type in DEVICE_TYPES else "other", kind="type"))
+        self.model_var.set(d.model or "")
+        self.from_store_var.set(d.from_store or "")
+        self.to_store_var.set(d.to_store or "")
+        self.status_var.set(self.app._display_value(d.status or "RECEIVED", kind="status"))
+        self._created_at = d.created_at
+        self.comment_var.set(
+            self.app._comment_with_warranty_preview(
+                d.comment,
+                serial=d.serial,
+                device_type=d.device_type or "other",
+                created_at=d.created_at,
+            )
+        )
+
+    def _on_save(self) -> None:
+        try:
+            if not self.app._require_pin():
+                return
+            device_type = self.app._code_from_display(self.type_var.get(), kind="type") or "scanner"
+            fields = {
+                "device_type": device_type,
+                "model": self.model_var.get().strip() or None,
+                "from_store": self.from_store_var.get().strip() or None,
+                "to_store": self.to_store_var.get().strip() or None,
+                "status": self.app._code_from_display(self.status_var.get(), kind="status") or "RECEIVED",
+                "comment": self.app._prepare_comment_for_persist(
+                    self.comment_var.get(),
+                    serial=self.serial,
+                    device_type=device_type,
+                    created_at=self._created_at,
+                    allow_admin_override=self.app._admin_login_active,
+                ),
+            }
+            changed = self.app.db.update_device(
+                self.serial,
+                **fields,
+            )
+            if not changed:
+                raise ValueError(self.app.tr("not_found_or_no_fields"))
+
+            self.app._selected_serial = self.serial
+            self.app.refresh_list(select_serial=self.serial)
+            self.app._on_row_selected()
+            self.destroy()
+        except Exception as exc:  # noqa: BLE001
+            if self.app._is_offline_error(exc):
+                self.app._enqueue_op({"action": "update", "serial": self.serial, "fields": fields})
+                messagebox.showinfo(self.app.tr("desktop_config_title"), "Offline: queued update", parent=self)
+                self.destroy()
+                return
+            messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
+
+    def _on_delete(self) -> None:
+        try:
+            if not self.app._require_admin_delete():
+                return
+            if not self.app._require_pin():
+                return
+            msg = self.app.tr("web_confirm_delete", serial=self.serial)
+            if not messagebox.askyesno(self.app.tr("desktop_confirm_title"), msg, parent=self):
+                return
+
+            deleted = self.app.db.delete_device(self.serial)
+            if not deleted:
+                raise ValueError(self.app.tr("not_found"))
+
+            if self.app._selected_serial == self.serial:
+                self.app.clear_form()
+            self.app.refresh_list()
+            self.destroy()
+        except Exception as exc:  # noqa: BLE001
+            if self.app._is_offline_error(exc):
+                self.app._enqueue_op({"action": "delete", "serial": self.serial})
+                messagebox.showinfo(self.app.tr("desktop_config_title"), "Offline: queued delete", parent=self)
+                self.destroy()
+                return
+            messagebox.showerror(self.app.tr("desktop_error_title"), str(exc), parent=self)
+
+
+class DesktopApp:
+    def __init__(self, root: tk.Tk, *, db_path: str | Path = "inventory.db", lang: str = "lv") -> None:
+        self.root = root
+        raw_db_path = Path(db_path)
+        if not raw_db_path.is_absolute():
+            raw_db_path = (Path(__file__).resolve().parent / raw_db_path).resolve()
+        self.db_path = str(raw_db_path)
+        self.lang = lang
+
+        self._config_path = raw_db_path.with_name("app_config.json")
+        self._pending_ops_path = raw_db_path.with_name("pending_ops.json")
+        self._config_defaults = {
+            "supabase_url": "https://qvlduxpdcwgmokjdsdfp.supabase.co",
+            "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bGR1eHBkY3dnbW9ramRzZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzk5MzMsImV4cCI6MjA5MDUxNTkzM30.3HiNhJKLrMmc0I11Y7qMS73fi0b1XUaEorTAL6wJOsk",
+            "lang": self.lang,
+            "prefix_rules": "",
+            "warranty_remote_api_url": "",
+            "warranty_remote_api_key": "",
+            "warranty_remote_api_timeout_sec": 25,
+            "admin_email": "",
+            "admin_access_token": "",
+            "admin_refresh_token": "",
+            "admin_remember_device": False,
+        }
+        self.config = self._load_config()
+        self.lang = (self.config.get("lang") or self.lang).lower()
+        self._custom_prefix_rules = self._load_prefix_rules()
+
+        self._admin_email = ""
+        self._auth_access_token = ""
+        self._auth_refresh_token = ""
+        self._remember_admin_device = _claim_to_bool(self.config.get("admin_remember_device"))
+        if self._remember_admin_device:
+            self._admin_email = str(self.config.get("admin_email") or "").strip()
+            self._auth_access_token = str(self.config.get("admin_access_token") or "").strip()
+            self._auth_refresh_token = str(self.config.get("admin_refresh_token") or "").strip()
+        self._admin_login_active = bool(self._auth_access_token)
+
+        self._auth_role = "anon"
+        self._is_device_admin = False
+        self._refresh_auth_claims()
+
+        self.translations = load_translations()
+        self._rebuild_display_maps()
+        self.db = InventoryDB(
+            self.db_path,
+            url=self.config.get("supabase_url"),
+            key=self.config.get("supabase_key"),
+        )
+        self.db.init_db()
+        self._restore_admin_session_from_config()
+
+        self._selected_serial: str | None = None
+        self._selected_updated_at: str | None = None
+        self._selected_created_at: str | None = None
+        self._editors: set[DeviceEditor] = set()
+        self.theme: str = "light"  # "light" | "dark"
+        self._filter_refresh_job: str | None = None
+        self._sort_col: str | None = None
+        self._sort_desc: bool = False
+        self._focus_lock_job: str | None = None
+        self._last_sync_at: str | None = None
+        self._warranty_lookup_in_progress = False
+
+        self._ensure_local_remote_worker_running_on_app_start()
+
+        self._build_ui()
+        self._schedule_scanner_focus_lock()
+        self._apply_role_controls()
+        self._apply_i18n()
+        self.refresh_list()
+
+        synced, remaining = self._flush_pending_ops()
+        if synced or remaining:
+            self._write_result({"ok": True, "sync": synced, "pending": remaining})
+
+    # ---------- i18n ----------
+
+    def tr(self, key: str, **kwargs: object) -> str:
+        return t(self.translations, key, lang=self.lang, **kwargs)
+
+    def _status_key(self, code: str) -> str:
+        return f"status_{code.lower()}"
+
+    def _type_key(self, code: str) -> str:
+        return f"type_{code.lower()}"
+
+    def _rebuild_display_maps(self) -> None:
+        # Code -> display should be in current language.
+        self._status_code_to_display = {}
+        for code in sorted(ALLOWED_STATUSES):
+            disp = self.tr(self._status_key(code)) or code
+            self._status_code_to_display[code] = disp
+
+        self._type_code_to_display = {}
+        for code in DEVICE_TYPES:
+            disp = self.tr(self._type_key(code)) or code
+            self._type_code_to_display[code] = disp
+
+        # Display -> code must accept BOTH LV/EN labels (and legacy "CODE — label")
+        # so switching language never breaks filtering/validation.
+        self._status_display_to_code = {}
+        for code in sorted(ALLOWED_STATUSES):
+            self._status_display_to_code[code] = code
+            self._status_display_to_code[code.upper()] = code
+            # Current language
+            cur_disp = self._status_code_to_display.get(code, code)
+            self._status_display_to_code[cur_disp] = code
+            self._status_display_to_code[f"{code} — {cur_disp}"] = code
+            # Other languages
+            for _lang, table in (self.translations or {}).items():
+                disp = (table or {}).get(self._status_key(code))
+                if disp:
+                    self._status_display_to_code[disp] = code
+                    self._status_display_to_code[f"{code} — {disp}"] = code
+
+        self._type_display_to_code = {}
+        for code in DEVICE_TYPES:
+            self._type_display_to_code[code] = code
+            self._type_display_to_code[code.lower()] = code
+            self._type_display_to_code[code.upper()] = code
+            cur_disp = self._type_code_to_display.get(code, code)
+            self._type_display_to_code[cur_disp] = code
+            self._type_display_to_code[f"{code} — {cur_disp}"] = code
+            for _lang, table in (self.translations or {}).items():
+                disp = (table or {}).get(self._type_key(code))
+                if disp:
+                    self._type_display_to_code[disp] = code
+                    self._type_display_to_code[f"{code} — {disp}"] = code
+
+    def _display_value(self, code: str, *, kind: str) -> str:
+        code = (code or "").strip()
+        if not code:
+            return ""
+        if kind == "status":
+            return self._status_code_to_display.get(code, code)
+        if kind == "type":
+            return self._type_code_to_display.get(code, code)
+        return code
+
+    def _code_from_display(self, display: str, *, kind: str) -> str:
+        if not display:
+            return ""
+        display = display.strip()
+
+        # Backward-compatible: previously UI used "CODE — label".
+        if " — " in display:
+            return display.split(" — ", 1)[0].strip()
+
+        if kind == "status":
+            return self._status_display_to_code.get(display, display)
+        if kind == "type":
+            return self._type_display_to_code.get(display, display)
+        return display
+
+    def _display_from_code(self, code: str, kind: str) -> str:
+        return self._display_value(code, kind=kind)
+
+    def _warranty_months_for_serial(self, serial: str, device_type: str) -> tuple[int, str]:
+        raw_serial = re.sub(r"[^A-Z0-9]", "", (serial or "").upper())
+        if not raw_serial:
+            months = WARRANTY_MONTHS_BY_TYPE.get(device_type or "other", WARRANTY_MONTHS_BY_TYPE["other"])
+            return months, f"device-type:{device_type or 'other'}"
+
+        candidates = [raw_serial]
+        if raw_serial.startswith("S") and raw_serial[1:].isdigit():
+            candidates.append(raw_serial[1:])
+
+        for prefix in sorted(WARRANTY_MONTHS_BY_PREFIX, key=len, reverse=True):
+            if any(candidate.startswith(prefix) for candidate in candidates):
+                return WARRANTY_MONTHS_BY_PREFIX[prefix], f"serial-prefix:{prefix}"
+
+        months = WARRANTY_MONTHS_BY_TYPE.get(device_type or "other", WARRANTY_MONTHS_BY_TYPE["other"])
+        return months, f"device-type:{device_type or 'other'}"
+
+    def _build_warranty_marker(self, *, serial: str, device_type: str, created_at: str | None) -> str | None:
+        normalized = (serial or "").strip()
+        if not normalized:
+            return None
+
+        months, source = self._warranty_months_for_serial(normalized, device_type)
+        if months <= 0:
+            return None
+
+        start_date = _parse_iso_date(created_at) or datetime.now(timezone.utc).date()
+        end_date = _add_months(start_date, months)
+        today = datetime.now(timezone.utc).date()
+        status = "ACTIVE" if today <= end_date else "EXPIRED"
+        return f"{WARRANTY_MARKER} {status} until {end_date.isoformat()} ({months}m; {source})"
+
+    def _normalize_make_for_warranty_checker(self, make: str | None) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", " ", (make or "").strip().lower()).strip()
+        if not normalized:
+            return ""
+        return normalized.split(" ", 1)[0]
+
+    def _warranty_checker_config_for_make(self, make: str | None) -> dict[str, str] | None:
+        key = self._normalize_make_for_warranty_checker(make)
+        return WARRANTY_WEB_CHECKER_BY_MAKE.get(key)
+
+    def _warranty_checker_serial_param_for_make(self, make: str | None) -> str:
+        key = self._normalize_make_for_warranty_checker(make)
+        return WARRANTY_WEB_CHECKER_SERIAL_PARAM_BY_MAKE.get(key, "")
+
+    def _build_checker_url_with_serial(self, *, make: str, serial: str, checker_url: str) -> str:
+        base = (checker_url or "").strip()
+        if not base:
+            return ""
+
+        token = re.sub(r"[^A-Za-z0-9\-]", "", (serial or "").strip())
+        if not token:
+            return base
+
+        serial_param = self._warranty_checker_serial_param_for_make(make)
+        if not serial_param:
+            return base
+
+        try:
+            parsed = urlparse.urlparse(base)
+            pairs = urlparse.parse_qsl(parsed.query, keep_blank_values=True)
+            query: dict[str, str] = {k: v for k, v in pairs}
+            if serial_param not in query:
+                query[serial_param] = token
+            new_query = urlparse.urlencode(query)
+            return urlparse.urlunparse(parsed._replace(query=new_query))
+        except Exception:
+            return base
+
+    def _warranty_automation_rules_for_make(self, make_key: str) -> dict[str, object]:
+        rules = WARRANTY_WEB_AUTOMATION_RULES_BY_MAKE.get(make_key)
+        return rules if isinstance(rules, dict) else {}
+
+    def _normalize_warranty_date_token(self, raw_value: str | None) -> str:
+        token = re.sub(r"\s+", " ", str(raw_value or "").strip())
+        if not token:
+            return ""
+
+        cleaned = token.strip(" .,:;()[]{}")
+        if re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", cleaned):
+            cleaned = cleaned.replace(".", "-")
+
+        formats = (
+            "%Y-%m-%d",
+            "%m/%d/%Y",
+            "%m/%d/%y",
+            "%d/%m/%Y",
+            "%d/%m/%y",
+            "%b %d %Y",
+            "%B %d %Y",
+            "%b %d, %Y",
+            "%B %d, %Y",
+        )
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(cleaned, fmt)
+                return parsed.date().isoformat()
+            except Exception:
+                continue
+        return ""
+
+    def _extract_date_near_keywords(self, text: str, keywords: tuple[str, ...]) -> str:
+        if not text or not keywords:
+            return ""
+
+        date_pattern = r"(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}\.\d{2}\.\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})"
+        for keyword in keywords:
+            key = re.escape(keyword)
+            patterns = (
+                rf"{key}.{{0,48}}?{date_pattern}",
+                rf"{date_pattern}.{{0,48}}?{key}",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, text, flags=re.IGNORECASE)
+                if not match:
+                    continue
+                for group in match.groups():
+                    normalized = self._normalize_warranty_date_token(group)
+                    if normalized:
+                        return normalized
+        return ""
+
+    def _extract_first_normalized_date(self, text: str) -> str:
+        match = re.search(
+            r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}\.\d{2}\.\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})\b",
+            text or "",
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return ""
+        return self._normalize_warranty_date_token(match.group(1))
+
+    def _derive_status_from_text(self, text: str, make_key: str) -> str:
+        lower_text = (text or "").lower()
+        if not lower_text:
+            return "UNKNOWN"
+
+        expired_terms = ["out of warranty", "expired", "not covered", "no warranty"]
+        active_terms = ["in warranty", "active", "covered", "valid", "applecare", "care pack"]
+
+        make_terms: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+            "hp": (("expired", "out of warranty", "no active care pack"), ("active", "in warranty", "care pack")),
+            "lenovo": (("expired", "out of warranty"), ("in warranty", "active", "warranty start")),
+            "zebra": (("expired", "out of warranty", "not in warranty"), ("in warranty", "under warranty", "warranty valid")),
+            "samsung": (("expired", "out of warranty"), ("valid through", "parts valid", "labor valid", "active")),
+            "apple": (("expired", "coverage expired"), ("active", "coverage active", "applecare", "repairs and service coverage")),
+        }
+
+        extra = make_terms.get(make_key)
+        if extra:
+            expired_terms.extend(extra[0])
+            active_terms.extend(extra[1])
+
+        if any(term in lower_text for term in expired_terms):
+            return "EXPIRED"
+        if any(term in lower_text for term in active_terms):
+            return "ACTIVE"
+        return "UNKNOWN"
+
+    def _derive_end_date_from_text(self, text: str, make_key: str) -> str:
+        keyword_map: dict[str, tuple[str, ...]] = {
+            "hp": ("warranty end", "service end", "coverage end", "end date", "care pack end"),
+            "lenovo": ("warranty end", "end date", "expires", "expiration date", "warranty expires"),
+            "zebra": ("warranty end", "warranty expires", "expiration", "service end"),
+            "samsung": ("parts valid through", "labor valid through", "warranty valid through", "warranty end"),
+            "apple": ("estimated expiration date", "coverage end", "applecare", "repairs and service coverage"),
+        }
+
+        keywords = keyword_map.get(make_key, ())
+        end_date = self._extract_date_near_keywords(text, keywords)
+        if end_date:
+            return end_date
+        return self._extract_first_normalized_date(text)
+
+    def _derive_start_date_from_text(self, text: str, make_key: str) -> str:
+        keyword_map: dict[str, tuple[str, ...]] = {
+            "hp": ("warranty start", "service start", "coverage start", "start date"),
+            "lenovo": ("warranty start", "start date", "coverage start"),
+            "zebra": ("warranty start", "start date", "service start"),
+            "samsung": ("warranty start", "start date", "coverage start"),
+            "apple": ("purchase date", "coverage start", "start date"),
+        }
+
+        keywords = keyword_map.get(make_key, ())
+        return self._extract_date_near_keywords(text, keywords)
+
+    def _build_time_remaining_from_end_date(self, end_date: str | None) -> tuple[int | None, str]:
+        token = str(end_date or "").strip()
+        if not token:
+            return None, ""
+
+        try:
+            end_obj = datetime.strptime(token, "%Y-%m-%d").date()
+        except Exception:
+            return None, ""
+
+        today = datetime.now(timezone.utc).date()
+        days = int((end_obj - today).days)
+
+        if days > 0:
+            return days, f"{days} day(s) remaining"
+        if days == 0:
+            return days, "expires today"
+        return days, f"expired {-days} day(s) ago"
+
+    def _is_trusted_warranty_segment(self, segment: str | None) -> bool:
+        text = (segment or "").strip()
+        if not text:
+            return False
+        return bool(
+            re.search(
+                r"\[WARRANTY\]\s+(VERIFIED\s+via\s+WEB\s+CHECKER\b|WEB\s+AUTO-CHECK:)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def _build_web_warranty_verified_marker(
+        self,
+        *,
+        make: str,
+        serial: str,
+        status: str,
+        start_date: str | None,
+        end_date: str | None,
+        time_remaining: str | None,
+        checker_url: str,
+    ) -> str:
+        status_text = (status or "UNKNOWN").strip().upper()
+        timeline_parts: list[str] = []
+        if (start_date or "").strip():
+            timeline_parts.append(f"from {start_date}")
+        if (end_date or "").strip():
+            timeline_parts.append(f"until {end_date}")
+        timeline_text = f" {' '.join(timeline_parts)}" if timeline_parts else ""
+        remaining_text = f" ({time_remaining})" if (time_remaining or "").strip() else ""
+        return (
+            f"{WARRANTY_MARKER} VERIFIED via WEB CHECKER ({make}) "
+            f"{status_text}{timeline_text}{remaining_text} (serial {serial}) {checker_url}"
+        )
+
+    def _build_web_warranty_not_found_marker(self, *, make: str, serial: str, checker_url: str) -> str:
+        return (
+            f"{WARRANTY_MARKER} WEB AUTO-CHECK: couldn't find it for {make} "
+            f"(serial {serial}) {checker_url}"
+        )
+
+    def _extract_warranty_from_page_text(self, page_text: str, *, make_key: str = "") -> dict[str, object]:
+        normalized_text = re.sub(r"\s+", " ", page_text or "").strip()
+        lower_text = normalized_text.lower()
+        if not normalized_text:
+            return {"ok": False, "reason": "empty_page"}
+
+        rules = self._warranty_automation_rules_for_make(make_key)
+        rule_wait_tokens = tuple(str(x).lower() for x in tuple(rules.get("wait_tokens", ())) if str(x).strip())
+        hint_tokens = tuple(dict.fromkeys((*WARRANTY_WEB_RESULT_HINTS, *rule_wait_tokens)))
+
+        if any(token in lower_text for token in ("captcha", "verify you are human", "i am not a robot")):
+            return {"ok": False, "reason": "blocked_by_captcha"}
+
+        lines = [line.strip() for line in (page_text or "").splitlines() if line.strip()]
+        interesting_lines = [line for line in lines if any(hint in line.lower() for hint in hint_tokens)]
+        summary = interesting_lines[0] if interesting_lines else ""
+
+        status = self._derive_status_from_text(normalized_text, make_key)
+        start_date = self._derive_start_date_from_text(normalized_text, make_key)
+        end_date = self._derive_end_date_from_text(normalized_text, make_key)
+        remaining_days, remaining_text = self._build_time_remaining_from_end_date(end_date)
+
+        if not summary and lines:
+            summary = lines[0][:220]
+
+        if not interesting_lines and status == "UNKNOWN" and not end_date:
+            return {"ok": False, "reason": "no_warranty_text_found"}
+        if status == "UNKNOWN" and not end_date:
+            return {"ok": False, "reason": "ambiguous_result", "summary": summary}
+
+        return {
+            "ok": True,
+            "status": status,
+            "start_date": start_date,
+            "end_date": end_date,
+            "remaining_days": remaining_days,
+            "remaining_text": remaining_text,
+            "summary": summary,
+        }
+
+    def _extract_visible_text_from_html(self, html_text: str) -> str:
+        text = str(html_text or "")
+        text = re.sub(r"(?is)<script\b[^>]*>.*?</script>", " ", text)
+        text = re.sub(r"(?is)<style\b[^>]*>.*?</style>", " ", text)
+        text = re.sub(r"(?is)<!--.*?-->", " ", text)
+        text = re.sub(r"(?is)<[^>]+>", " ", text)
+        text = html.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _http_get_text(self, url: str) -> str:
+        req = urlrequest.Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urlrequest.urlopen(req, timeout=WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC) as response:
+            content_type = response.headers.get("Content-Type", "")
+            charset = "utf-8"
+            match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
+            if match:
+                charset = match.group(1)
+            raw_bytes = response.read() or b""
+        return raw_bytes.decode(charset, errors="ignore")
+
+    def _remote_warranty_api_url(self) -> str:
+        env_value = str(os.environ.get("WARRANTY_REMOTE_API_URL", "")).strip()
+        if env_value:
+            return env_value
+        return str((self.config or {}).get("warranty_remote_api_url") or "").strip()
+
+    def _remote_warranty_api_key(self) -> str:
+        env_value = str(os.environ.get("WARRANTY_REMOTE_API_KEY", "")).strip()
+        if env_value:
+            return env_value
+        return str((self.config or {}).get("warranty_remote_api_key") or "").strip()
+
+    def _remote_warranty_api_timeout_sec(self) -> int:
+        raw_env = str(os.environ.get("WARRANTY_REMOTE_API_TIMEOUT_SEC", "")).strip()
+        raw_cfg = str((self.config or {}).get("warranty_remote_api_timeout_sec") or "").strip()
+        for raw in (raw_env, raw_cfg, "25"):
+            try:
+                value = int(raw)
+                if value > 0:
+                    return value
+            except Exception:
+                continue
+        return 25
+
+    def _remote_warranty_allow_insecure_tls(self) -> bool:
+        raw_env = str(os.environ.get("WARRANTY_REMOTE_API_ALLOW_INSECURE_TLS", "")).strip().lower()
+        if raw_env in {"1", "true", "yes", "on"}:
+            return True
+        if raw_env in {"0", "false", "no", "off"}:
+            return False
+
+        raw_cfg = str((self.config or {}).get("warranty_remote_api_allow_insecure_tls") or "").strip().lower()
+        if raw_cfg in {"1", "true", "yes", "on"}:
+            return True
+        if raw_cfg in {"0", "false", "no", "off"}:
+            return False
+
+        return False
+
+    def _remote_worker_local_port(self) -> int:
+        endpoint = self._remote_warranty_api_url()
+        if not endpoint:
+            return 0
+
+        try:
+            parsed = urlparse.urlparse(endpoint)
+        except Exception:
+            return 0
+
+        host = (parsed.hostname or "").strip().lower()
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            return 0
+
+        if parsed.port:
+            return int(parsed.port)
+
+        if parsed.scheme == "https":
+            return 443
+        return 80
+
+    def _is_tcp_port_listening(self, host: str, port: int, timeout_sec: float = 0.25) -> bool:
+        if port <= 0:
+            return False
+
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout_sec):
+                return True
+        except Exception:
+            return False
+
+    def _ensure_local_remote_worker_running_on_app_start(self) -> None:
+        local_port = self._remote_worker_local_port()
+        if local_port <= 0:
+            return
+
+        if self._is_tcp_port_listening("127.0.0.1", local_port):
+            return
+
+        boot_script = Path(__file__).resolve().parent / "remote_worker" / "start_worker_boot.ps1"
+        if not boot_script.is_file():
+            return
+
+        args = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+            str(boot_script),
+            "-Port",
+            str(local_port),
+        ]
+
+        if self._remote_warranty_allow_insecure_tls():
+            args.append("-AllowInsecureTls")
+
+        try:
+            subprocess.Popen(
+                args,
+                cwd=str(boot_script.parent),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    def _lookup_warranty_via_remote_worker(
+        self,
+        *,
+        make: str,
+        make_key: str,
+        serial: str,
+        checker_url: str,
+    ) -> dict[str, object] | None:
+        endpoint = self._remote_warranty_api_url()
+        if not endpoint:
+            return None
+
+        request_body = {
+            "make": make_key or make,
+            "serial": serial,
+            "checker_url": checker_url,
+        }
+        payload = json.dumps(request_body).encode("utf-8")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "programma_rb-desktop/1.0",
+        }
+        api_key = self._remote_warranty_api_key()
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        timeout_sec = self._remote_warranty_api_timeout_sec()
+        endpoint_host = urlparse.urlparse(endpoint).netloc.lower()
+        allow_insecure_tls = self._remote_warranty_allow_insecure_tls() or endpoint_host.endswith("workers.dev")
+
+        def _execute_remote_request(*, insecure_tls: bool) -> dict[str, object]:
+            req = urlrequest.Request(endpoint, data=payload, headers=headers, method="POST")
+            open_kwargs: dict[str, object] = {"timeout": timeout_sec}
+            if insecure_tls:
+                open_kwargs["context"] = ssl._create_unverified_context()
+
+            try:
+                with urlrequest.urlopen(req, **open_kwargs) as response:
+                    charset = "utf-8"
+                    content_type = response.headers.get("Content-Type", "")
+                    match = re.search(r"charset=([A-Za-z0-9_\-]+)", content_type, flags=re.IGNORECASE)
+                    if match:
+                        charset = match.group(1)
+                    raw_text = (response.read() or b"").decode(charset, errors="ignore")
+            except urlerror.HTTPError as http_exc:
+                http_code = int(getattr(http_exc, "code", 0) or 0)
+                if http_code == 404:
+                    reason = "remote_worker_route_not_found"
+                    details = f"HTTP 404 from remote endpoint: {endpoint}"
+                elif http_code in {401, 403}:
+                    reason = "remote_worker_unauthorized"
+                    details = "Remote worker rejected API key (HTTP 401/403)"
+                else:
+                    reason = "remote_worker_http_error"
+                    details = f"Remote worker returned HTTP {http_code}"
+
+                return {
+                    "ok": False,
+                    "reason": reason,
+                    "details": details,
+                    "checker_url": checker_url,
+                    "source_mode": "remote",
+                }
+
+            parsed = json.loads(raw_text)
+            if not isinstance(parsed, dict):
+                return {
+                    "ok": False,
+                    "reason": "remote_worker_unavailable",
+                    "details": "Remote worker returned non-JSON object",
+                    "checker_url": checker_url,
+                    "source_mode": "remote",
+                }
+
+            parsed.setdefault("checker_url", checker_url)
+            parsed["source_mode"] = "remote"
+            return parsed
+
+        try:
+            return _execute_remote_request(insecure_tls=False)
+        except Exception as exc:
+            exc_text = str(exc)
+            if allow_insecure_tls and "CERTIFICATE_VERIFY_FAILED" in exc_text.upper():
+                try:
+                    return _execute_remote_request(insecure_tls=True)
+                except Exception as retry_exc:
+                    return {
+                        "ok": False,
+                        "reason": "remote_worker_unavailable",
+                        "details": f"{exc} | retry_insecure_tls_failed: {retry_exc}",
+                        "checker_url": checker_url,
+                        "source_mode": "remote",
+                    }
+
+            return {
+                "ok": False,
+                "reason": "remote_worker_unavailable",
+                "details": str(exc),
+                "checker_url": checker_url,
+                "source_mode": "remote",
+            }
+
+    def _resolve_hp_warranty_result_url(self, serial: str) -> str:
+        token = re.sub(r"[^A-Za-z0-9\-]", "", (serial or "").strip())
+        if not token:
+            return ""
+
+        endpoint = (
+            "https://support.hp.com/wcc-services/searchresult/us-en"
+            f"?q={urlparse.quote(token)}&context=pdp&navigation=false"
+            "&authState=anonymous&template=WarrantyLanding"
+        )
+        try:
+            payload = self._http_get_text(endpoint)
+            parsed = json.loads(payload)
+            verify_data = (
+                (parsed or {}).get("data", {})
+                .get("verifyResponse", {})
+                .get("data", {})
+            )
+            if not isinstance(verify_data, dict):
+                return ""
+
+            seo_name = str(verify_data.get("SEOFriendlyName") or "").strip()
+            product_series_oid = str(verify_data.get("productSeriesOID") or "").strip()
+            product_name_oid = str(
+                verify_data.get("productNameOID")
+                or verify_data.get("productNamOID")
+                or ""
+            ).strip()
+            sku = str(verify_data.get("productNumber") or "").strip()
+            resolved_serial = str(verify_data.get("serialNumber") or token).strip()
+
+            if not (seo_name and product_series_oid and product_name_oid and sku and resolved_serial):
+                return ""
+
+            encoded_seo = urlparse.quote(seo_name)
+            encoded_sku = urlparse.quote(sku)
+            encoded_serial = urlparse.quote(resolved_serial)
+            return (
+                "https://support.hp.com/us-en/warrantyresult/"
+                f"{encoded_seo}/{product_series_oid}/model/{product_name_oid}"
+                f"?sku={encoded_sku}&serialnumber={encoded_serial}"
+            )
+        except Exception:
+            return ""
+
+    def _lookup_warranty_via_http_checker(self, *, make: str, make_key: str, serial: str, checker_url: str) -> dict[str, object]:
+        query_url = self._build_checker_url_with_serial(make=make, serial=serial, checker_url=checker_url)
+        target_url = query_url or checker_url
+
+        if make_key == "hp":
+            hp_url = self._resolve_hp_warranty_result_url(serial)
+            if hp_url:
+                target_url = hp_url
+
+        if not target_url:
+            return {"ok": False, "reason": "checker_not_configured", "checker_url": checker_url}
+
+        try:
+            html_text = self._http_get_text(target_url)
+
+            page_text = self._extract_visible_text_from_html(html_text)
+            parsed = self._extract_warranty_from_page_text(page_text, make_key=make_key)
+            parsed["checker_url"] = target_url
+            parsed["source_mode"] = "http"
+            if not bool(parsed.get("ok")):
+                if make_key == "hp" and str(parsed.get("reason") or "") == "empty_page":
+                    parsed["reason"] = "dynamic_page_requires_browser"
+                    parsed["details"] = (
+                        "HP warranty result page is JavaScript-rendered and requires browser automation"
+                    )
+                else:
+                    parsed["details"] = "Public checker page fetched, but warranty fields were not clearly detected"
+            return parsed
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": "http_fetch_failed",
+                "details": str(exc),
+                "checker_url": target_url,
+            }
+
+    def _first_interactable_element_by_selectors(self, driver: object, selectors: tuple[str, ...]) -> object | None:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        for selector in selectors:
+            try:
+                for elem in driver.find_elements(By.CSS_SELECTOR, selector):  # type: ignore[attr-defined]
+                    if elem.is_displayed() and elem.is_enabled():
+                        return elem
+            except Exception:
+                continue
+        return None
+
+    def _find_serial_input_for_make(self, driver: object, make_key: str) -> object | None:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        rules = self._warranty_automation_rules_for_make(make_key)
+        rule_selectors = tuple(str(x) for x in tuple(rules.get("serial_selectors", ())) if str(x).strip())
+        elem = self._first_interactable_element_by_selectors(driver, rule_selectors)
+        if elem is not None:
+            return elem
+
+        xpath_elem = None
+        try:
+            xpath_elem = driver.find_element(  # type: ignore[attr-defined]
+                By.XPATH,
+                "//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'serial') "
+                "or contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'serial') "
+                "or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'serial')]",
+            )
+            if xpath_elem and xpath_elem.is_displayed() and xpath_elem.is_enabled():
+                return xpath_elem
+        except Exception:
+            pass
+
+        return self._find_best_serial_input(driver)
+
+    def _click_submit_for_make(self, driver: object, make_key: str) -> None:
+        rules = self._warranty_automation_rules_for_make(make_key)
+        selectors = tuple(str(x) for x in tuple(rules.get("submit_selectors", ())) if str(x).strip())
+        elem = self._first_interactable_element_by_selectors(driver, selectors)
+        if elem is not None:
+            try:
+                elem.click()
+                return
+            except Exception:
+                pass
+        self._click_best_submit_button(driver)
+
+    def _collect_warranty_page_text(self, driver: object, make_key: str) -> str:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        rules = self._warranty_automation_rules_for_make(make_key)
+        selectors = tuple(str(x) for x in tuple(rules.get("result_selectors", ())) if str(x).strip())
+        collected: list[str] = []
+
+        for selector in selectors:
+            try:
+                for elem in driver.find_elements(By.CSS_SELECTOR, selector):  # type: ignore[attr-defined]
+                    text = (elem.text or "").strip()
+                    if text:
+                        collected.append(text)
+            except Exception:
+                continue
+
+        try:
+            body_text = (driver.find_element(By.TAG_NAME, "body").text or "").strip()  # type: ignore[attr-defined]
+            if body_text:
+                collected.append(body_text)
+        except Exception:
+            pass
+
+        return "\n".join(x for x in collected if x).strip()
+
+    def _wait_for_warranty_result(self, driver: object, wait: object, make_key: str, before_text: str) -> None:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        rules = self._warranty_automation_rules_for_make(make_key)
+        rule_wait_tokens = tuple(str(x).lower() for x in tuple(rules.get("wait_tokens", ())) if str(x).strip())
+        wait_tokens = tuple(dict.fromkeys((*WARRANTY_WEB_RESULT_HINTS, *rule_wait_tokens)))
+        result_selectors = tuple(str(x) for x in tuple(rules.get("result_selectors", ())) if str(x).strip())
+
+        def _condition(d: object) -> bool:
+            try:
+                body_text = (d.find_element(By.TAG_NAME, "body").text or "").strip().lower()  # type: ignore[attr-defined]
+            except Exception:
+                body_text = ""
+            if body_text and body_text != (before_text or "").strip().lower():
+                if any(token in body_text for token in wait_tokens):
+                    return True
+            for selector in result_selectors:
+                try:
+                    for elem in d.find_elements(By.CSS_SELECTOR, selector):  # type: ignore[attr-defined]
+                        if (elem.text or "").strip():
+                            return True
+                except Exception:
+                    continue
+            return False
+
+        try:
+            wait.until(_condition)
+        except Exception:
+            pass
+
+    def _find_best_serial_input(self, driver: object) -> object | None:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        candidates = []
+        for elem in driver.find_elements(By.CSS_SELECTOR, "input, textarea"):  # type: ignore[attr-defined]
+            try:
+                if not elem.is_displayed() or not elem.is_enabled():
+                    continue
+                input_type = (elem.get_attribute("type") or "").strip().lower()
+                if input_type in {"hidden", "password", "email", "file", "checkbox", "radio"}:
+                    continue
+                attrs = " ".join(
+                    [
+                        elem.get_attribute("id") or "",
+                        elem.get_attribute("name") or "",
+                        elem.get_attribute("placeholder") or "",
+                        elem.get_attribute("aria-label") or "",
+                    ]
+                ).lower()
+                score = 1
+                if "serial" in attrs or "sn" in attrs:
+                    score += 3
+                if "imei" in attrs or "device" in attrs or "product" in attrs:
+                    score += 1
+                candidates.append((score, elem))
+            except Exception:
+                continue
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+
+    def _click_best_submit_button(self, driver: object) -> None:
+        from selenium.webdriver.common.by import By  # type: ignore
+
+        best_score = 0
+        best_elem = None
+        for elem in driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], input[type='button']"):  # type: ignore[attr-defined]
+            try:
+                if not elem.is_displayed() or not elem.is_enabled():
+                    continue
+                raw = " ".join([(elem.text or ""), (elem.get_attribute("value") or "")]).strip().lower()
+                score = 0
+                if any(token in raw for token in ("check", "search", "submit", "continue", "find", "lookup")):
+                    score += 2
+                if "warranty" in raw or "coverage" in raw:
+                    score += 2
+                if score > best_score:
+                    best_score = score
+                    best_elem = elem
+            except Exception:
+                continue
+
+        if best_elem is not None:
+            try:
+                best_elem.click()
+            except Exception:
+                pass
+
+    def _detect_local_edge_driver_path(self) -> str:
+        env_candidates = (
+            os.environ.get("WARRANTY_EDGE_DRIVER_PATH", ""),
+            os.environ.get("MSEDGEDRIVER", ""),
+            os.environ.get("EDGEWEBDRIVER", ""),
+            os.environ.get("WEBDRIVER_EDGE_DRIVER", ""),
+        )
+        path_candidates: list[Path] = []
+
+        for raw in env_candidates:
+            text = (raw or "").strip()
+            if text:
+                path_candidates.append(Path(text).expanduser())
+
+        app_dir = Path(__file__).resolve().parent
+        cwd = Path.cwd()
+        path_candidates.extend(
+            [
+                app_dir / "msedgedriver.exe",
+                app_dir / "drivers" / "msedgedriver.exe",
+                cwd / "msedgedriver.exe",
+                cwd / "drivers" / "msedgedriver.exe",
+            ]
+        )
+
+        for candidate in path_candidates:
+            try:
+                if candidate.is_file():
+                    return str(candidate)
+            except Exception:
+                continue
+
+        found_on_path = shutil.which("msedgedriver") or shutil.which("msedgedriver.exe")
+        return str(found_on_path or "")
+
+    def _detect_edge_browser_executable_path(self) -> str:
+        env_roots = [
+            os.environ.get("PROGRAMFILES(X86)", ""),
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("LOCALAPPDATA", ""),
+        ]
+        candidates: list[Path] = []
+        for root in env_roots:
+            if not (root or "").strip():
+                continue
+            candidates.append(Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe")
+
+        for candidate in candidates:
+            try:
+                if candidate.is_file():
+                    return str(candidate)
+            except Exception:
+                continue
+
+        found = shutil.which("msedge") or shutil.which("msedge.exe")
+        return str(found or "")
+
+    def _open_checker_in_system_browser(self, checker_url: str) -> bool:
+        target = (checker_url or "").strip()
+        if not target:
+            return False
+
+        try:
+            parsed = urlparse.urlparse(target)
+            if parsed.scheme.lower() == "http" and parsed.netloc.lower().endswith("support.hp.com"):
+                target = urlparse.urlunparse(parsed._replace(scheme="https"))
+        except Exception:
+            pass
+
+        # Try explicitly launching Firefox first if requested by user
+        firefox_paths = [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
+        ]
+        for ff in firefox_paths:
+            if os.path.exists(ff):
+                try:
+                    subprocess.Popen(
+                        [ff, target],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    return True
+                except Exception:
+                    pass
+
+        # Native fallback to OS default browser (e.g. Chrome, Firefox, Edge whatever is default)
+        if os.name == "nt":
+            try:
+                os.startfile(target)  # type: ignore[attr-defined]
+                return True
+            except Exception:
+                pass
+
+        try:
+            subprocess.Popen(
+                ["explorer.exe", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except Exception:
+            pass
+
+        try:
+            return bool(webbrowser.open_new_tab(target))
+        except Exception:
+            return False
+
+    def _copy_to_clipboard(self, text: str) -> bool:
+        token = (text or "").strip()
+        if not token:
+            return False
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(token)
+            self.root.update_idletasks()
+            return True
+        except Exception:
+            return False
+
+    def _detect_edge_browser_version(self) -> str:
+        edge_exe = self._detect_edge_browser_executable_path()
+        if not edge_exe:
+            return ""
+        try:
+            proc = subprocess.run(
+                [edge_exe, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            text = f"{proc.stdout or ''} {proc.stderr or ''}".strip()
+            match = re.search(r"(\d+\.\d+\.\d+\.\d+)", text)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+        return ""
+
+    def _download_local_edge_driver(self) -> str:
+        app_dir = Path(__file__).resolve().parent
+        drivers_dir = app_dir / "drivers"
+        driver_path = drivers_dir / "msedgedriver.exe"
+
+        try:
+            if driver_path.is_file():
+                return str(driver_path)
+        except Exception:
+            pass
+
+        version = self._detect_edge_browser_version()
+        urls: list[str] = []
+        if version:
+            urls.append(f"https://msedgedriver.microsoft.com/{version}/edgedriver_win64.zip")
+        urls.append("https://msedgedriver.microsoft.com/LATEST_STABLE")
+
+        try:
+            drivers_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return ""
+
+        for url in urls:
+            try:
+                text_response = ""
+                if url.endswith("/LATEST_STABLE"):
+                    text_response = self._http_get_text(url).strip()
+                    if not text_response:
+                        continue
+                    version_url = f"https://msedgedriver.microsoft.com/{text_response}/edgedriver_win64.zip"
+                else:
+                    version_url = url
+
+                req = urlrequest.Request(
+                    version_url,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                with urlrequest.urlopen(req, timeout=WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC) as response:
+                    archive_bytes = response.read() or b""
+
+                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                    members = [name for name in zf.namelist() if name.lower().endswith("msedgedriver.exe")]
+                    if not members:
+                        continue
+                    with zf.open(members[0]) as src, open(driver_path, "wb") as dst:
+                        dst.write(src.read())
+
+                try:
+                    if driver_path.is_file() and driver_path.stat().st_size > 0:
+                        return str(driver_path)
+                except Exception:
+                    continue
+            except Exception:
+                continue
+
+        return ""
+
+    def _is_chrome_available_for_warranty(self) -> bool:
+        if shutil.which("chrome") or shutil.which("chrome.exe"):
+            return True
+
+        install_roots = [
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("PROGRAMFILES(X86)", ""),
+            os.environ.get("LOCALAPPDATA", ""),
+        ]
+        for root in install_roots:
+            if not (root or "").strip():
+                continue
+            candidate = Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            try:
+                if candidate.is_file():
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    def _lookup_warranty_via_web_checker(self, *, make: str, serial: str) -> dict[str, object]:
+        make_key = self._normalize_make_for_warranty_checker(make)
+        config = self._warranty_checker_config_for_make(make)
+        if not config:
+            return {"ok": False, "reason": "make_not_supported"}
+
+        checker_url = (config.get("url") or "").strip()
+        if not checker_url:
+            return {"ok": False, "reason": "checker_not_configured"}
+
+        remote_result = self._lookup_warranty_via_remote_worker(
+            make=make,
+            make_key=make_key,
+            serial=serial,
+            checker_url=checker_url,
+        )
+        remote_details = ""
+        remote_reason = ""
+        remote_allows_local_fallback = False
+        if remote_result is not None:
+            if bool(remote_result.get("ok")):
+                return remote_result
+            remote_reason = str(remote_result.get("reason") or "").strip()
+            remote_details = str(remote_result.get("details") or "").strip()
+            remote_allows_local_fallback = remote_reason in {
+                "remote_worker_unavailable",
+                "remote_worker_route_not_found",
+                "remote_worker_unauthorized",
+                "remote_worker_http_error",
+            }
+            if not remote_allows_local_fallback:
+                remote_result.setdefault("checker_url", checker_url)
+                return remote_result
+
+        direct_result = self._lookup_warranty_via_http_checker(
+            make=make,
+            make_key=make_key,
+            serial=serial,
+            checker_url=checker_url,
+        )
+        if bool(direct_result.get("ok")):
+            return direct_result
+
+        if remote_details:
+            local_details = str(direct_result.get("details") or "").strip()
+            merged_details = " | ".join(x for x in (local_details, f"remote: {remote_details}") if x)
+            if merged_details:
+                direct_result["details"] = merged_details
+
+        # HP pages are heavily JS/captcha/session-gated. We still try local browser automation
+        # if remote worker failed due deployment/auth/connectivity issues.
+        if make_key == "hp":
+            # FAST FAIL: HP requires Captcha/Cloudflare, local headless browser will always fail.
+            # Skip the 20 second wait and jump straight to the OS manual browser.
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
+
+        try:
+            from selenium import webdriver  # type: ignore
+            from selenium.webdriver.chrome.service import Service as ChromeService  # type: ignore
+            from selenium.webdriver.common.by import By  # type: ignore
+            from selenium.webdriver.common.keys import Keys  # type: ignore
+            from selenium.webdriver.edge.service import Service as EdgeService  # type: ignore
+            from selenium.webdriver.support import expected_conditions as EC  # type: ignore
+            from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
+        except Exception:
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
+
+        edge_manager = None
+        chrome_manager = None
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager  # type: ignore
+            from webdriver_manager.microsoft import EdgeChromiumDriverManager  # type: ignore
+
+            edge_manager = EdgeChromiumDriverManager
+            chrome_manager = ChromeDriverManager
+        except Exception:
+            edge_manager = None
+            chrome_manager = None
+
+        edge_driver_path = self._detect_local_edge_driver_path()
+        if not edge_driver_path:
+            edge_driver_path = self._download_local_edge_driver()
+        chrome_available = self._is_chrome_available_for_warranty()
+
+        driver = None
+        launch_errors: list[str] = []
+        browsers: list[str] = ["edge"]
+        if chrome_available:
+            browsers.append("chrome")
+        else:
+            launch_errors.append("chrome-skip: chrome browser is not installed")
+
+        for browser in browsers:
+            try:
+                if browser == "edge":
+                    options = webdriver.EdgeOptions()
+                    if WARRANTY_WEB_AUTOMATION_HEADLESS:
+                        options.add_argument("--headless=new")
+                    options.add_argument("--disable-gpu")
+                    options.add_argument("--no-first-run")
+                    options.add_argument("--no-default-browser-check")
+
+                    launch_attempts: list[tuple[str, object]] = []
+                    if edge_driver_path:
+                        launch_attempts.append(
+                            (
+                                "edge-local-driver",
+                                lambda: webdriver.Edge(
+                                    service=EdgeService(edge_driver_path),
+                                    options=options,
+                                ),
+                            )
+                        )
+                    launch_attempts.append(("edge-default", lambda: webdriver.Edge(options=options)))
+                    if edge_manager is not None:
+                        launch_attempts.append(
+                            (
+                                "edge-webdriver-manager",
+                                lambda: webdriver.Edge(
+                                    service=EdgeService(edge_manager().install()),
+                                    options=options,
+                                ),
+                            )
+                        )
+
+                    for attempt_name, attempt in launch_attempts:
+                        try:
+                            driver = attempt()
+                            break
+                        except Exception as edge_exc:
+                            launch_errors.append(f"{attempt_name}: {edge_exc}")
+                else:
+                    options = webdriver.ChromeOptions()
+                    if WARRANTY_WEB_AUTOMATION_HEADLESS:
+                        options.add_argument("--headless=new")
+                    options.add_argument("--disable-gpu")
+                    launch_attempts: list[tuple[str, object]] = [("chrome-default", lambda: webdriver.Chrome(options=options))]
+                    if chrome_manager is not None:
+                        launch_attempts.append(
+                            (
+                                "chrome-webdriver-manager",
+                                lambda: webdriver.Chrome(
+                                    service=ChromeService(chrome_manager().install()),
+                                    options=options,
+                                ),
+                            )
+                        )
+
+                    for attempt_name, attempt in launch_attempts:
+                        try:
+                            driver = attempt()
+                            break
+                        except Exception as chrome_exc:
+                            launch_errors.append(f"{attempt_name}: {chrome_exc}")
+
+                if driver is not None:
+                    break
+            except Exception as exc:
+                launch_errors.append(f"{browser}: {exc}")
+
+        if driver is None:
+            direct_details = str(direct_result.get("details") or "").strip()
+            browser_details = " | ".join(launch_errors).strip()
+            merged_details = " | ".join(x for x in (direct_details, browser_details) if x)
+            if merged_details:
+                direct_result["details"] = merged_details
+            if re.search(r"devtoolsactiveport|remote debugging is disallowed|group policy", merged_details, flags=re.IGNORECASE):
+                direct_result["reason"] = "browser_policy_blocked"
+            direct_result.setdefault("checker_url", checker_url)
+            return direct_result
+
+        try:
+            driver.set_page_load_timeout(WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
+            checker_host = urlparse.urlparse(checker_url).netloc.lower()
+
+            def _is_checker_url(raw_url: str | None) -> bool:
+                target = (raw_url or "").strip().lower()
+                if not target:
+                    return False
+                if checker_host:
+                    return checker_host in (urlparse.urlparse(target).netloc.lower())
+                return checker_url.lower() in target
+
+            checker_ready = False
+            for _ in range(3):
+                handles_before = []
+                try:
+                    handles_before = list(driver.window_handles)
+                except Exception:
+                    handles_before = []
+
+                opened_new_tab = False
+                try:
+                    driver.execute_script("window.open(arguments[0], '_blank');", checker_url)
+                    WebDriverWait(driver, 8).until(
+                        lambda d: len(d.window_handles) > len(handles_before)
+                    )
+                    opened_new_tab = True
+                except Exception:
+                    opened_new_tab = False
+
+                handles_after = []
+                try:
+                    handles_after = list(driver.window_handles)
+                except Exception:
+                    handles_after = handles_before
+
+                target_handle = ""
+                for handle in reversed(handles_after):
+                    try:
+                        driver.switch_to.window(handle)
+                        if _is_checker_url(str(driver.current_url or "")):
+                            target_handle = handle
+                            break
+                    except Exception:
+                        continue
+
+                if not target_handle and handles_after:
+                    candidate = ""
+                    if opened_new_tab:
+                        for handle in handles_after:
+                            if handle not in handles_before:
+                                candidate = handle
+                                break
+                    if not candidate:
+                        candidate = handles_after[-1]
+
+                    try:
+                        driver.switch_to.window(candidate)
+                        driver.get(checker_url)
+                        target_handle = candidate
+                    except Exception:
+                        target_handle = ""
+
+                if not target_handle:
+                    try:
+                        driver.get(checker_url)
+                        target_handle = str(driver.current_window_handle or "")
+                    except Exception:
+                        continue
+
+                try:
+                    for handle in list(driver.window_handles):
+                        if handle == target_handle:
+                            continue
+                        try:
+                            driver.switch_to.window(handle)
+                            driver.close()
+                        except Exception:
+                            pass
+                    driver.switch_to.window(target_handle)
+                except Exception:
+                    pass
+
+                try:
+                    WebDriverWait(driver, 8).until(lambda d: _is_checker_url(str(d.current_url or "")))
+                    checker_ready = True
+                    break
+                except Exception:
+                    try:
+                        driver.get(checker_url)
+                        if _is_checker_url(str(driver.current_url or "")):
+                            checker_ready = True
+                            break
+                    except Exception:
+                        pass
+
+            if not checker_ready:
+                current_url = str(getattr(driver, "current_url", "") or "")
+                return {
+                    "ok": False,
+                    "reason": "browser_policy_blocked",
+                    "details": f"Could not keep checker tab focused; current_url={current_url}",
+                    "checker_url": checker_url,
+                }
+
+            wait = WebDriverWait(driver, WARRANTY_WEB_AUTOMATION_TIMEOUT_SEC)
+            body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            before_text = (body.text or "").strip()
+
+            serial_input = self._find_serial_input_for_make(driver, make_key)
+            if serial_input is None:
+                return {
+                    "ok": False,
+                    "reason": "serial_input_not_found",
+                    "checker_url": checker_url,
+                }
+
+            try:
+                serial_input.clear()
+            except Exception:
+                pass
+            serial_input.click()
+            serial_input.send_keys(serial)
+            serial_input.send_keys(Keys.ENTER)
+            self._click_submit_for_make(driver, make_key)
+
+            self._wait_for_warranty_result(driver, wait, make_key, before_text)
+
+            page_text = self._collect_warranty_page_text(driver, make_key)
+            if not page_text and before_text:
+                page_text = before_text
+
+            parsed = self._extract_warranty_from_page_text(page_text, make_key=make_key)
+            parsed["checker_url"] = checker_url
+            return parsed
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": "automation_error",
+                "details": str(exc),
+                "checker_url": checker_url,
+            }
+        finally:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+    def _split_comment_and_warranty(self, comment: str | None) -> tuple[str, str | None]:
+        text = (comment or "").strip()
+        if not text:
+            return "", None
+
+        idx = text.upper().find(WARRANTY_MARKER)
         if idx < 0:
             return text, None
 
