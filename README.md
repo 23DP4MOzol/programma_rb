@@ -53,7 +53,7 @@ Lokālā Android (`MainActivity.java`) aplikācija ir kā ietvars ap Web aplikā
 3. **Kameras skenēšana:** Atbalsta vizuālo 1D/2D svītrkodu lasīšanu caur Android `ScanContract`.
 
 ### Supabase Backend
-Rimi Baltic Supabase instances integrācija ļauj sinhronizēt visus fiziskos ierakstus. JWT atslēgas lokāli ir ierakstītas `app.js` savienojuma izveidei.
+Supabase instances integrācija ļauj sinhronizēt visus fiziskos ierakstus. JWT atslēgas lokāli ir ierakstītas `app.js` savienojuma izveidei.
 
 ---
 
@@ -91,4 +91,4 @@ The local Android container (`MainActivity.java`) acts as a wrapper with extende
 3. **Native camera scanning:** Enables seamless 1D/2D barcode input into the web interface.
 
 ### Supabase Backend
-Integration with the Rimi Baltic Supabase instance provides real-time persistent data storage for technical assets. JWT and connection configuration are primarily loaded through `app.js`.
+Integration with the Supabase instance provides real-time persistent data storage for technical assets. JWT and connection configuration are primarily loaded through `app.js`.
